@@ -1,0 +1,15 @@
+{
+  "buildPath": "comp",
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "space grotesk",
+        "createdAt": "2026-08-22T07:16:53.180Z",
+        "reason": "user confirmed: explicitly requested Space Grotesk by name with exact Google Fonts snippet"
+      }
+    ]
+  }
+}
