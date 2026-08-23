@@ -5,15 +5,16 @@ import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { toast } from '@/components/ui/use-toast'
 import { useCreateBrand, useUpdateBrand, type Brand } from '@/lib/api/brands'
 
 const schema = z.object({
   name: z.string().min(1, 'Name is required'),
-  slug: z.string().optional(),
-  logoUrl: z.string().optional(),
+  logo: z.string().optional(),
   description: z.string().optional(),
+  status: z.boolean(),
 })
 
 type Values = z.infer<typeof schema>
@@ -31,16 +32,22 @@ export function BrandFormSheet({ open, onOpenChange, brand }: BrandFormSheetProp
 
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    values: { name: brand?.name ?? '', slug: brand?.slug ?? '', logoUrl: brand?.logoUrl ?? '', description: brand?.description ?? '' },
+    values: {
+      name: brand?.name ?? '',
+      logo: brand?.logo ?? '',
+      description: brand?.description ?? '',
+      status: brand?.status ?? true,
+    },
   })
 
   const onSubmit = async (values: Values) => {
     try {
+      const input = { name: values.name, logo: values.logo || undefined, description: values.description || undefined, status: values.status }
       if (isEdit) {
-        await updateMutation.mutateAsync({ id: brand.id, input: values })
+        await updateMutation.mutateAsync({ id: brand.id, input })
         toast({ title: 'Brand updated' })
       } else {
-        await createMutation.mutateAsync(values)
+        await createMutation.mutateAsync(input)
         toast({ title: 'Brand created' })
       }
       onOpenChange(false)
@@ -72,20 +79,7 @@ export function BrandFormSheet({ open, onOpenChange, brand }: BrandFormSheetProp
             />
             <FormField
               control={form.control}
-              name="slug"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Slug</FormLabel>
-                  <FormControl>
-                    <Input placeholder="auto-generated from name" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="logoUrl"
+              name="logo"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Logo URL</FormLabel>
@@ -106,6 +100,18 @@ export function BrandFormSheet({ open, onOpenChange, brand }: BrandFormSheetProp
                     <Textarea rows={3} {...field} />
                   </FormControl>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="status"
+              render={({ field }) => (
+                <FormItem className="flex-row items-center justify-between">
+                  <FormLabel>Active</FormLabel>
+                  <FormControl>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
                 </FormItem>
               )}
             />

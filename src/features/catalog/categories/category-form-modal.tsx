@@ -1,44 +1,32 @@
-import { useEffect } from 'react'
-import { Modal, Form, Input, InputNumber, Select, Switch } from 'antd'
+import { Modal, Form, Input, InputNumber, Switch } from 'antd'
 import { toast } from '@/components/ui/use-toast'
 import { useCreateCategory, useUpdateCategory, type Category, type CategoryInput } from '@/lib/api/categories'
+import { CategoryParentPicker } from '@/features/catalog/categories/category-parent-picker'
 
 export interface CategoryFormModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   category: Category | null
-  categories: Category[]
+  /** Full hierarchy from useCategoryTree() — drives the cascading parent picker. */
+  categoryTree: Category[]
+  /** Pre-selects a parent for a new category (e.g. "Add subcategory" from a tree node). Ignored when editing. */
+  defaultParentId?: string | null
 }
 
 interface FormValues {
   name: string
   description?: string
   image?: string
-  parentId: string
+  parentId: string | null
   status: boolean
   sortOrder: number
 }
 
-export function CategoryFormModal({ open, onOpenChange, category, categories }: CategoryFormModalProps) {
+export function CategoryFormModal({ open, onOpenChange, category, categoryTree, defaultParentId }: CategoryFormModalProps) {
   const isEdit = !!category
   const [form] = Form.useForm<FormValues>()
   const createMutation = useCreateCategory()
   const updateMutation = useUpdateCategory()
-
-  // Re-fill the form each time the modal opens, from the category being edited (or blank for create).
-  useEffect(() => {
-    if (!open) return
-    form.setFieldsValue({
-      name: category?.name ?? '',
-      description: category?.description ?? '',
-      image: category?.image ?? '',
-      parentId: category?.parentId ?? 'none',
-      status: category?.status ?? true,
-      sortOrder: category?.sortOrder ?? 0,
-    })
-  }, [open, category, form])
-
-  const availableParents = categories.filter((c) => c.id !== category?.id)
 
   const handleSubmit = async (values: FormValues) => {
     const input: CategoryInput = {
@@ -50,7 +38,7 @@ export function CategoryFormModal({ open, onOpenChange, category, categories }: 
     }
     // Only send parentId when a real parent is picked — the backend rejects `null`
     // for top-level categories, it wants the key left out entirely.
-    if (values.parentId !== 'none') {
+    if (values.parentId) {
       input.parentId = values.parentId
     }
 
@@ -78,17 +66,32 @@ export function CategoryFormModal({ open, onOpenChange, category, categories }: 
       confirmLoading={createMutation.isPending || updateMutation.isPending}
       destroyOnHidden
     >
-      <Form form={form} layout="vertical" onFinish={handleSubmit}>
+      {/*
+        Keyed by the edit session so the form (including the parent picker's local chain state)
+        starts fresh each time a different category — or none — is opened. `destroyOnHidden`
+        already unmounts this while the modal is closed; the key additionally forces a remount
+        when switching straight from editing one category to another (or to "New category")
+        without the modal closing in between.
+      */}
+      <Form
+        key={category?.id ?? defaultParentId ?? 'new'}
+        form={form}
+        layout="vertical"
+        onFinish={handleSubmit}
+        initialValues={{
+          name: category?.name ?? '',
+          description: category?.description ?? '',
+          image: category?.image ?? '',
+          parentId: category?.parentId ?? defaultParentId ?? null,
+          status: category?.status ?? true,
+          sortOrder: category?.sortOrder ?? 0,
+        }}
+      >
         <Form.Item name="name" label="Name" rules={[{ required: true, message: 'Name is required' }]}>
           <Input />
         </Form.Item>
         <Form.Item name="parentId" label="Parent category">
-          <Select
-            options={[
-              { value: 'none', label: 'No parent (top-level)' },
-              ...availableParents.map((c) => ({ value: c.id, label: c.name })),
-            ]}
-          />
+          <CategoryParentPicker tree={categoryTree} excludeId={category?.id} />
         </Form.Item>
         <Form.Item name="description" label="Description">
           <Input.TextArea rows={3} />

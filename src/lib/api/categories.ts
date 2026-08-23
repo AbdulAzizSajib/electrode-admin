@@ -87,6 +87,12 @@ async function getCategory(id: string): Promise<Category> {
   return res.data
 }
 
+/** Full hierarchy (any status, unlimited depth) with `children` nested at every level. */
+async function getCategoryTree(): Promise<Category[]> {
+  const res = await request<Category[]>('/categories/admin/tree')
+  return res.data
+}
+
 async function createCategory(input: CategoryInput): Promise<Category> {
   const res = await request<Category>('/categories', { method: 'POST', body: JSON.stringify(input) })
   return res.data
@@ -111,6 +117,11 @@ export function useCategory(id: string | undefined) {
     queryFn: () => getCategory(id!),
     enabled: !!id,
   })
+}
+
+/** Full category hierarchy, nested via `children` — use for tree views/pickers, not the flat table. */
+export function useCategoryTree() {
+  return useQuery({ queryKey: queryKeys.categories.tree, queryFn: getCategoryTree })
 }
 
 export function useCreateCategory() {

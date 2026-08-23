@@ -3,13 +3,12 @@ import { ApiError, delay, generateId, matchesSearch, paginate, type ListParams, 
 import { queryKeys } from '@/lib/api/query-keys'
 import { recordAuditEntry } from '@/lib/api/audit-logs'
 import { formatSlug } from '@/lib/utils/format'
-import { _getAllBrands } from '@/lib/api/brands'
 
 /**
- * Local, product-mock-only category references — `categories.ts` now talks to the
- * real category API and no longer exposes a synchronous in-memory list, so this
- * mock module (still fully mock, unrelated to that change) seeds its own fake
- * products against this fixed id/name list instead of depending on it.
+ * Local, product-mock-only category/brand references — both `categories.ts` and `brands.ts` now
+ * talk to their real APIs and no longer expose a synchronous in-memory list, so this mock module
+ * (still fully mock, unrelated to those changes) seeds its own fake products against these fixed
+ * id/name lists instead of depending on either.
  */
 const SEED_CATEGORIES = [
   { id: 'cat_seed_electronics', name: 'Electronics' },
@@ -22,6 +21,14 @@ const SEED_CATEGORIES = [
   { id: 'cat_seed_cookware', name: 'Cookware' },
   { id: 'cat_seed_mens_clothing', name: "Men's Clothing" },
   { id: 'cat_seed_womens_clothing', name: "Women's Clothing" },
+]
+
+const SEED_BRANDS = [
+  { id: 'brand_seed_aurora', name: 'Aurora' },
+  { id: 'brand_seed_northline', name: 'Northline' },
+  { id: 'brand_seed_verdant', name: 'Verdant' },
+  { id: 'brand_seed_cadence', name: 'Cadence' },
+  { id: 'brand_seed_formal_wear_co', name: 'Formal Wear Co.' },
 ]
 
 export type StockStatus = 'in_stock' | 'low_stock' | 'out_of_stock'
@@ -71,11 +78,11 @@ function stockStatus(p: Pick<Product, 'stockQuantity' | 'lowStockThreshold'>): S
   return 'in_stock'
 }
 
-const brandNames = () => Object.fromEntries(_getAllBrands().map((b) => [b.id, b.name]))
+const brandNames = () => Object.fromEntries(SEED_BRANDS.map((b) => [b.id, b.name]))
 const categoryNames = () => Object.fromEntries(SEED_CATEGORIES.map((c) => [c.id, c.name]))
 
 function seedProducts(): Product[] {
-  const brands = _getAllBrands()
+  const brands = SEED_BRANDS
   const categories = SEED_CATEGORIES
   const image = (seed: string) => `https://picsum.photos/seed/${seed}/200/200`
 

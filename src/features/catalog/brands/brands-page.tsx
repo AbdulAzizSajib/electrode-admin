@@ -4,6 +4,7 @@ import { MoreHorizontal, Pencil, Plus, Trash2, Tag } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
 import { DataTable } from '@/components/ui/data-table'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -30,7 +31,7 @@ export default function BrandsPage() {
       cell: ({ row }) => (
         <div className="flex items-center gap-2">
           <Avatar className="size-7">
-            <AvatarImage src={row.original.logoUrl} alt="" />
+            <AvatarImage src={row.original.logo ?? undefined} alt="" />
             <AvatarFallback>{initials(row.original.name)}</AvatarFallback>
           </Avatar>
           <span className="font-medium text-foreground">{row.original.name}</span>
@@ -39,6 +40,11 @@ export default function BrandsPage() {
     },
     { accessorKey: 'slug', header: 'Slug', cell: ({ row }) => <span className="text-muted-foreground">{row.original.slug}</span> },
     { accessorKey: 'description', header: 'Description', cell: ({ row }) => <span className="line-clamp-1 text-muted-foreground">{row.original.description}</span> },
+    {
+      id: 'status',
+      header: 'Status',
+      cell: ({ row }) => <Badge variant={row.original.status ? 'success' : 'secondary'}>{row.original.status ? 'Active' : 'Inactive'}</Badge>,
+    },
     { accessorKey: 'createdAt', header: 'Created', cell: ({ row }) => formatDate(row.original.createdAt) },
     {
       id: 'actions',

@@ -1,6 +1,11 @@
 /** Central query-key factory so every resource's cache keys stay consistent and typo-free. */
 export const queryKeys = {
-  categories: { all: ['categories'] as const, list: (p?: object) => ['categories', 'list', p] as const, detail: (id: string) => ['categories', 'detail', id] as const },
+  categories: {
+    all: ['categories'] as const,
+    list: (p?: object) => ['categories', 'list', p] as const,
+    detail: (id: string) => ['categories', 'detail', id] as const,
+    tree: ['categories', 'tree'] as const,
+  },
   brands: { all: ['brands'] as const, list: (p?: object) => ['brands', 'list', p] as const, detail: (id: string) => ['brands', 'detail', id] as const },
   products: { all: ['products'] as const, list: (p?: object) => ['products', 'list', p] as const, detail: (id: string) => ['products', 'detail', id] as const },
 
