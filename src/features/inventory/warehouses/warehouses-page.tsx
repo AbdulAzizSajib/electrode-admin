@@ -16,12 +16,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
 import { useWarehouses, useCreateWarehouse, useUpdateWarehouse, useDeleteWarehouse, type Warehouse } from '@/lib/api/warehouses'
-import { useStock } from '@/lib/api/stock'
 
 const schema = z.object({
   name: z.string().min(1, 'Name is required'),
   code: z.string().min(1, 'Code is required'),
-  address: z.string().min(1, 'Address is required'),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  country: z.string().optional(),
   isActive: z.boolean(),
 })
 type Values = z.infer<typeof schema>
@@ -34,16 +35,21 @@ export default function WarehousesPage() {
   const [pageSize, setPageSize] = React.useState(10)
 
   const { data, isLoading, isError, refetch } = useWarehouses({ search })
-  const { data: stockData } = useStock({ limit: 500 })
   const createMutation = useCreateWarehouse()
   const updateMutation = useUpdateWarehouse()
-  const isReferenced = (id: string) => (stockData?.data ?? []).some((s) => s.warehouseId === id)
-  const deleteMutation = useDeleteWarehouse(isReferenced)
+  const deleteMutation = useDeleteWarehouse()
   const confirmDialog = useConfirmDialog()
 
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    values: { name: editing?.name ?? '', code: editing?.code ?? '', address: editing?.address ?? '', isActive: editing?.isActive ?? true },
+    values: {
+      name: editing?.name ?? '',
+      code: editing?.code ?? '',
+      address: editing?.address ?? '',
+      city: editing?.city ?? '',
+      country: editing?.country ?? '',
+      isActive: editing?.isActive ?? true,
+    },
   })
 
   const onSubmit = async (values: Values) => {
@@ -166,6 +172,14 @@ export default function WarehousesPage() {
               <FormField control={form.control} name="address" render={({ field }) => (
                 <FormItem><FormLabel>Address</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
               )} />
+              <div className="grid grid-cols-2 gap-3.5">
+                <FormField control={form.control} name="city" render={({ field }) => (
+                  <FormItem><FormLabel>City</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={form.control} name="country" render={({ field }) => (
+                  <FormItem><FormLabel>Country</FormLabel><FormControl><Input placeholder="Bangladesh" {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+              </div>
               <FormField control={form.control} name="isActive" render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between gap-2">
                   <FormLabel className="text-sm font-normal text-foreground">Active</FormLabel>

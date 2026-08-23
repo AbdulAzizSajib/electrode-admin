@@ -1,86 +1,96 @@
+/**
+ * Real backend review calls — follows the same envelope/error pattern as `categories.ts`/`products.ts`.
+ * No content-edit or delete here: neither endpoint exists on the backend (see
+ * integrate-post-purchase-api design.md Decision 3) — status moderation and admin replies are the
+ * only admin-side mutations available.
+ */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, delay, generateId, paginate, type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { ApiError, BASE_URL, type ListParams, type PaginatedResponse, type PaginationMeta } from '@/lib/api/client'
 import { queryKeys } from '@/lib/api/query-keys'
-import { recordAuditEntry } from '@/lib/api/audit-logs'
-import { _getAllProducts } from '@/lib/api/products'
-import { _getAllUsers } from '@/lib/api/users'
 
-export type ReviewStatus = 'pending' | 'approved' | 'rejected'
+export type ReviewStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'HIDDEN'
+
+interface ReviewCustomerRef {
+  id: string
+  firstName: string
+  lastName: string | null
+  avatar: string | null
+}
+
+interface ReviewProductRef {
+  id: string
+  name: string
+  slug: string
+}
 
 export interface Review {
   id: string
   productId: string
+  /** Only present on admin-list responses. */
+  product?: ReviewProductRef
   customerId: string
+  customer: ReviewCustomerRef
   rating: number
-  comment: string
+  title: string | null
+  comment: string | null
   status: ReviewStatus
+  adminReply: string | null
   createdAt: string
+  updatedAt: string
 }
-
-function seedReviews(): Review[] {
-  const products = _getAllProducts()
-  const customers = _getAllUsers().filter((u) => u.role === 'CUSTOMER')
-  const comments = [
-    'Exactly as described, fast shipping!',
-    'Good value for the price, would buy again.',
-    'Not as durable as I hoped, broke after a month.',
-    'Excellent build quality and great customer support.',
-    'Arrived late but the product itself is great.',
-    'Does not match the photos, disappointed.',
-  ]
-  return Array.from({ length: 14 }).map((_, i) => ({
-    id: generateId('rev'),
-    productId: products[i % products.length].id,
-    customerId: customers[i % customers.length].id,
-    rating: [5, 4, 3, 5, 2, 4, 5][i % 7],
-    comment: comments[i % comments.length],
-    status: (['approved', 'approved', 'pending', 'approved', 'rejected', 'pending'] as ReviewStatus[])[i % 6],
-    createdAt: new Date(Date.now() - (i + 1) * 86_400_000 * 2).toISOString(),
-  }))
-}
-
-let reviews: Review[] = seedReviews()
 
 export interface ReviewListParams extends ListParams {
   status?: ReviewStatus
+  productId?: string
   rating?: number
 }
 
-async function listReviews(params: ReviewListParams = {}) {
-  const products = _getAllProducts()
-  const customers = _getAllUsers()
-  let filtered = [...reviews].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  if (params.status) filtered = filtered.filter((r) => r.status === params.status)
-  if (params.rating) filtered = filtered.filter((r) => r.rating === params.rating)
-  const rows = filtered.map((r) => ({
-    ...r,
-    productName: products.find((p) => p.id === r.productId)?.name ?? 'Unknown product',
-    customerName: customers.find((c) => c.id === r.customerId)?.name ?? 'Unknown customer',
-  }))
-  return delay(paginate(rows, params) as PaginatedResponse<(typeof rows)[number]>)
+interface ApiEnvelope<T> {
+  success: boolean
+  message: string
+  data: T
+  meta?: PaginationMeta
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
+
+  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
+  if (!res.ok || !json?.success) {
+    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
+  }
+  return json
+}
+
+async function listReviews(params: ReviewListParams = {}): Promise<PaginatedResponse<Review>> {
+  const limit = params.limit ?? 100
+
+  const query = new URLSearchParams()
+  if (params.page) query.set('page', String(params.page))
+  query.set('limit', String(limit))
+  if (params.status) query.set('status', params.status)
+  if (params.productId) query.set('productId', params.productId)
+  if (params.rating) query.set('rating', String(params.rating))
+
+  const res = await request<Review[]>(`/reviews/admin?${query}`)
+  return {
+    data: res.data,
+    meta: res.meta ?? { page: params.page ?? 1, limit, total: res.data.length, totalPages: 1 },
+  }
 }
 
 async function updateReviewStatus(id: string, status: ReviewStatus): Promise<Review> {
-  const index = reviews.findIndex((r) => r.id === id)
-  if (index === -1) throw new ApiError('Review not found', 404)
-  const updated = { ...reviews[index], status }
-  reviews = reviews.map((r) => (r.id === id ? updated : r))
-  recordAuditEntry({ action: 'review.status_updated', resourceType: 'review', resourceId: id, resourceLabel: `→ ${status}` })
-  return delay(updated)
+  const res = await request<Review>(`/reviews/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
+  return res.data
 }
 
-async function updateReviewContent(id: string, comment: string): Promise<Review> {
-  const index = reviews.findIndex((r) => r.id === id)
-  if (index === -1) throw new ApiError('Review not found', 404)
-  const updated = { ...reviews[index], comment }
-  reviews = reviews.map((r) => (r.id === id ? updated : r))
-  return delay(updated)
-}
-
-async function deleteReview(id: string): Promise<void> {
-  reviews = reviews.filter((r) => r.id !== id)
-  recordAuditEntry({ action: 'review.deleted', resourceType: 'review', resourceId: id })
-  return delay(undefined)
+async function replyToReview(id: string, adminReply: string): Promise<Review> {
+  const res = await request<Review>(`/reviews/${id}`, { method: 'PATCH', body: JSON.stringify({ adminReply }) })
+  return res.data
 }
 
 export function useReviews(params: ReviewListParams = {}) {
@@ -95,15 +105,10 @@ export function useUpdateReviewStatus() {
   })
 }
 
-export function useUpdateReviewContent() {
+export function useReplyToReview() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, comment }: { id: string; comment: string }) => updateReviewContent(id, comment),
+    mutationFn: ({ id, adminReply }: { id: string; adminReply: string }) => replyToReview(id, adminReply),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.reviews.all }),
   })
-}
-
-export function useDeleteReview() {
-  const client = useQueryClient()
-  return useMutation({ mutationFn: deleteReview, onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.reviews.all }) })
 }

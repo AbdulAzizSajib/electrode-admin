@@ -1,109 +1,94 @@
+/** Real backend stock calls — follows the same envelope/error pattern as `categories.ts`/`products.ts`. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, delay, generateId, paginate, type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { ApiError, BASE_URL, type ListParams, type PaginatedResponse, type PaginationMeta } from '@/lib/api/client'
 import { queryKeys } from '@/lib/api/query-keys'
-import { recordAuditEntry } from '@/lib/api/audit-logs'
-import { _recordStockMovement } from '@/lib/api/stock-movements'
-import { _getAllProducts } from '@/lib/api/products'
-import { _getAllWarehouses } from '@/lib/api/warehouses'
+
+interface StockEntityRef {
+  id: string
+  name: string
+  sku: string
+}
+
+interface StockWarehouseRef {
+  id: string
+  name: string
+  code: string
+}
 
 export interface StockRecord {
   id: string
   productId: string
+  variantId: string | null
   warehouseId: string
-  quantityOnHand: number
-  reserved: number
+  quantity: number
+  reservedQuantity: number
+  product: StockEntityRef
+  variant: StockEntityRef | null
+  warehouse: StockWarehouseRef
   createdAt: string
+  updatedAt: string
 }
 
 export interface StockRow extends StockRecord {
-  productName: string
-  productSku: string
-  warehouseName: string
   available: number
-}
-
-function seedStock(): StockRecord[] {
-  const products = _getAllProducts()
-  const warehouses = _getAllWarehouses().filter((w) => w.isActive)
-  const records: StockRecord[] = []
-  products.forEach((product, i) => {
-    warehouses.forEach((warehouse, wi) => {
-      const base = Math.round(product.stockQuantity * (wi === 0 ? 0.65 : 0.35))
-      records.push({
-        id: generateId('stk'),
-        productId: product.id,
-        warehouseId: warehouse.id,
-        quantityOnHand: Math.max(0, base + ((i + wi) % 3)),
-        reserved: (i + wi) % 4,
-        createdAt: '2025-09-15T09:00:00Z',
-      })
-    })
-  })
-  return records
-}
-
-let stock: StockRecord[] = seedStock()
-
-export function _getStockForProduct(productId: string) {
-  return stock.filter((s) => s.productId === productId)
-}
-
-export function _restockWarehouse(productId: string, warehouseId: string, quantity: number) {
-  const index = stock.findIndex((s) => s.productId === productId && s.warehouseId === warehouseId)
-  if (index === -1) {
-    stock = [...stock, { id: generateId('stk'), productId, warehouseId, quantityOnHand: quantity, reserved: 0, createdAt: new Date().toISOString() }]
-    return quantity
-  }
-  const updated = { ...stock[index], quantityOnHand: stock[index].quantityOnHand + quantity }
-  stock = stock.map((s) => (s.id === updated.id ? updated : s))
-  return updated.quantityOnHand
 }
 
 export interface StockListParams extends ListParams {
   warehouseId?: string
   productId?: string
+  variantId?: string
+}
+
+interface ApiEnvelope<T> {
+  success: boolean
+  message: string
+  data: T
+  meta?: PaginationMeta
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
+
+  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
+  if (!res.ok || !json?.success) {
+    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
+  }
+  return json
 }
 
 function toRow(record: StockRecord): StockRow {
-  const product = _getAllProducts().find((p) => p.id === record.productId)
-  const warehouse = _getAllWarehouses().find((w) => w.id === record.warehouseId)
-  return {
-    ...record,
-    productName: product?.name ?? 'Unknown product',
-    productSku: product?.sku ?? '—',
-    warehouseName: warehouse?.name ?? 'Unknown warehouse',
-    available: record.quantityOnHand - record.reserved,
-  }
+  return { ...record, available: record.quantity - record.reservedQuantity }
 }
 
 async function listStock(params: StockListParams = {}): Promise<PaginatedResponse<StockRow>> {
-  let filtered = stock
-  if (params.warehouseId) filtered = filtered.filter((s) => s.warehouseId === params.warehouseId)
-  if (params.productId) filtered = filtered.filter((s) => s.productId === params.productId)
-  const rows = filtered.map(toRow).filter((r) => !params.search || r.productName.toLowerCase().includes(params.search.toLowerCase()) || r.productSku.toLowerCase().includes(params.search.toLowerCase()))
-  return delay(paginate(rows, params))
+  const limit = params.limit ?? 100
+
+  // No `searchTerm` — GET /stock has no free-text search, only these filters (see design.md).
+  const query = new URLSearchParams()
+  if (params.page) query.set('page', String(params.page))
+  query.set('limit', String(limit))
+  if (params.warehouseId) query.set('warehouseId', params.warehouseId)
+  if (params.productId) query.set('productId', params.productId)
+  if (params.variantId) query.set('variantId', params.variantId)
+
+  const res = await request<StockRecord[]>(`/stock?${query}`)
+  const rows = res.data.map(toRow)
+  return {
+    data: rows,
+    meta: res.meta ?? { page: params.page ?? 1, limit, total: rows.length, totalPages: 1 },
+  }
 }
 
-async function adjustStock(id: string, delta: number, reason: string): Promise<StockRow> {
-  const index = stock.findIndex((s) => s.id === id)
-  if (index === -1) throw new ApiError('Stock record not found', 404)
-  if (!reason.trim()) throw new ApiError('A reason is required to adjust stock.', 422)
-  const newQuantity = Math.max(0, stock[index].quantityOnHand + delta)
-  const updated = { ...stock[index], quantityOnHand: newQuantity }
-  stock = stock.map((s) => (s.id === id ? updated : s))
-  const row = toRow(updated)
-  _recordStockMovement({
-    productId: row.productId,
-    productName: row.productName,
-    warehouseId: row.warehouseId,
-    warehouseName: row.warehouseName,
-    type: 'adjustment',
-    quantityDelta: delta,
-    balanceAfter: newQuantity,
-    reason,
+async function adjustStock(id: string, quantityDelta: number, note: string): Promise<StockRow> {
+  const res = await request<StockRecord>(`/stock/${id}/adjust`, {
+    method: 'PATCH',
+    body: JSON.stringify({ quantityDelta, note }),
   })
-  recordAuditEntry({ action: 'stock.adjusted', resourceType: 'stock', resourceId: id, resourceLabel: `${row.productName} @ ${row.warehouseName} (${delta > 0 ? '+' : ''}${delta})` })
-  return delay(row)
+  return toRow(res.data)
 }
 
 export function useStock(params: StockListParams = {}) {
@@ -113,7 +98,7 @@ export function useStock(params: StockListParams = {}) {
 export function useAdjustStock() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, delta, reason }: { id: string; delta: number; reason: string }) => adjustStock(id, delta, reason),
+    mutationFn: ({ id, quantityDelta, note }: { id: string; quantityDelta: number; note: string }) => adjustStock(id, quantityDelta, note),
     onSuccess: () => {
       client.invalidateQueries({ queryKey: queryKeys.stock.all })
       client.invalidateQueries({ queryKey: queryKeys.stockMovements.all })

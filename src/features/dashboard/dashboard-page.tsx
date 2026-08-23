@@ -12,12 +12,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useDashboardSummary, type DashboardRange } from '@/lib/api/dashboard'
 import { formatCurrency, formatDate, formatCompactCurrency } from '@/lib/utils/format'
 
-const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'success' | 'warning' | 'destructive'> = {
-  pending: 'secondary',
-  processing: 'warning',
-  shipped: 'default',
-  delivered: 'success',
-  cancelled: 'destructive',
+const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'info' | 'success' | 'warning' | 'destructive'> = {
+  PENDING: 'secondary',
+  CONFIRMED: 'info',
+  PROCESSING: 'warning',
+  SHIPPED: 'default',
+  DELIVERED: 'success',
+  CANCELLED: 'destructive',
+  COMPLETED: 'success',
 }
 
 export default function DashboardPage() {
@@ -35,8 +37,8 @@ export default function DashboardPage() {
           <>
             <StatCard label="Total Revenue" value={formatCurrency(data.kpis.totalRevenue)} trend={data.kpis.revenueTrend} icon={DollarSign} />
             <StatCard label="Total Orders" value={String(data.kpis.totalOrders)} trend={data.kpis.ordersTrend} icon={ShoppingCart} />
-            <StatCard label="Total Customers" value={String(data.kpis.totalCustomers)} trend={data.kpis.customersTrend} icon={Users} />
-            <StatCard label="Low Stock Items" value={String(data.kpis.lowStockCount)} trend={data.kpis.lowStockTrend} icon={AlertTriangle} />
+            <StatCard label="Total Customers" value={String(data.kpis.totalCustomers)} icon={Users} />
+            <StatCard label="Low Stock Items" value={String(data.kpis.lowStockCount)} icon={AlertTriangle} />
           </>
         )}
       </div>

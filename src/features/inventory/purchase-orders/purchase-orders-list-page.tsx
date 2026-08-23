@@ -7,22 +7,22 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { DataTable } from '@/components/ui/data-table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { usePurchaseOrders, poTotal, type PurchaseOrder, type PurchaseOrderStatus } from '@/lib/api/purchase-orders'
-import { useSuppliers } from '@/lib/api/suppliers'
-import { useWarehouses } from '@/lib/api/warehouses'
+import { usePurchaseOrders, type PurchaseOrder, type PurchaseOrderStatus } from '@/lib/api/purchase-orders'
 import { formatCurrency, formatDate } from '@/lib/utils/format'
 
 const STATUS_LABEL: Record<PurchaseOrderStatus, string> = {
-  pending: 'Pending',
-  partially_received: 'Partially received',
-  received: 'Received',
-  cancelled: 'Cancelled',
+  DRAFT: 'Draft',
+  ORDERED: 'Ordered',
+  PARTIALLY_RECEIVED: 'Partially received',
+  RECEIVED: 'Received',
+  CANCELLED: 'Cancelled',
 }
-const STATUS_VARIANT: Record<PurchaseOrderStatus, 'secondary' | 'warning' | 'success' | 'destructive'> = {
-  pending: 'secondary',
-  partially_received: 'warning',
-  received: 'success',
-  cancelled: 'destructive',
+const STATUS_VARIANT: Record<PurchaseOrderStatus, 'secondary' | 'info' | 'warning' | 'success' | 'destructive'> = {
+  DRAFT: 'secondary',
+  ORDERED: 'info',
+  PARTIALLY_RECEIVED: 'warning',
+  RECEIVED: 'success',
+  CANCELLED: 'destructive',
 }
 
 export default function PurchaseOrdersListPage() {
@@ -38,18 +38,12 @@ export default function PurchaseOrdersListPage() {
     limit: pageSize,
     status: status === 'all' ? undefined : (status as PurchaseOrderStatus),
   })
-  const { data: suppliersData } = useSuppliers()
-  const { data: warehousesData } = useWarehouses()
-
-  const supplierName = (id: string) => suppliersData?.data.find((s) => s.id === id)?.name ?? '—'
-  const warehouseName = (id: string) => warehousesData?.data.find((w) => w.id === id)?.name ?? '—'
 
   const columns: ColumnDef<PurchaseOrder>[] = [
-    { accessorKey: 'poNumber', header: 'PO Number', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.poNumber}</span> },
-    { id: 'supplier', header: 'Supplier', cell: ({ row }) => supplierName(row.original.supplierId) },
-    { id: 'warehouse', header: 'Warehouse', cell: ({ row }) => warehouseName(row.original.warehouseId) },
+    { accessorKey: 'purchaseNumber', header: 'PO Number', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.purchaseNumber}</span> },
+    { id: 'supplier', header: 'Supplier', cell: ({ row }) => row.original.supplier.name },
     { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={STATUS_VARIANT[row.original.status]}>{STATUS_LABEL[row.original.status]}</Badge> },
-    { id: 'total', header: 'Total', cell: ({ row }) => formatCurrency(poTotal(row.original)) },
+    { id: 'total', header: 'Total', cell: ({ row }) => formatCurrency(Number(row.original.totalAmount)) },
     { accessorKey: 'createdAt', header: 'Created', cell: ({ row }) => formatDate(row.original.createdAt) },
   ]
 

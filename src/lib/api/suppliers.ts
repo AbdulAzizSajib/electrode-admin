@@ -1,64 +1,91 @@
+/** Real backend supplier calls — follows the same envelope/error pattern as `categories.ts`/`products.ts`. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, delay, generateId, matchesSearch, paginate, type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { ApiError, BASE_URL, type ListParams, type PaginatedResponse, type PaginationMeta } from '@/lib/api/client'
 import { queryKeys } from '@/lib/api/query-keys'
-import { recordAuditEntry } from '@/lib/api/audit-logs'
 
 export interface Supplier {
   id: string
   name: string
-  contactEmail: string
-  phone: string
-  address: string
+  companyName: string | null
+  email: string | null
+  phone: string | null
+  address: string | null
+  city: string | null
+  country: string
+  isActive: boolean
   createdAt: string
+  updatedAt: string
 }
 
 export interface SupplierInput {
   name: string
-  contactEmail: string
-  phone: string
-  address: string
+  companyName?: string
+  email?: string
+  phone?: string
+  address?: string
+  city?: string
+  country?: string
+  isActive?: boolean
 }
 
-let suppliers: Supplier[] = [
-  { id: generateId('sup'), name: 'Pacific Components Ltd.', contactEmail: 'sales@pacificcomponents.com', phone: '+1 213-555-0142', address: '900 Pier Ave, Los Angeles, CA', createdAt: '2025-08-01T09:00:00Z' },
-  { id: generateId('sup'), name: 'Silverline Textiles', contactEmail: 'orders@silverlinetextiles.com', phone: '+1 704-555-0198', address: '221 Mill St, Charlotte, NC', createdAt: '2025-08-04T09:00:00Z' },
-  { id: generateId('sup'), name: 'Home & Hearth Wholesale', contactEmail: 'wholesale@homehearth.com', phone: '+1 312-555-0177', address: '77 Commerce Dr, Chicago, IL', createdAt: '2025-08-10T09:00:00Z' },
-]
-
-export function _getAllSuppliers() {
-  return suppliers
+export interface SupplierListParams extends ListParams {
+  isActive?: boolean
+  country?: string
 }
 
-async function listSuppliers(params: ListParams = {}): Promise<PaginatedResponse<Supplier>> {
-  const filtered = suppliers.filter((s) => matchesSearch([s.name, s.contactEmail], params.search))
-  return delay(paginate(filtered, { ...params, limit: params.limit ?? 100 }))
+interface ApiEnvelope<T> {
+  success: boolean
+  message: string
+  data: T
+  meta?: PaginationMeta
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
+
+  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
+  if (!res.ok || !json?.success) {
+    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
+  }
+  return json
+}
+
+async function listSuppliers(params: SupplierListParams = {}): Promise<PaginatedResponse<Supplier>> {
+  const limit = params.limit ?? 100
+
+  const query = new URLSearchParams()
+  if (params.page) query.set('page', String(params.page))
+  query.set('limit', String(limit))
+  if (params.search) query.set('searchTerm', params.search)
+  if (params.isActive !== undefined) query.set('isActive', String(params.isActive))
+  if (params.country) query.set('country', params.country)
+
+  const res = await request<Supplier[]>(`/suppliers?${query}`)
+  return {
+    data: res.data,
+    meta: res.meta ?? { page: params.page ?? 1, limit, total: res.data.length, totalPages: 1 },
+  }
 }
 
 async function createSupplier(input: SupplierInput): Promise<Supplier> {
-  const supplier: Supplier = { id: generateId('sup'), createdAt: new Date().toISOString(), ...input }
-  suppliers = [supplier, ...suppliers]
-  recordAuditEntry({ action: 'supplier.created', resourceType: 'supplier', resourceId: supplier.id, resourceLabel: supplier.name })
-  return delay(supplier)
+  const res = await request<Supplier>('/suppliers', { method: 'POST', body: JSON.stringify(input) })
+  return res.data
 }
 
 async function updateSupplier(id: string, input: SupplierInput): Promise<Supplier> {
-  const index = suppliers.findIndex((s) => s.id === id)
-  if (index === -1) throw new ApiError('Supplier not found', 404)
-  const updated = { ...suppliers[index], ...input }
-  suppliers = suppliers.map((s) => (s.id === id ? updated : s))
-  recordAuditEntry({ action: 'supplier.updated', resourceType: 'supplier', resourceId: id, resourceLabel: updated.name })
-  return delay(updated)
+  const res = await request<Supplier>(`/suppliers/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+  return res.data
 }
 
-async function deleteSupplier(id: string, isReferenced: (id: string) => boolean): Promise<void> {
-  if (isReferenced(id)) throw new ApiError('This supplier has purchase orders and cannot be deleted.', 409)
-  const target = suppliers.find((s) => s.id === id)
-  suppliers = suppliers.filter((s) => s.id !== id)
-  recordAuditEntry({ action: 'supplier.deleted', resourceType: 'supplier', resourceId: id, resourceLabel: target?.name })
-  return delay(undefined)
+async function deleteSupplier(id: string): Promise<void> {
+  await request<Supplier>(`/suppliers/${id}`, { method: 'DELETE' })
 }
 
-export function useSuppliers(params: ListParams = {}) {
+export function useSuppliers(params: SupplierListParams = {}) {
   return useQuery({ queryKey: queryKeys.suppliers.list(params), queryFn: () => listSuppliers(params) })
 }
 
@@ -75,10 +102,7 @@ export function useUpdateSupplier() {
   })
 }
 
-export function useDeleteSupplier(isReferenced: (id: string) => boolean) {
+export function useDeleteSupplier() {
   const client = useQueryClient()
-  return useMutation({
-    mutationFn: (id: string) => deleteSupplier(id, isReferenced),
-    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.suppliers.all }),
-  })
+  return useMutation({ mutationFn: deleteSupplier, onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.suppliers.all }) })
 }

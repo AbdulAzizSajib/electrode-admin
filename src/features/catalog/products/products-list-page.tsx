@@ -10,13 +10,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
-import { useProducts, useDeleteProduct, type ProductListRow } from '@/lib/api/products'
+import { useProducts, useDeleteProduct, type ProductListRow, type ProductStatus } from '@/lib/api/products'
 import { useCategories } from '@/lib/api/categories'
 import { useBrands } from '@/lib/api/brands'
 import { formatCurrency } from '@/lib/utils/format'
 
 const STOCK_VARIANT = { in_stock: 'success', low_stock: 'warning', out_of_stock: 'destructive' } as const
 const STOCK_LABEL = { in_stock: 'In stock', low_stock: 'Low stock', out_of_stock: 'Out of stock' } as const
+
+const STATUS_VARIANT = { DRAFT: 'secondary', ACTIVE: 'success', ARCHIVED: 'outline' } as const
+const STATUS_LABEL = { DRAFT: 'Draft', ACTIVE: 'Active', ARCHIVED: 'Archived' } as const
 
 export default function ProductsListPage() {
   const navigate = useNavigate()
@@ -33,7 +36,7 @@ export default function ProductsListPage() {
     limit: pageSize,
     categoryId: categoryId === 'all' ? undefined : categoryId,
     brandId: brandId === 'all' ? undefined : brandId,
-    status: status === 'all' ? undefined : (status as 'published' | 'draft'),
+    status: status === 'all' ? undefined : (status as ProductStatus),
   })
   const { data: categoriesData } = useCategories()
   const { data: brandsData } = useBrands()
@@ -48,21 +51,25 @@ export default function ProductsListPage() {
       header: 'Product',
       cell: ({ row }) => (
         <div className="flex items-center gap-2.5">
-          <img src={row.original.images[0]} alt="" className="size-8 shrink-0 rounded-md border border-border object-cover" />
+          <img
+            src={row.original.images[0]?.url}
+            alt=""
+            className="size-8 shrink-0 rounded-md border border-border bg-muted object-cover"
+          />
           <div className="flex flex-col">
             <span className="font-medium text-foreground">{row.original.name}</span>
-            <span className="text-xs text-muted-foreground">{row.original.sku}</span>
+            <span className="text-xs text-muted-foreground">{row.original.sku ?? '—'}</span>
           </div>
         </div>
       ),
     },
-    { id: 'brand', header: 'Brand', cell: ({ row }) => row.original.brandName },
+    { id: 'brand', header: 'Brand', cell: ({ row }) => row.original.brand?.name ?? '—' },
     {
       id: 'category',
       header: 'Category',
-      cell: ({ row }) => row.original.categoryNames[0] ?? '—',
+      cell: ({ row }) => row.original.category?.name ?? '—',
     },
-    { accessorKey: 'price', header: 'Price', cell: ({ row }) => formatCurrency(row.original.price) },
+    { accessorKey: 'price', header: 'Price', cell: ({ row }) => formatCurrency(Number(row.original.price)) },
     {
       id: 'stock',
       header: 'Stock',
@@ -71,7 +78,7 @@ export default function ProductsListPage() {
     {
       id: 'status',
       header: 'Status',
-      cell: ({ row }) => <Badge variant={row.original.isPublished ? 'success' : 'secondary'}>{row.original.isPublished ? 'Published' : 'Draft'}</Badge>,
+      cell: ({ row }) => <Badge variant={STATUS_VARIANT[row.original.status]}>{STATUS_LABEL[row.original.status]}</Badge>,
     },
     {
       id: 'actions',
@@ -189,8 +196,9 @@ export default function ProductsListPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="published">Published</SelectItem>
-                <SelectItem value="draft">Draft</SelectItem>
+                <SelectItem value="DRAFT">Draft</SelectItem>
+                <SelectItem value="ACTIVE">Active</SelectItem>
+                <SelectItem value="ARCHIVED">Archived</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -12,19 +12,25 @@ import { useCustomer } from '@/lib/api/customers'
 import { useOrders } from '@/lib/api/orders'
 import { formatCurrency, formatDate, initials } from '@/lib/utils/format'
 
-const STATUS_VARIANT: Record<string, 'secondary' | 'warning' | 'default' | 'success' | 'destructive'> = {
-  pending: 'secondary',
-  processing: 'warning',
-  shipped: 'default',
-  delivered: 'success',
-  cancelled: 'destructive',
+const STATUS_VARIANT: Record<string, 'secondary' | 'info' | 'warning' | 'default' | 'success' | 'destructive'> = {
+  PENDING: 'secondary',
+  CONFIRMED: 'info',
+  PROCESSING: 'warning',
+  SHIPPED: 'default',
+  DELIVERED: 'success',
+  CANCELLED: 'destructive',
+  COMPLETED: 'success',
 }
 
 export default function CustomerDetailPage() {
   const { customerId } = useParams()
   const navigate = useNavigate()
   const { data: customer, isLoading } = useCustomer(customerId)
-  const { data: ordersData } = useOrders({ customerId, limit: 50 })
+  // The real GET /orders has no customerId filter (admin-facing list endpoints only support
+  // status/searchTerm) — fetch a page and filter client-side. Not exhaustive for a customer with
+  // more orders than this page size; good enough until customers.ts's own migration.
+  const { data: ordersData } = useOrders({ limit: 100 })
+  const customerOrders = ordersData?.data.filter((o) => o.customerId === customerId) ?? []
 
   useBreadcrumbLabel(customer?.name)
 
@@ -52,10 +58,10 @@ export default function CustomerDetailPage() {
           <Card>
             <CardHeader><CardTitle>Order history</CardTitle></CardHeader>
             <CardContent className="flex flex-col gap-0.5">
-              {!ordersData || ordersData.data.length === 0 ? (
+              {customerOrders.length === 0 ? (
                 <p className="py-4 text-center text-sm text-muted-foreground">No orders yet.</p>
               ) : (
-                ordersData.data.map((order) => (
+                customerOrders.map((order) => (
                   <Link
                     key={order.id}
                     to={`/sales/orders/${order.id}`}
@@ -66,8 +72,8 @@ export default function CustomerDetailPage() {
                       <span className="text-xs text-muted-foreground">{formatDate(order.createdAt)}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant={STATUS_VARIANT[order.fulfillmentStatus] ?? 'secondary'}>{order.fulfillmentStatus}</Badge>
-                      <span className="w-16 text-right font-medium">{formatCurrency(order.total)}</span>
+                      <Badge variant={STATUS_VARIANT[order.status] ?? 'secondary'}>{order.status}</Badge>
+                      <span className="w-16 text-right font-medium">{formatCurrency(Number(order.totalAmount))}</span>
                     </div>
                   </Link>
                 ))

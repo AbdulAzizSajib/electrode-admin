@@ -21,7 +21,7 @@ export interface CustomerDetail extends CustomerRow {
 
 function toRow(userId: string): CustomerRow {
   const user = _getUserById(userId)!
-  const orders = _getAllOrders().filter((o) => o.customerId === userId && o.fulfillmentStatus !== 'cancelled')
+  const orders = _getAllOrders().filter((o) => o.customerId === userId && o.status !== 'CANCELLED')
   return {
     id: user.id,
     name: user.name,
@@ -29,7 +29,7 @@ function toRow(userId: string): CustomerRow {
     joinedAt: user.createdAt,
     isActive: user.isActive,
     orderCount: orders.length,
-    totalSpent: Math.round(orders.reduce((sum, o) => sum + o.total, 0) * 100) / 100,
+    totalSpent: Math.round(orders.reduce((sum, o) => sum + Number(o.totalAmount), 0) * 100) / 100,
   }
 }
 

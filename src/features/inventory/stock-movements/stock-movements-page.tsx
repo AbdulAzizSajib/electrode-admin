@@ -10,17 +10,27 @@ import { useWarehouses } from '@/lib/api/warehouses'
 import { formatDateTime } from '@/lib/utils/format'
 
 const TYPE_LABEL: Record<StockMovementType, string> = {
-  purchase_receipt: 'Purchase receipt',
-  adjustment: 'Adjustment',
-  return_restock: 'Return restock',
-  sale: 'Sale',
+  PURCHASE: 'Purchase',
+  SALE: 'Sale',
+  RETURN: 'Return',
+  REFUND: 'Refund',
+  ADJUSTMENT: 'Adjustment',
+  DAMAGE: 'Damage',
+  LOSS: 'Loss',
+  TRANSFER_IN: 'Transfer in',
+  TRANSFER_OUT: 'Transfer out',
 }
 
-const TYPE_VARIANT: Record<StockMovementType, 'success' | 'warning' | 'info' | 'secondary'> = {
-  purchase_receipt: 'success',
-  adjustment: 'warning',
-  return_restock: 'info',
-  sale: 'secondary',
+const TYPE_VARIANT: Record<StockMovementType, 'success' | 'warning' | 'info' | 'secondary' | 'destructive'> = {
+  PURCHASE: 'success',
+  SALE: 'secondary',
+  RETURN: 'info',
+  REFUND: 'info',
+  ADJUSTMENT: 'warning',
+  DAMAGE: 'destructive',
+  LOSS: 'destructive',
+  TRANSFER_IN: 'success',
+  TRANSFER_OUT: 'warning',
 }
 
 export default function StockMovementsPage() {
@@ -39,21 +49,20 @@ export default function StockMovementsPage() {
 
   const columns: ColumnDef<StockMovement>[] = [
     { accessorKey: 'createdAt', header: 'Date', cell: ({ row }) => formatDateTime(row.original.createdAt) },
-    { accessorKey: 'productName', header: 'Product' },
-    { accessorKey: 'warehouseName', header: 'Warehouse' },
+    { id: 'product', header: 'Product', cell: ({ row }) => row.original.product.name },
+    { id: 'warehouse', header: 'Warehouse', cell: ({ row }) => row.original.warehouse?.name ?? '—' },
     { id: 'type', header: 'Type', cell: ({ row }) => <Badge variant={TYPE_VARIANT[row.original.type]}>{TYPE_LABEL[row.original.type]}</Badge> },
     {
-      id: 'delta',
+      id: 'quantity',
       header: 'Change',
       cell: ({ row }) => (
-        <span className={row.original.quantityDelta >= 0 ? 'text-success font-medium' : 'text-destructive font-medium'}>
-          {row.original.quantityDelta >= 0 ? '+' : ''}
-          {row.original.quantityDelta}
+        <span className={row.original.quantity >= 0 ? 'text-success font-medium' : 'text-destructive font-medium'}>
+          {row.original.quantity >= 0 ? '+' : ''}
+          {row.original.quantity}
         </span>
       ),
     },
-    { accessorKey: 'balanceAfter', header: 'Balance after' },
-    { accessorKey: 'reason', header: 'Reason', cell: ({ row }) => <span className="text-muted-foreground">{row.original.reason ?? '—'}</span> },
+    { accessorKey: 'note', header: 'Note', cell: ({ row }) => <span className="text-muted-foreground">{row.original.note ?? '—'}</span> },
   ]
 
   return (

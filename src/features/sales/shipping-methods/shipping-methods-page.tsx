@@ -22,13 +22,13 @@ import {
   useUpdateShippingMethod,
   type ShippingMethod,
 } from '@/lib/api/shipping-methods'
-import { _isShippingMethodReferenced } from '@/lib/api/orders'
 import { formatCurrency } from '@/lib/utils/format'
 
 const schema = z.object({
   name: z.string().min(1, 'Name is required'),
-  description: z.string().min(1, 'Description is required'),
+  description: z.string().optional(),
   price: z.coerce.number().min(0, 'Price cannot be negative'),
+  estimatedDays: z.coerce.number().int().positive().optional(),
   isActive: z.boolean(),
 })
 type Values = z.input<typeof schema>
@@ -43,12 +43,18 @@ export default function ShippingMethodsPage() {
   const { data, isLoading, isError, refetch } = useShippingMethods()
   const createMutation = useCreateShippingMethod()
   const updateMutation = useUpdateShippingMethod()
-  const deleteMutation = useDeleteShippingMethod(_isShippingMethodReferenced)
+  const deleteMutation = useDeleteShippingMethod()
   const confirmDialog = useConfirmDialog()
 
   const form = useForm<Values, unknown, OutputValues>({
     resolver: zodResolver(schema),
-    values: { name: editing?.name ?? '', description: editing?.description ?? '', price: editing?.price ?? 0, isActive: editing?.isActive ?? true },
+    values: {
+      name: editing?.name ?? '',
+      description: editing?.description ?? '',
+      price: editing ? Number(editing.price) : 0,
+      estimatedDays: editing?.estimatedDays ?? undefined,
+      isActive: editing?.isActive ?? true,
+    },
   })
 
   const onSubmit = async (values: OutputValues) => {
@@ -72,7 +78,7 @@ export default function ShippingMethodsPage() {
   const columns: ColumnDef<ShippingMethod>[] = [
     { accessorKey: 'name', header: 'Name', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.name}</span> },
     { accessorKey: 'description', header: 'Description', cell: ({ row }) => <span className="text-muted-foreground">{row.original.description}</span> },
-    { accessorKey: 'price', header: 'Price', cell: ({ row }) => (row.original.price === 0 ? 'Free' : formatCurrency(row.original.price)) },
+    { accessorKey: 'price', header: 'Price', cell: ({ row }) => (Number(row.original.price) === 0 ? 'Free' : formatCurrency(Number(row.original.price))) },
     { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={row.original.isActive ? 'success' : 'secondary'}>{row.original.isActive ? 'Active' : 'Inactive'}</Badge> },
     {
       id: 'actions',
@@ -146,6 +152,9 @@ export default function ShippingMethodsPage() {
               )} />
               <FormField control={form.control} name="price" render={({ field }) => (
                 <FormItem><FormLabel>Price</FormLabel><FormControl><Input type="number" step="0.01" min="0" {...field} value={field.value === undefined ? '' : String(field.value)} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="estimatedDays" render={({ field }) => (
+                <FormItem><FormLabel>Estimated days (optional)</FormLabel><FormControl><Input type="number" min="1" {...field} value={field.value === undefined ? '' : String(field.value)} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={form.control} name="isActive" render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between gap-2">

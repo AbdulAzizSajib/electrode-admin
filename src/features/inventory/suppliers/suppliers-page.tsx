@@ -6,21 +6,24 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { MoreHorizontal, Pencil, Plus, Trash2, Truck } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { DataTable } from '@/components/ui/data-table'
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Switch } from '@/components/ui/switch'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
 import { useSuppliers, useCreateSupplier, useUpdateSupplier, useDeleteSupplier, type Supplier } from '@/lib/api/suppliers'
-import { _isSupplierReferenced } from '@/lib/api/purchase-orders'
 
 const schema = z.object({
   name: z.string().min(1, 'Name is required'),
-  contactEmail: z.string().min(1, 'Email is required').email('Enter a valid email'),
+  companyName: z.string().optional(),
+  email: z.string().min(1, 'Email is required').email('Enter a valid email'),
   phone: z.string().min(1, 'Phone is required'),
   address: z.string().min(1, 'Address is required'),
+  isActive: z.boolean(),
 })
 type Values = z.infer<typeof schema>
 
@@ -34,12 +37,19 @@ export default function SuppliersPage() {
   const { data, isLoading, isError, refetch } = useSuppliers({ search })
   const createMutation = useCreateSupplier()
   const updateMutation = useUpdateSupplier()
-  const deleteMutation = useDeleteSupplier(_isSupplierReferenced)
+  const deleteMutation = useDeleteSupplier()
   const confirmDialog = useConfirmDialog()
 
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    values: { name: editing?.name ?? '', contactEmail: editing?.contactEmail ?? '', phone: editing?.phone ?? '', address: editing?.address ?? '' },
+    values: {
+      name: editing?.name ?? '',
+      companyName: editing?.companyName ?? '',
+      email: editing?.email ?? '',
+      phone: editing?.phone ?? '',
+      address: editing?.address ?? '',
+      isActive: editing?.isActive ?? true,
+    },
   })
 
   const onSubmit = async (values: Values) => {
@@ -62,9 +72,10 @@ export default function SuppliersPage() {
 
   const columns: ColumnDef<Supplier>[] = [
     { accessorKey: 'name', header: 'Name', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.name}</span> },
-    { accessorKey: 'contactEmail', header: 'Email' },
+    { accessorKey: 'email', header: 'Email' },
     { accessorKey: 'phone', header: 'Phone' },
     { accessorKey: 'address', header: 'Address', cell: ({ row }) => <span className="text-muted-foreground">{row.original.address}</span> },
+    { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={row.original.isActive ? 'success' : 'secondary'}>{row.original.isActive ? 'Active' : 'Inactive'}</Badge> },
     {
       id: 'actions',
       header: '',
@@ -139,14 +150,23 @@ export default function SuppliersPage() {
               <FormField control={form.control} name="name" render={({ field }) => (
                 <FormItem><FormLabel>Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
               )} />
-              <FormField control={form.control} name="contactEmail" render={({ field }) => (
-                <FormItem><FormLabel>Contact email</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              <FormField control={form.control} name="companyName" render={({ field }) => (
+                <FormItem><FormLabel>Company name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="email" render={({ field }) => (
+                <FormItem><FormLabel>Email</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={form.control} name="phone" render={({ field }) => (
                 <FormItem><FormLabel>Phone</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={form.control} name="address" render={({ field }) => (
                 <FormItem><FormLabel>Address</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="isActive" render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between gap-2">
+                  <FormLabel className="text-sm font-normal text-foreground">Active</FormLabel>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                </FormItem>
               )} />
               <SheetFooter>
                 <Button type="button" variant="outline" onClick={() => setSheetOpen(false)}>Cancel</Button>

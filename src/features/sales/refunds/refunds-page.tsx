@@ -13,55 +13,54 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { toast } from '@/components/ui/use-toast'
-import { useCreateRefund, useRefunds, type RefundStatus } from '@/lib/api/refunds'
+import { useCreateRefund, useRefunds, type Refund, type RefundStatus } from '@/lib/api/refunds'
 import { useOrders } from '@/lib/api/orders'
 import { formatCurrency, formatDate } from '@/lib/utils/format'
+
+const STATUS_VARIANT: Record<RefundStatus, 'secondary' | 'warning' | 'success' | 'destructive'> = {
+  PENDING: 'secondary',
+  PROCESSING: 'warning',
+  COMPLETED: 'success',
+  FAILED: 'destructive',
+  CANCELLED: 'destructive',
+}
 
 const schema = z.object({
   orderId: z.string().min(1, 'Select an order'),
   amount: z.coerce.number().min(0.01, 'Amount must be greater than zero'),
-  method: z.enum(['card', 'paypal', 'bank_transfer', 'cash_on_delivery']),
+  reason: z.string().optional(),
 })
 type Values = z.input<typeof schema>
 type OutputValues = z.output<typeof schema>
-
-interface RefundRow {
-  id: string
-  orderNumber: string
-  amount: number
-  method: string
-  status: RefundStatus
-  createdAt: string
-}
 
 export default function RefundsPage() {
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
   const [createOpen, setCreateOpen] = React.useState(false)
-  const [viewing, setViewing] = React.useState<RefundRow | null>(null)
+  const [viewing, setViewing] = React.useState<Refund | null>(null)
 
   const { data, isLoading, isError, refetch } = useRefunds({ page, limit: pageSize })
   const { data: ordersData } = useOrders({ limit: 100 })
   const createMutation = useCreateRefund()
 
-  const form = useForm<Values, unknown, OutputValues>({ resolver: zodResolver(schema), defaultValues: { orderId: '', amount: 0, method: 'card' } })
+  const form = useForm<Values, unknown, OutputValues>({ resolver: zodResolver(schema), defaultValues: { orderId: '', amount: 0, reason: '' } })
 
   const onSubmit = async (values: OutputValues) => {
     try {
-      await createMutation.mutateAsync(values)
+      await createMutation.mutateAsync({ orderId: values.orderId, input: { amount: values.amount, reason: values.reason } })
       toast({ title: 'Refund issued' })
       setCreateOpen(false)
-      form.reset({ orderId: '', amount: 0, method: 'card' })
+      form.reset({ orderId: '', amount: 0, reason: '' })
     } catch (err) {
       toast({ title: 'Could not issue refund', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
     }
   }
 
-  const columns: ColumnDef<RefundRow>[] = [
-    { accessorKey: 'orderNumber', header: 'Order', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.orderNumber}</span> },
-    { accessorKey: 'amount', header: 'Amount', cell: ({ row }) => formatCurrency(row.original.amount) },
-    { id: 'method', header: 'Method', cell: ({ row }) => <span className="capitalize">{row.original.method.replace('_', ' ')}</span> },
-    { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={row.original.status === 'completed' ? 'success' : 'secondary'}>{row.original.status}</Badge> },
+  const columns: ColumnDef<Refund>[] = [
+    { id: 'order', header: 'Order', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.order.orderNumber}</span> },
+    { id: 'amount', header: 'Amount', cell: ({ row }) => formatCurrency(Number(row.original.amount)) },
+    { accessorKey: 'reason', header: 'Reason', cell: ({ row }) => <span className="text-muted-foreground">{row.original.reason ?? '—'}</span> },
+    { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={STATUS_VARIANT[row.original.status]}>{row.original.status}</Badge> },
     { accessorKey: 'createdAt', header: 'Date', cell: ({ row }) => formatDate(row.original.createdAt) },
   ]
 
@@ -79,7 +78,7 @@ export default function RefundsPage() {
 
       <DataTable
         columns={columns}
-        data={(data?.data ?? []) as RefundRow[]}
+        data={data?.data ?? []}
         isLoading={isLoading}
         isError={isError}
         onRetry={() => refetch()}
@@ -103,7 +102,7 @@ export default function RefundsPage() {
                   <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Select an order" /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {ordersData?.data.map((o) => <SelectItem key={o.id} value={o.id}>{o.orderNumber} — {formatCurrency(o.total)}</SelectItem>)}
+                      {ordersData?.data.map((o) => <SelectItem key={o.id} value={o.id}>{o.orderNumber} — {formatCurrency(Number(o.totalAmount))}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -116,18 +115,10 @@ export default function RefundsPage() {
                   <FormMessage />
                 </FormItem>
               )} />
-              <FormField control={form.control} name="method" render={({ field }) => (
+              <FormField control={form.control} name="reason" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Method</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      <SelectItem value="card">Card</SelectItem>
-                      <SelectItem value="paypal">PayPal</SelectItem>
-                      <SelectItem value="bank_transfer">Bank transfer</SelectItem>
-                      <SelectItem value="cash_on_delivery">Cash on delivery</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <FormLabel>Reason (optional)</FormLabel>
+                  <FormControl><Input {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -142,13 +133,13 @@ export default function RefundsPage() {
 
       <Dialog open={!!viewing} onOpenChange={(open) => !open && setViewing(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Refund — {viewing?.orderNumber}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Refund — {viewing?.order.orderNumber}</DialogTitle></DialogHeader>
           {viewing && (
             <div className="flex flex-col gap-2 text-sm">
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Order</span><span className="font-medium text-foreground">{viewing.orderNumber}</span></div>
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Amount</span><span className="font-medium text-foreground">{formatCurrency(viewing.amount)}</span></div>
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Method</span><span className="capitalize">{viewing.method.replace('_', ' ')}</span></div>
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Status</span><Badge variant={viewing.status === 'completed' ? 'success' : 'secondary'}>{viewing.status}</Badge></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Order</span><span className="font-medium text-foreground">{viewing.order.orderNumber}</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Amount</span><span className="font-medium text-foreground">{formatCurrency(Number(viewing.amount))}</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Reason</span><span>{viewing.reason ?? '—'}</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Status</span><Badge variant={STATUS_VARIANT[viewing.status]}>{viewing.status}</Badge></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Date</span><span>{formatDate(viewing.createdAt)}</span></div>
             </div>
           )}

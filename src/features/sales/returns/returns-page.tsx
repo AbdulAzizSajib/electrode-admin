@@ -6,24 +6,26 @@ import { PageHeader } from '@/components/ui/page-header'
 import { Badge } from '@/components/ui/badge'
 import { DataTable } from '@/components/ui/data-table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useReturns, type ReturnStatus } from '@/lib/api/returns'
+import { useReturns, type ReturnRequest, type ReturnStatus } from '@/lib/api/returns'
 import { formatDate } from '@/lib/utils/format'
 
-const STATUS_LABEL: Record<ReturnStatus, string> = { requested: 'Requested', approved: 'Approved', rejected: 'Rejected', completed: 'Completed' }
-const STATUS_VARIANT: Record<ReturnStatus, 'secondary' | 'warning' | 'destructive' | 'success'> = {
-  requested: 'secondary',
-  approved: 'warning',
-  rejected: 'destructive',
-  completed: 'success',
+const STATUS_LABEL: Record<ReturnStatus, string> = {
+  REQUESTED: 'Requested',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+  RECEIVED: 'Received',
+  PROCESSING: 'Processing',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
 }
-
-interface ReturnRow {
-  id: string
-  orderNumber: string
-  reason: string
-  status: ReturnStatus
-  createdAt: string
-  items: Array<{ productName: string; quantity: number }>
+const STATUS_VARIANT: Record<ReturnStatus, 'secondary' | 'warning' | 'destructive' | 'info' | 'success'> = {
+  REQUESTED: 'secondary',
+  APPROVED: 'warning',
+  REJECTED: 'destructive',
+  RECEIVED: 'info',
+  PROCESSING: 'warning',
+  COMPLETED: 'success',
+  CANCELLED: 'destructive',
 }
 
 export default function ReturnsPage() {
@@ -34,9 +36,9 @@ export default function ReturnsPage() {
 
   const { data, isLoading, isError, refetch } = useReturns({ page, limit: pageSize, status: status === 'all' ? undefined : (status as ReturnStatus) })
 
-  const columns: ColumnDef<ReturnRow>[] = [
-    { accessorKey: 'orderNumber', header: 'Order', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.orderNumber}</span> },
-    { id: 'items', header: 'Items', cell: ({ row }) => row.original.items.map((i) => `${i.quantity}× ${i.productName}`).join(', ') },
+  const columns: ColumnDef<ReturnRequest>[] = [
+    { id: 'order', header: 'Order', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.order.orderNumber}</span> },
+    { id: 'items', header: 'Items', cell: ({ row }) => row.original.items.map((i) => `${i.quantity}× ${i.orderItem.productName}`).join(', ') },
     { accessorKey: 'reason', header: 'Reason', cell: ({ row }) => <span className="text-muted-foreground">{row.original.reason}</span> },
     { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={STATUS_VARIANT[row.original.status]}>{STATUS_LABEL[row.original.status]}</Badge> },
     { accessorKey: 'createdAt', header: 'Requested', cell: ({ row }) => formatDate(row.original.createdAt) },
@@ -47,7 +49,7 @@ export default function ReturnsPage() {
       <PageHeader title="Returns" description="Customer return requests." />
       <DataTable
         columns={columns}
-        data={(data?.data ?? []) as ReturnRow[]}
+        data={data?.data ?? []}
         isLoading={isLoading}
         isError={isError}
         onRetry={() => refetch()}

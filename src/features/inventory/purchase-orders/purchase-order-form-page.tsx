@@ -14,20 +14,30 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/use-toast'
 import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
 import { useSuppliers } from '@/lib/api/suppliers'
-import { useWarehouses } from '@/lib/api/warehouses'
 import { useProducts } from '@/lib/api/products'
-import { useCreatePurchaseOrder, usePurchaseOrder, useUpdatePurchaseOrder } from '@/lib/api/purchase-orders'
+import {
+  useCreatePurchaseOrder,
+  usePurchaseOrder,
+  useUpdatePurchaseOrder,
+  type PurchaseOrderCreateInput,
+  type PurchaseOrderUpdateInput,
+} from '@/lib/api/purchase-orders'
 import { formatCurrency } from '@/lib/utils/format'
 
+// Only supplier + line items are create-only (the backend's PATCH doesn't accept them at all —
+// see design.md). Kept in one schema so the form only needs one `useForm` instance; onSubmit picks
+// which subset to actually send based on isEdit.
 const schema = z.object({
   supplierId: z.string().min(1, 'Select a supplier'),
-  warehouseId: z.string().min(1, 'Select a warehouse'),
   notes: z.string().optional(),
+  shippingCost: z.coerce.number().min(0, 'Cannot be negative').optional(),
+  taxAmount: z.coerce.number().min(0, 'Cannot be negative').optional(),
+  status: z.enum(['DRAFT', 'ORDERED', 'CANCELLED']),
   items: z
     .array(
       z.object({
         productId: z.string().min(1, 'Select a product'),
-        quantityOrdered: z.coerce.number().min(1, 'Quantity must be at least 1'),
+        quantity: z.coerce.number().min(1, 'Quantity must be at least 1'),
         unitCost: z.coerce.number().min(0, 'Cost cannot be negative'),
       }),
     )
@@ -43,44 +53,70 @@ export default function PurchaseOrderFormPage() {
 
   const { data: po, isLoading: loadingPo } = usePurchaseOrder(poId)
   const { data: suppliersData } = useSuppliers()
-  const { data: warehousesData } = useWarehouses()
   const { data: productsData } = useProducts({ limit: 200 })
   const createMutation = useCreatePurchaseOrder()
   const updateMutation = useUpdatePurchaseOrder()
 
-  useBreadcrumbLabel(isEdit ? (po ? `Edit ${po.poNumber}` : 'Edit purchase order') : 'New purchase order')
+  useBreadcrumbLabel(isEdit ? (po ? `Edit ${po.purchaseNumber}` : 'Edit purchase order') : 'New purchase order')
 
   const form = useForm<Values, unknown, OutputValues>({
     resolver: zodResolver(schema),
     values: po
       ? {
           supplierId: po.supplierId,
-          warehouseId: po.warehouseId,
           notes: po.notes ?? '',
-          items: po.items.map((i) => ({ productId: i.productId, quantityOrdered: i.quantityOrdered, unitCost: i.unitCost })),
+          shippingCost: Number(po.shippingCost),
+          taxAmount: Number(po.taxAmount),
+          status: po.status === 'DRAFT' || po.status === 'ORDERED' || po.status === 'CANCELLED' ? po.status : 'DRAFT',
+          items: po.items.map((i) => ({ productId: i.productId, quantity: i.quantity, unitCost: Number(i.unitCost) })),
         }
       : undefined,
-    defaultValues: { supplierId: '', warehouseId: '', notes: '', items: [{ productId: '', quantityOrdered: 1, unitCost: 0 }] },
+    defaultValues: {
+      supplierId: '',
+      notes: '',
+      shippingCost: undefined,
+      taxAmount: undefined,
+      status: 'DRAFT',
+      items: [{ productId: '', quantity: 1, unitCost: 0 }],
+    },
   })
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: 'items' })
   const watchedItems = form.watch('items')
+  const watchedShipping = form.watch('shippingCost')
+  const watchedTax = form.watch('taxAmount')
   const products = productsData?.data ?? []
 
-  const total = watchedItems.reduce((sum, item) => {
-    const qty = Number(item.quantityOrdered) || 0
+  const subtotal = watchedItems.reduce((sum, item) => {
+    const qty = Number(item.quantity) || 0
     const cost = Number(item.unitCost) || 0
     return sum + qty * cost
   }, 0)
+  const total = subtotal + (Number(watchedShipping) || 0) + (Number(watchedTax) || 0)
 
   const onSubmit = async (values: OutputValues) => {
     try {
       if (isEdit && poId) {
-        await updateMutation.mutateAsync({ id: poId, input: values })
+        // Line items and supplier aren't editable once a PO exists — the backend's PATCH doesn't
+        // accept them (see design.md), so only the scalar fields below are sent.
+        const input: PurchaseOrderUpdateInput = {
+          shippingCost: values.shippingCost,
+          taxAmount: values.taxAmount,
+          notes: values.notes,
+          status: values.status,
+        }
+        await updateMutation.mutateAsync({ id: poId, input })
         toast({ title: 'Purchase order updated' })
         navigate(`/inventory/purchase-orders/${poId}`)
       } else {
-        const created = await createMutation.mutateAsync(values)
+        const input: PurchaseOrderCreateInput = {
+          supplierId: values.supplierId,
+          items: values.items,
+          shippingCost: values.shippingCost,
+          taxAmount: values.taxAmount,
+          notes: values.notes,
+        }
+        const created = await createMutation.mutateAsync(input)
         toast({ title: 'Purchase order created' })
         navigate(`/inventory/purchase-orders/${created.id}`)
       }
@@ -109,38 +145,76 @@ export default function PurchaseOrderFormPage() {
               <CardTitle>Details</CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+              {isEdit ? (
+                <>
+                  <div className="flex flex-col gap-1.5 text-sm sm:col-span-2">
+                    <span className="text-muted-foreground">Supplier</span>
+                    <span className="font-medium text-foreground">{po?.supplier.name}</span>
+                    <span className="text-xs text-muted-foreground">Supplier can't be changed after a purchase order is created.</span>
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="status"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Status</FormLabel>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="DRAFT">Draft</SelectItem>
+                            <SelectItem value="ORDERED">Ordered</SelectItem>
+                            <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              ) : (
+                <FormField
+                  control={form.control}
+                  name="supplierId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Supplier</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="Select a supplier" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {suppliersData?.data.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <FormField
                 control={form.control}
-                name="supplierId"
+                name="shippingCost"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Supplier</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger><SelectValue placeholder="Select a supplier" /></SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {suppliersData?.data.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <FormLabel>Shipping cost</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" min="0" {...field} value={field.value === undefined ? '' : String(field.value)} />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
               <FormField
                 control={form.control}
-                name="warehouseId"
+                name="taxAmount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Destination warehouse</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger><SelectValue placeholder="Select a warehouse" /></SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {warehousesData?.data.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <FormLabel>Tax amount</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" min="0" {...field} value={field.value === undefined ? '' : String(field.value)} />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -162,63 +236,82 @@ export default function PurchaseOrderFormPage() {
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <CardTitle>Line items</CardTitle>
-              <Button type="button" size="sm" variant="outline" onClick={() => append({ productId: '', quantityOrdered: 1, unitCost: 0 })}>
-                <Plus /> Add item
-              </Button>
+              {!isEdit && (
+                <Button type="button" size="sm" variant="outline" onClick={() => append({ productId: '', quantity: 1, unitCost: 0 })}>
+                  <Plus /> Add item
+                </Button>
+              )}
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
-              {fields.map((field, index) => (
-                <div key={field.id} className="grid grid-cols-1 gap-2 rounded-md border border-border p-2.5 sm:grid-cols-[1fr_100px_120px_32px] sm:items-end">
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.productId`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Product</FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <FormControl>
-                            <SelectTrigger><SelectValue placeholder="Select a product" /></SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.quantityOrdered`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Qty</FormLabel>
-                        <FormControl>
-                          <Input type="number" min="1" {...field} value={field.value === undefined ? '' : String(field.value)} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.unitCost`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Unit cost</FormLabel>
-                        <FormControl>
-                          <Input type="number" step="0.01" min="0" {...field} value={field.value === undefined ? '' : String(field.value)} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <Button type="button" variant="ghost" size="icon" disabled={fields.length === 1} onClick={() => remove(index)}>
-                    <Trash2 className="size-4" />
-                  </Button>
+              {isEdit ? (
+                <div className="flex flex-col gap-1.5">
+                  {po?.items.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between text-sm">
+                      <span className="text-foreground">{item.product.name} <span className="text-muted-foreground">× {item.quantity}</span></span>
+                      <span className="text-muted-foreground">{formatCurrency(Number(item.unitCost))} each</span>
+                    </div>
+                  ))}
+                  <span className="text-xs text-muted-foreground">Line items can't be changed after a purchase order is created.</span>
                 </div>
-              ))}
-              <div className="flex justify-end text-sm font-medium text-foreground">Total: {formatCurrency(total)}</div>
+              ) : (
+                <>
+                  {fields.map((field, index) => (
+                    <div key={field.id} className="grid grid-cols-1 gap-2 rounded-md border border-border p-2.5 sm:grid-cols-[1fr_100px_120px_32px] sm:items-end">
+                      <FormField
+                        control={form.control}
+                        name={`items.${index}.productId`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Product</FormLabel>
+                            <Select value={field.value} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger><SelectValue placeholder="Select a product" /></SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`items.${index}.quantity`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Qty</FormLabel>
+                            <FormControl>
+                              <Input type="number" min="1" {...field} value={field.value === undefined ? '' : String(field.value)} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`items.${index}.unitCost`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Unit cost</FormLabel>
+                            <FormControl>
+                              <Input type="number" step="0.01" min="0" {...field} value={field.value === undefined ? '' : String(field.value)} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <Button type="button" variant="ghost" size="icon" disabled={fields.length === 1} onClick={() => remove(index)}>
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </>
+              )}
+              <div className="flex flex-col items-end gap-0.5 text-sm">
+                <span className="text-muted-foreground">Subtotal: {formatCurrency(subtotal)}</span>
+                <span className="font-medium text-foreground">Total: {formatCurrency(total)}</span>
+              </div>
             </CardContent>
           </Card>
 

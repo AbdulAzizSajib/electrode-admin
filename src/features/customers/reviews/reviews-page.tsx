@@ -1,6 +1,6 @@
 import * as React from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { CheckCircle2, MoreHorizontal, Pencil, Star, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle2, EyeOff, MessageSquareReply, MoreHorizontal, Star, XCircle } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -9,28 +9,16 @@ import { DataTable } from '@/components/ui/data-table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
-import {
-  useDeleteReview,
-  useReviews,
-  useUpdateReviewContent,
-  useUpdateReviewStatus,
-  type ReviewStatus,
-} from '@/lib/api/reviews'
+import { useReplyToReview, useReviews, useUpdateReviewStatus, type Review, type ReviewStatus } from '@/lib/api/reviews'
 import { formatDate } from '@/lib/utils/format'
 
-const STATUS_LABEL: Record<ReviewStatus, string> = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected' }
-const STATUS_VARIANT: Record<ReviewStatus, 'secondary' | 'success' | 'destructive'> = { pending: 'secondary', approved: 'success', rejected: 'destructive' }
-
-interface ReviewRow {
-  id: string
-  productName: string
-  customerName: string
-  rating: number
-  comment: string
-  status: ReviewStatus
-  createdAt: string
+const STATUS_LABEL: Record<ReviewStatus, string> = { PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected', HIDDEN: 'Hidden' }
+const STATUS_VARIANT: Record<ReviewStatus, 'secondary' | 'success' | 'destructive' | 'outline'> = {
+  PENDING: 'secondary',
+  APPROVED: 'success',
+  REJECTED: 'destructive',
+  HIDDEN: 'outline',
 }
 
 export default function ReviewsPage() {
@@ -38,7 +26,7 @@ export default function ReviewsPage() {
   const [rating, setRating] = React.useState('all')
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
-  const [editing, setEditing] = React.useState<ReviewRow | null>(null)
+  const [replying, setReplying] = React.useState<Review | null>(null)
   const [draft, setDraft] = React.useState('')
 
   const { data, isLoading, isError, refetch } = useReviews({
@@ -48,20 +36,18 @@ export default function ReviewsPage() {
     rating: rating === 'all' ? undefined : Number(rating),
   })
   const updateStatus = useUpdateReviewStatus()
-  const updateContent = useUpdateReviewContent()
-  const deleteMutation = useDeleteReview()
-  const confirmDialog = useConfirmDialog()
+  const replyMutation = useReplyToReview()
 
-  const columns: ColumnDef<ReviewRow>[] = [
-    { accessorKey: 'productName', header: 'Product', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.productName}</span> },
-    { accessorKey: 'customerName', header: 'Customer' },
+  const columns: ColumnDef<Review>[] = [
+    { id: 'product', header: 'Product', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.product?.name ?? '—'}</span> },
+    { id: 'customer', header: 'Customer', cell: ({ row }) => `${row.original.customer.firstName} ${row.original.customer.lastName ?? ''}` },
     { id: 'rating', header: 'Rating', cell: ({ row }) => (
       <span className="inline-flex items-center gap-0.5">
         {row.original.rating}
         <Star className="size-3.5 fill-current text-warning" />
       </span>
     ) },
-    { accessorKey: 'comment', header: 'Comment', cell: ({ row }) => <span className="line-clamp-1 max-w-64 text-muted-foreground">{row.original.comment}</span> },
+    { accessorKey: 'comment', header: 'Comment', cell: ({ row }) => <span className="line-clamp-1 max-w-64 text-muted-foreground">{row.original.comment ?? '—'}</span> },
     { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={STATUS_VARIANT[row.original.status]}>{STATUS_LABEL[row.original.status]}</Badge> },
     { accessorKey: 'createdAt', header: 'Date', cell: ({ row }) => formatDate(row.original.createdAt) },
     {
@@ -73,33 +59,23 @@ export default function ReviewsPage() {
             <Button variant="ghost" size="icon" className="size-7"><MoreHorizontal className="size-4" /></Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {row.original.status !== 'approved' && (
-              <DropdownMenuItem onClick={() => updateStatus.mutate({ id: row.original.id, status: 'approved' })}>
+            {row.original.status !== 'APPROVED' && (
+              <DropdownMenuItem onClick={() => updateStatus.mutate({ id: row.original.id, status: 'APPROVED' })}>
                 <CheckCircle2 /> Approve
               </DropdownMenuItem>
             )}
-            {row.original.status !== 'rejected' && (
-              <DropdownMenuItem onClick={() => updateStatus.mutate({ id: row.original.id, status: 'rejected' })}>
+            {row.original.status !== 'REJECTED' && (
+              <DropdownMenuItem onClick={() => updateStatus.mutate({ id: row.original.id, status: 'REJECTED' })}>
                 <XCircle /> Reject
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem onClick={() => { setEditing(row.original); setDraft(row.original.comment) }}>
-              <Pencil /> Edit content
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              variant="destructive"
-              onClick={() =>
-                confirmDialog.confirm(async () => {
-                  try {
-                    await deleteMutation.mutateAsync(row.original.id)
-                    toast({ title: 'Review removed' })
-                  } catch (err) {
-                    toast({ title: 'Could not remove review', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
-                  }
-                })
-              }
-            >
-              <Trash2 /> Remove
+            {row.original.status !== 'HIDDEN' && (
+              <DropdownMenuItem onClick={() => updateStatus.mutate({ id: row.original.id, status: 'HIDDEN' })}>
+                <EyeOff /> Hide
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={() => { setReplying(row.original); setDraft(row.original.adminReply ?? '') }}>
+              <MessageSquareReply /> {row.original.adminReply ? 'Edit reply' : 'Reply'}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -113,7 +89,7 @@ export default function ReviewsPage() {
 
       <DataTable
         columns={columns}
-        data={(data?.data ?? []) as ReviewRow[]}
+        data={data?.data ?? []}
         isLoading={isLoading}
         isError={isError}
         onRetry={() => refetch()}
@@ -143,40 +119,35 @@ export default function ReviewsPage() {
         onPageSizeChange={(size) => { setPageSize(size); setPage(1) }}
       />
 
-      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
+      <Dialog open={!!replying} onOpenChange={(open) => !open && setReplying(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Edit review</DialogTitle></DialogHeader>
-          <Textarea rows={4} value={draft} onChange={(e) => setDraft(e.target.value)} />
+          <DialogHeader><DialogTitle>Reply to review</DialogTitle></DialogHeader>
+          {replying && (
+            <p className="text-sm text-muted-foreground">
+              "{replying.comment}" — {replying.customer.firstName} {replying.customer.lastName ?? ''}
+            </p>
+          )}
+          <Textarea rows={4} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Write a reply…" />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setReplying(null)}>Cancel</Button>
             <Button
-              loading={updateContent.isPending}
+              loading={replyMutation.isPending}
               onClick={async () => {
-                if (!editing) return
+                if (!replying) return
                 try {
-                  await updateContent.mutateAsync({ id: editing.id, comment: draft })
-                  toast({ title: 'Review updated' })
-                  setEditing(null)
+                  await replyMutation.mutateAsync({ id: replying.id, adminReply: draft })
+                  toast({ title: 'Reply posted' })
+                  setReplying(null)
                 } catch (err) {
-                  toast({ title: 'Could not update review', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
+                  toast({ title: 'Could not post reply', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
                 }
               }}
             >
-              Save changes
+              Post reply
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <ConfirmDialog
-        open={confirmDialog.open}
-        onOpenChange={confirmDialog.setOpen}
-        title="Remove this review?"
-        description="This cannot be undone."
-        confirmLabel="Remove"
-        loading={confirmDialog.pending}
-        onConfirm={confirmDialog.handleConfirm}
-      />
     </div>
   )
 }

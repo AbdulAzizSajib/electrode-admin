@@ -1,61 +1,76 @@
+/** Real backend shipping-method calls — follows the same envelope/error pattern as `categories.ts`/`products.ts`. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, delay, generateId, paginate, type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { ApiError, BASE_URL, type ListParams, type PaginatedResponse, type PaginationMeta } from '@/lib/api/client'
 import { queryKeys } from '@/lib/api/query-keys'
-import { recordAuditEntry } from '@/lib/api/audit-logs'
 
 export interface ShippingMethod {
   id: string
   name: string
-  description: string
-  price: number
+  description: string | null
+  /** Decimal column — arrives as a string from the API (see integrate-products-api design.md). */
+  price: string
+  estimatedDays: number | null
   isActive: boolean
   createdAt: string
+  updatedAt: string
 }
 
 export interface ShippingMethodInput {
   name: string
-  description: string
+  description?: string
   price: number
-  isActive: boolean
+  estimatedDays?: number
+  isActive?: boolean
 }
 
-let shippingMethods: ShippingMethod[] = [
-  { id: generateId('ship'), name: 'Standard Shipping', description: '5-7 business days', price: 5.99, isActive: true, createdAt: '2025-07-01T09:00:00Z' },
-  { id: generateId('ship'), name: 'Express Shipping', description: '2-3 business days', price: 14.99, isActive: true, createdAt: '2025-07-01T09:00:00Z' },
-  { id: generateId('ship'), name: 'Overnight Shipping', description: 'Next business day', price: 29.99, isActive: true, createdAt: '2025-07-01T09:00:00Z' },
-  { id: generateId('ship'), name: 'Local Pickup', description: 'Pick up in-store, free', price: 0, isActive: false, createdAt: '2025-07-05T09:00:00Z' },
-]
+interface ApiEnvelope<T> {
+  success: boolean
+  message: string
+  data: T
+  meta?: PaginationMeta
+}
 
-export function _getAllShippingMethods() {
-  return shippingMethods
+async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
+
+  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
+  if (!res.ok || !json?.success) {
+    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
+  }
+  return json
 }
 
 async function listShippingMethods(params: ListParams = {}): Promise<PaginatedResponse<ShippingMethod>> {
-  return delay(paginate(shippingMethods, { ...params, limit: params.limit ?? 100 }))
+  const limit = params.limit ?? 100
+
+  const query = new URLSearchParams()
+  if (params.page) query.set('page', String(params.page))
+  query.set('limit', String(limit))
+  if (params.search) query.set('searchTerm', params.search)
+
+  const res = await request<ShippingMethod[]>(`/shipping-methods/admin?${query}`)
+  return {
+    data: res.data,
+    meta: res.meta ?? { page: params.page ?? 1, limit, total: res.data.length, totalPages: 1 },
+  }
 }
 
 async function createShippingMethod(input: ShippingMethodInput): Promise<ShippingMethod> {
-  const method: ShippingMethod = { id: generateId('ship'), createdAt: new Date().toISOString(), ...input }
-  shippingMethods = [method, ...shippingMethods]
-  recordAuditEntry({ action: 'shipping_method.created', resourceType: 'shipping_method', resourceId: method.id, resourceLabel: method.name })
-  return delay(method)
+  const res = await request<ShippingMethod>('/shipping-methods', { method: 'POST', body: JSON.stringify(input) })
+  return res.data
 }
 
 async function updateShippingMethod(id: string, input: ShippingMethodInput): Promise<ShippingMethod> {
-  const index = shippingMethods.findIndex((m) => m.id === id)
-  if (index === -1) throw new ApiError('Shipping method not found', 404)
-  const updated = { ...shippingMethods[index], ...input }
-  shippingMethods = shippingMethods.map((m) => (m.id === id ? updated : m))
-  recordAuditEntry({ action: 'shipping_method.updated', resourceType: 'shipping_method', resourceId: id, resourceLabel: updated.name })
-  return delay(updated)
+  const res = await request<ShippingMethod>(`/shipping-methods/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+  return res.data
 }
 
-async function deleteShippingMethod(id: string, isReferenced: (id: string) => boolean): Promise<void> {
-  if (isReferenced(id)) throw new ApiError('This shipping method is used by existing orders. Deactivate it instead.', 409)
-  const target = shippingMethods.find((m) => m.id === id)
-  shippingMethods = shippingMethods.filter((m) => m.id !== id)
-  recordAuditEntry({ action: 'shipping_method.deleted', resourceType: 'shipping_method', resourceId: id, resourceLabel: target?.name })
-  return delay(undefined)
+async function deleteShippingMethod(id: string): Promise<void> {
+  await request<ShippingMethod>(`/shipping-methods/${id}`, { method: 'DELETE' })
 }
 
 export function useShippingMethods(params: ListParams = {}) {
@@ -75,10 +90,7 @@ export function useUpdateShippingMethod() {
   })
 }
 
-export function useDeleteShippingMethod(isReferenced: (id: string) => boolean) {
+export function useDeleteShippingMethod() {
   const client = useQueryClient()
-  return useMutation({
-    mutationFn: (id: string) => deleteShippingMethod(id, isReferenced),
-    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.shippingMethods.all }),
-  })
+  return useMutation({ mutationFn: deleteShippingMethod, onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.shippingMethods.all }) })
 }

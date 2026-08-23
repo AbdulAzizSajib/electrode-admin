@@ -1,208 +1,151 @@
+/**
+ * Real backend order calls — follows the same envelope/error pattern as `categories.ts`/`products.ts`.
+ *
+ * `_getAllOrders()` at the bottom is a compatibility shim: `customers.ts` still reads it
+ * synchronously (its own mock-to-real migration is a later change — see design.md Decision 4 in
+ * openspec/changes/integrate-orders-api). Don't add new callers of it.
+ *
+ * There is no order-create function here: the real backend only creates orders through customer
+ * checkout (`POST /orders` against the caller's own cart) — there's no admin "create order on a
+ * customer's behalf" capability to wrap. Cancellation similarly isn't a separate call: the
+ * dedicated cancel endpoint is customer-self-service only, so admin cancellation goes through
+ * `updateOrderStatus` with `status: 'CANCELLED'` like any other status change.
+ */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, delay, generateId, paginate, type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { ApiError, BASE_URL, type ListParams, type PaginatedResponse, type PaginationMeta } from '@/lib/api/client'
 import { queryKeys } from '@/lib/api/query-keys'
-import { recordAuditEntry } from '@/lib/api/audit-logs'
-import { _getAllUsers } from '@/lib/api/users'
-import { _getAllProducts } from '@/lib/api/products'
-import { _getAllShippingMethods } from '@/lib/api/shipping-methods'
-import type { Address } from '@/lib/api/shared-types'
+import type { Payment } from '@/lib/api/payments'
+import type { Shipment } from '@/lib/api/shipments'
 
-export type FulfillmentStatus = 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
-export type PaymentStatus = 'unpaid' | 'partially_paid' | 'paid' | 'refunded'
+export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'COMPLETED'
 
-export const FULFILLMENT_SEQUENCE: FulfillmentStatus[] = ['pending', 'processing', 'shipped', 'delivered']
+export const ORDER_STATUSES: OrderStatus[] = ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'COMPLETED']
 
 export interface OrderLineItem {
   productId: string
+  variantId: string | null
   productName: string
-  sku: string
+  sku: string | null
   quantity: number
-  unitPrice: number
+  /** Decimal column — arrives as a string from the API (see integrate-products-api design.md). */
+  unitPrice: string
+  /** Decimal column — arrives as a string from the API. */
+  totalPrice: string
 }
 
 export interface OrderStatusEvent {
-  status: FulfillmentStatus
-  at: string
-  note?: string
+  fromStatus: OrderStatus | null
+  toStatus: OrderStatus
+  note: string | null
+  changedById: string | null
+  createdAt: string
+}
+
+export interface OrderCustomerRef {
+  id: string
+  firstName: string
+  lastName: string | null
+  email: string | null
+  phone: string | null
+}
+
+export interface OrderShippingAddress {
+  fullName: string
+  phone: string
+  addressLine1: string
+  addressLine2: string | null
+  city: string
+  state: string | null
+  postalCode: string | null
+  country: string
 }
 
 export interface Order {
   id: string
   orderNumber: string
   customerId: string
+  customer: OrderCustomerRef
+  status: OrderStatus
   items: OrderLineItem[]
-  subtotal: number
-  discount: number
-  shippingCost: number
-  tax: number
-  total: number
-  shippingAddress: Address
-  shippingMethodId: string
-  paymentStatus: PaymentStatus
-  fulfillmentStatus: FulfillmentStatus
-  statusHistory: OrderStatusEvent[]
-  couponCode?: string
+  /** Decimal column — arrives as a string from the API. */
+  subtotal: string
+  /** Decimal column — arrives as a string from the API. */
+  discountAmount: string
+  /** Decimal column — arrives as a string from the API. */
+  shippingAmount: string
+  /** Decimal column — arrives as a string from the API. */
+  taxAmount: string
+  /** Decimal column — arrives as a string from the API. */
+  totalAmount: string
+  couponCode: string | null
+  notes: string | null
+  shippingAddress: OrderShippingAddress | null
+  /** Only present on detail responses (`GET /orders/:id`) — list rows omit these. */
+  payments?: Payment[]
+  /** Only present on detail responses. */
+  shipments?: Shipment[]
+  /** Only present on detail responses. */
+  statusHistory?: OrderStatusEvent[]
   createdAt: string
-}
-
-let orderSequence = 58210
-let orders: Order[] = []
-
-function buildOrder(
-  customerIndex: number,
-  productIndexes: number[],
-  fulfillmentStatus: FulfillmentStatus,
-  paymentStatus: PaymentStatus,
-  daysAgo: number,
-): Order {
-  const customers = _getAllUsers().filter((u) => u.role === 'CUSTOMER')
-  const products = _getAllProducts()
-  const shippingMethods = _getAllShippingMethods()
-  const customer = customers[customerIndex % customers.length]
-  const items: OrderLineItem[] = productIndexes.map((pi) => {
-    const p = products[pi % products.length]
-    return { productId: p.id, productName: p.name, sku: p.sku, quantity: 1 + (pi % 3), unitPrice: p.price }
-  })
-  const subtotal = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0)
-  const discount = paymentStatus === 'refunded' ? subtotal * 0.1 : 0
-  const shippingCost = shippingMethods[customerIndex % shippingMethods.length]?.price ?? 5.99
-  const tax = Math.round(subtotal * 0.08 * 100) / 100
-  const createdAt = new Date(Date.now() - daysAgo * 86_400_000).toISOString()
-  const history: OrderStatusEvent[] = [{ status: 'pending', at: createdAt }]
-  FULFILLMENT_SEQUENCE.slice(1, FULFILLMENT_SEQUENCE.indexOf(fulfillmentStatus) + 1).forEach((status, i) => {
-    history.push({ status, at: new Date(new Date(createdAt).getTime() + (i + 1) * 3_600_000).toISOString() })
-  })
-
-  return {
-    id: generateId('ord'),
-    orderNumber: `ORD-${orderSequence++}`,
-    customerId: customer.id,
-    items,
-    subtotal: Math.round(subtotal * 100) / 100,
-    discount: Math.round(discount * 100) / 100,
-    shippingCost,
-    tax,
-    total: Math.round((subtotal - discount + shippingCost + tax) * 100) / 100,
-    shippingAddress: customer.addresses[0] ?? { fullName: customer.name, line1: '123 Main St', city: 'Austin', state: 'TX', postalCode: '73301', country: 'USA' },
-    shippingMethodId: shippingMethods[customerIndex % shippingMethods.length]?.id ?? '',
-    paymentStatus,
-    fulfillmentStatus,
-    statusHistory: history,
-    createdAt,
-  }
-}
-
-function seed() {
-  orders = [
-    buildOrder(0, [0, 3], 'delivered', 'paid', 21),
-    buildOrder(1, [1], 'shipped', 'paid', 6),
-    buildOrder(2, [4, 5], 'processing', 'paid', 3),
-    buildOrder(3, [6], 'pending', 'unpaid', 1),
-    buildOrder(4, [7, 8], 'delivered', 'paid', 14),
-    buildOrder(5, [9], 'cancelled', 'refunded', 10),
-    buildOrder(6, [10, 2], 'processing', 'partially_paid', 2),
-    buildOrder(7, [11], 'pending', 'unpaid', 0),
-    buildOrder(0, [2, 4], 'delivered', 'paid', 30),
-    buildOrder(2, [1, 9], 'shipped', 'paid', 5),
-  ]
-}
-seed()
-
-export function _getAllOrders() {
-  return orders
-}
-
-export function _getOrderById(id: string) {
-  return orders.find((o) => o.id === id)
-}
-
-export function _isShippingMethodReferenced(shippingMethodId: string) {
-  return orders.some((o) => o.shippingMethodId === shippingMethodId)
-}
-
-export function _setOrderPaymentStatus(orderId: string, status: PaymentStatus) {
-  orders = orders.map((o) => (o.id === orderId ? { ...o, paymentStatus: status } : o))
-}
-
-export function _advanceOrderToShipped(orderId: string) {
-  const order = orders.find((o) => o.id === orderId)
-  if (!order || order.fulfillmentStatus !== 'processing') return
-  orders = orders.map((o) =>
-    o.id === orderId
-      ? { ...o, fulfillmentStatus: 'shipped', statusHistory: [...o.statusHistory, { status: 'shipped', at: new Date().toISOString() }] }
-      : o,
-  )
+  updatedAt: string
 }
 
 export interface OrderListParams extends ListParams {
-  status?: FulfillmentStatus
-  customerId?: string
-  from?: string
-  to?: string
+  status?: OrderStatus
 }
 
-async function listOrders(params: OrderListParams = {}): Promise<PaginatedResponse<Order & { customerName: string; customerEmail: string }>> {
-  const users = _getAllUsers()
-  let filtered = [...orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  if (params.status) filtered = filtered.filter((o) => o.fulfillmentStatus === params.status)
-  if (params.customerId) filtered = filtered.filter((o) => o.customerId === params.customerId)
-  if (params.from) filtered = filtered.filter((o) => o.createdAt >= params.from!)
-  if (params.to) filtered = filtered.filter((o) => o.createdAt <= params.to!)
-  if (params.search) {
-    const needle = params.search.toLowerCase()
-    filtered = filtered.filter((o) => {
-      const customer = users.find((u) => u.id === o.customerId)
-      return o.orderNumber.toLowerCase().includes(needle) || customer?.name.toLowerCase().includes(needle) || customer?.email.toLowerCase().includes(needle)
-    })
-  }
-  const rows = filtered.map((o) => {
-    const customer = users.find((u) => u.id === o.customerId)
-    return { ...o, customerName: customer?.name ?? 'Unknown', customerEmail: customer?.email ?? '' }
+export interface UpdateOrderStatusInput {
+  status: OrderStatus
+  note?: string
+}
+
+interface ApiEnvelope<T> {
+  success: boolean
+  message: string
+  data: T
+  meta?: PaginationMeta
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
   })
-  return delay(paginate(rows, params))
+
+  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
+  if (!res.ok || !json?.success) {
+    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
+  }
+  return json
 }
 
-async function getOrder(id: string) {
-  const order = orders.find((o) => o.id === id)
-  if (!order) throw new ApiError('Order not found', 404)
-  const customer = _getAllUsers().find((u) => u.id === order.customerId)
-  return delay({ ...order, customerName: customer?.name ?? 'Unknown', customerEmail: customer?.email ?? '' })
+async function listOrders(params: OrderListParams = {}): Promise<PaginatedResponse<Order>> {
+  const limit = params.limit ?? 100
+
+  // No customer-name search, no date range, no customerId filter — GET /orders only supports
+  // these (see design.md).
+  const query = new URLSearchParams()
+  if (params.page) query.set('page', String(params.page))
+  query.set('limit', String(limit))
+  if (params.search) query.set('searchTerm', params.search)
+  if (params.status) query.set('status', params.status)
+
+  const res = await request<Order[]>(`/orders?${query}`)
+  return {
+    data: res.data,
+    meta: res.meta ?? { page: params.page ?? 1, limit, total: res.data.length, totalPages: 1 },
+  }
 }
 
-async function updateOrderStatus(id: string, status: FulfillmentStatus): Promise<Order> {
-  const index = orders.findIndex((o) => o.id === id)
-  if (index === -1) throw new ApiError('Order not found', 404)
-  const current = orders[index]
-  const currentIdx = FULFILLMENT_SEQUENCE.indexOf(current.fulfillmentStatus)
-  const nextIdx = FULFILLMENT_SEQUENCE.indexOf(status)
-  if (nextIdx !== currentIdx + 1) {
-    throw new ApiError('Orders can only advance to the next status in sequence.', 422)
-  }
-  const updated: Order = {
-    ...current,
-    fulfillmentStatus: status,
-    statusHistory: [...current.statusHistory, { status, at: new Date().toISOString() }],
-  }
-  orders = orders.map((o) => (o.id === id ? updated : o))
-  recordAuditEntry({ action: 'order.status_updated', resourceType: 'order', resourceId: id, resourceLabel: `${updated.orderNumber} → ${status}` })
-  return delay(updated)
+async function getOrder(id: string): Promise<Order> {
+  const res = await request<Order>(`/orders/${id}`)
+  return res.data
 }
 
-async function cancelOrder(id: string): Promise<Order> {
-  const index = orders.findIndex((o) => o.id === id)
-  if (index === -1) throw new ApiError('Order not found', 404)
-  const current = orders[index]
-  if (current.fulfillmentStatus === 'shipped' || current.fulfillmentStatus === 'delivered') {
-    throw new ApiError('This order has already shipped and cannot be cancelled.', 409)
-  }
-  const updated: Order = {
-    ...current,
-    fulfillmentStatus: 'cancelled',
-    statusHistory: [...current.statusHistory, { status: 'cancelled', at: new Date().toISOString() }],
-  }
-  orders = orders.map((o) => (o.id === id ? updated : o))
-  recordAuditEntry({ action: 'order.cancelled', resourceType: 'order', resourceId: id, resourceLabel: updated.orderNumber })
-  return delay(updated)
+async function updateOrderStatus(id: string, input: UpdateOrderStatusInput): Promise<Order> {
+  const res = await request<Order>(`/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify(input) })
+  return res.data
 }
 
 export function useOrders(params: OrderListParams = {}) {
@@ -213,23 +156,39 @@ export function useOrder(id: string | undefined) {
   return useQuery({ queryKey: queryKeys.orders.detail(id ?? ''), queryFn: () => getOrder(id!), enabled: !!id })
 }
 
-function invalidateOrder(client: ReturnType<typeof useQueryClient>, id: string) {
-  client.invalidateQueries({ queryKey: queryKeys.orders.all })
-  client.invalidateQueries({ queryKey: queryKeys.orders.detail(id) })
-}
-
 export function useUpdateOrderStatus() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, status }: { id: string; status: FulfillmentStatus }) => updateOrderStatus(id, status),
-    onSuccess: (_d, v) => invalidateOrder(client, v.id),
+    mutationFn: ({ id, input }: { id: string; input: UpdateOrderStatusInput }) => updateOrderStatus(id, input),
+    onSuccess: (_d, v) => {
+      client.invalidateQueries({ queryKey: queryKeys.orders.all })
+      client.invalidateQueries({ queryKey: queryKeys.orders.detail(v.id) })
+    },
   })
 }
 
-export function useCancelOrder() {
-  const client = useQueryClient()
-  return useMutation({
-    mutationFn: (id: string) => cancelOrder(id),
-    onSuccess: (_d, id) => invalidateOrder(client, id),
-  })
+// --- Compatibility shim for still-mock modules (see file header) ---
+
+let ordersCache: Order[] = []
+let ordersCachePromise: Promise<Order[]> | null = null
+
+function loadOrdersCache(): Promise<Order[]> {
+  if (!ordersCachePromise) {
+    ordersCachePromise = listOrders({ limit: 500 })
+      .then((res) => {
+        ordersCache = res.data
+        return ordersCache
+      })
+      .catch(() => ordersCache)
+  }
+  return ordersCachePromise
+}
+void loadOrdersCache()
+
+/**
+ * @deprecated Synchronous order snapshot for modules not yet migrated to the real API (see file
+ * header). Returns whatever's cached — `[]` until the first background fetch resolves.
+ */
+export function _getAllOrders(): Order[] {
+  return ordersCache
 }

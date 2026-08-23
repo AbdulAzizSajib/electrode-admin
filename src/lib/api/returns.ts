@@ -1,98 +1,106 @@
+/**
+ * Real backend return calls — follows the same envelope/error pattern as `categories.ts`/`products.ts`.
+ * No create function here: returns are customer-created only (`POST /orders/:id/returns`, always
+ * scoped to the caller's own order) — there's no admin "create a return" capability to wrap.
+ */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, delay, generateId, paginate, type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { ApiError, BASE_URL, type ListParams, type PaginatedResponse, type PaginationMeta } from '@/lib/api/client'
 import { queryKeys } from '@/lib/api/query-keys'
-import { recordAuditEntry } from '@/lib/api/audit-logs'
-import { _getAllOrders, _getOrderById } from '@/lib/api/orders'
-import { _recordStockMovement } from '@/lib/api/stock-movements'
-import { _restockWarehouse } from '@/lib/api/stock'
-import { _getAllWarehouses } from '@/lib/api/warehouses'
 
-export type ReturnStatus = 'requested' | 'approved' | 'rejected' | 'completed'
+export type ReturnStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'RECEIVED' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED'
 
-export interface ReturnLineItem {
+interface ReturnOrderItemRef {
   productId: string
   productName: string
+  sku: string | null
   quantity: number
+}
+
+export interface ReturnItem {
+  id: string
+  orderItemId: string
+  orderItem: ReturnOrderItemRef
+  quantity: number
+  reason: string | null
+}
+
+export interface ReturnOrderRef {
+  id: string
+  orderNumber: string
+  status: string
 }
 
 export interface ReturnRequest {
   id: string
+  returnNumber: string
   orderId: string
-  items: ReturnLineItem[]
+  order: ReturnOrderRef
+  customerId: string
   reason: string
+  description: string | null
   status: ReturnStatus
-  restockedWarehouseId?: string
+  items: ReturnItem[]
   createdAt: string
   updatedAt: string
 }
 
-let returns: ReturnRequest[] = []
-
-function seed() {
-  const delivered = _getAllOrders().filter((o) => o.fulfillmentStatus === 'delivered')
-  const reasons = ['Item arrived damaged', 'Wrong item shipped', 'No longer needed', 'Item did not match description']
-  delivered.slice(0, 3).forEach((order, i) => {
-    const item = order.items[0]
-    returns.push({
-      id: generateId('ret'),
-      orderId: order.id,
-      items: [{ productId: item.productId, productName: item.productName, quantity: 1 }],
-      reason: reasons[i % reasons.length],
-      status: i === 0 ? 'completed' : i === 1 ? 'approved' : 'requested',
-      restockedWarehouseId: i === 0 ? _getAllWarehouses()[0]?.id : undefined,
-      createdAt: new Date(Date.now() - (i + 1) * 2 * 86_400_000).toISOString(),
-      updatedAt: new Date(Date.now() - i * 86_400_000).toISOString(),
-    })
-  })
-}
-seed()
-
 export interface ReturnListParams extends ListParams {
   status?: ReturnStatus
+  orderId?: string
 }
 
-async function listReturns(params: ReturnListParams = {}) {
-  const orders = _getAllOrders()
-  let filtered = [...returns].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  if (params.status) filtered = filtered.filter((r) => r.status === params.status)
-  const rows = filtered.map((r) => ({ ...r, orderNumber: orders.find((o) => o.id === r.orderId)?.orderNumber ?? '—' }))
-  return delay(paginate(rows, params) as PaginatedResponse<(typeof rows)[number]>)
+export interface UpdateReturnStatusInput {
+  status: ReturnStatus
+  /** Required only when `status` is `COMPLETED` — the warehouse that receives the restocked items. */
+  warehouseId?: string
 }
 
-async function getReturn(id: string) {
-  const found = returns.find((r) => r.id === id)
-  if (!found) throw new ApiError('Return not found', 404)
-  const order = _getOrderById(found.orderId)
-  return delay({ ...found, orderNumber: order?.orderNumber ?? '—' })
+interface ApiEnvelope<T> {
+  success: boolean
+  message: string
+  data: T
+  meta?: PaginationMeta
 }
 
-async function updateReturnStatus(id: string, status: ReturnStatus, warehouseId?: string): Promise<ReturnRequest> {
-  const index = returns.findIndex((r) => r.id === id)
-  if (index === -1) throw new ApiError('Return not found', 404)
-  const current = returns[index]
+async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
 
-  if (status === 'completed') {
-    if (!warehouseId) throw new ApiError('Select a warehouse to restock returned items.', 422)
-    const warehouse = _getAllWarehouses().find((w) => w.id === warehouseId)
-    for (const item of current.items) {
-      const newBalance = _restockWarehouse(item.productId, warehouseId, item.quantity)
-      _recordStockMovement({
-        productId: item.productId,
-        productName: item.productName,
-        warehouseId,
-        warehouseName: warehouse?.name ?? 'Unknown warehouse',
-        type: 'return_restock',
-        quantityDelta: item.quantity,
-        balanceAfter: newBalance,
-        reason: `Restocked from return ${id}`,
-      })
-    }
+  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
+  if (!res.ok || !json?.success) {
+    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
   }
+  return json
+}
 
-  const updated: ReturnRequest = { ...current, status, restockedWarehouseId: warehouseId ?? current.restockedWarehouseId, updatedAt: new Date().toISOString() }
-  returns = returns.map((r) => (r.id === id ? updated : r))
-  recordAuditEntry({ action: 'return.status_updated', resourceType: 'return', resourceId: id, resourceLabel: `→ ${status}` })
-  return delay(updated)
+async function listReturns(params: ReturnListParams = {}): Promise<PaginatedResponse<ReturnRequest>> {
+  const limit = params.limit ?? 100
+
+  const query = new URLSearchParams()
+  if (params.page) query.set('page', String(params.page))
+  query.set('limit', String(limit))
+  if (params.search) query.set('searchTerm', params.search)
+  if (params.status) query.set('status', params.status)
+  if (params.orderId) query.set('orderId', params.orderId)
+
+  const res = await request<ReturnRequest[]>(`/returns?${query}`)
+  return {
+    data: res.data,
+    meta: res.meta ?? { page: params.page ?? 1, limit, total: res.data.length, totalPages: 1 },
+  }
+}
+
+async function getReturn(id: string): Promise<ReturnRequest> {
+  const res = await request<ReturnRequest>(`/returns/${id}`)
+  return res.data
+}
+
+async function updateReturnStatus(id: string, input: UpdateReturnStatusInput): Promise<ReturnRequest> {
+  const res = await request<ReturnRequest>(`/returns/${id}/status`, { method: 'PATCH', body: JSON.stringify(input) })
+  return res.data
 }
 
 export function useReturns(params: ReturnListParams = {}) {
@@ -106,11 +114,10 @@ export function useReturn(id: string | undefined) {
 export function useUpdateReturnStatus() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, status, warehouseId }: { id: string; status: ReturnStatus; warehouseId?: string }) =>
-      updateReturnStatus(id, status, warehouseId),
-    onSuccess: (_d, variables) => {
+    mutationFn: ({ id, input }: { id: string; input: UpdateReturnStatusInput }) => updateReturnStatus(id, input),
+    onSuccess: (_d, v) => {
       client.invalidateQueries({ queryKey: queryKeys.returns.all })
-      client.invalidateQueries({ queryKey: queryKeys.returns.detail(variables.id) })
+      client.invalidateQueries({ queryKey: queryKeys.returns.detail(v.id) })
       client.invalidateQueries({ queryKey: queryKeys.stock.all })
       client.invalidateQueries({ queryKey: queryKeys.stockMovements.all })
     },

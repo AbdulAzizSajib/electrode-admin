@@ -14,39 +14,41 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { toast } from '@/components/ui/use-toast'
 import { useStock, useAdjustStock, type StockRow } from '@/lib/api/stock'
 import { useWarehouses } from '@/lib/api/warehouses'
+import { useProducts } from '@/lib/api/products'
 
 const schema = z.object({
   delta: z.coerce.number().refine((v) => v !== 0, 'Enter a non-zero amount'),
-  reason: z.string().min(1, 'A reason is required'),
+  note: z.string().min(1, 'A note is required'),
 })
 type Values = z.input<typeof schema>
 type OutputValues = z.output<typeof schema>
 
 export default function StockPage() {
-  const [search, setSearch] = React.useState('')
   const [warehouseId, setWarehouseId] = React.useState('all')
+  const [productId, setProductId] = React.useState('all')
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
   const [adjusting, setAdjusting] = React.useState<StockRow | null>(null)
 
   const { data, isLoading, isError, refetch } = useStock({
-    search,
     page,
     limit: pageSize,
     warehouseId: warehouseId === 'all' ? undefined : warehouseId,
+    productId: productId === 'all' ? undefined : productId,
   })
   const { data: warehousesData } = useWarehouses()
+  const { data: productsData } = useProducts({ limit: 200 })
   const adjustMutation = useAdjustStock()
 
-  const form = useForm<Values, unknown, OutputValues>({ resolver: zodResolver(schema), defaultValues: { delta: 0, reason: '' } })
+  const form = useForm<Values, unknown, OutputValues>({ resolver: zodResolver(schema), defaultValues: { delta: 0, note: '' } })
 
   const onSubmit = async (values: OutputValues) => {
     if (!adjusting) return
     try {
-      await adjustMutation.mutateAsync({ id: adjusting.id, delta: values.delta, reason: values.reason })
+      await adjustMutation.mutateAsync({ id: adjusting.id, quantityDelta: values.delta, note: values.note })
       toast({ title: 'Stock adjusted' })
       setAdjusting(null)
-      form.reset({ delta: 0, reason: '' })
+      form.reset({ delta: 0, note: '' })
     } catch (err) {
       toast({ title: 'Could not adjust stock', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
     }
@@ -55,13 +57,13 @@ export default function StockPage() {
   const columns: ColumnDef<StockRow>[] = [
     { id: 'product', header: 'Product', cell: ({ row }) => (
       <div className="flex flex-col">
-        <span className="font-medium text-foreground">{row.original.productName}</span>
-        <span className="text-xs text-muted-foreground">{row.original.productSku}</span>
+        <span className="font-medium text-foreground">{row.original.product.name}</span>
+        <span className="text-xs text-muted-foreground">{row.original.product.sku}</span>
       </div>
     ) },
-    { accessorKey: 'warehouseName', header: 'Warehouse' },
-    { accessorKey: 'quantityOnHand', header: 'On hand' },
-    { accessorKey: 'reserved', header: 'Reserved' },
+    { id: 'warehouse', header: 'Warehouse', cell: ({ row }) => row.original.warehouse.name },
+    { accessorKey: 'quantity', header: 'On hand' },
+    { accessorKey: 'reservedQuantity', header: 'Reserved' },
     { accessorKey: 'available', header: 'Available', cell: ({ row }) => <span className="font-medium">{row.original.available}</span> },
     {
       id: 'actions',
@@ -84,33 +86,48 @@ export default function StockPage() {
         isLoading={isLoading}
         isError={isError}
         onRetry={() => refetch()}
-        searchValue={search}
-        onSearchChange={(v) => {
-          setSearch(v)
-          setPage(1)
-        }}
-        searchPlaceholder="Search by product…"
         emptyState={{ icon: Boxes, title: 'No stock records found' }}
         toolbar={
-          <Select
-            value={warehouseId}
-            onValueChange={(v) => {
-              setWarehouseId(v)
-              setPage(1)
-            }}
-          >
-            <SelectTrigger className="h-8 w-44">
-              <SelectValue placeholder="Warehouse" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All warehouses</SelectItem>
-              {warehousesData?.data.map((w) => (
-                <SelectItem key={w.id} value={w.id}>
-                  {w.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={productId}
+              onValueChange={(v) => {
+                setProductId(v)
+                setPage(1)
+              }}
+            >
+              <SelectTrigger className="h-8 w-52">
+                <SelectValue placeholder="Product" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All products</SelectItem>
+                {productsData?.data.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={warehouseId}
+              onValueChange={(v) => {
+                setWarehouseId(v)
+                setPage(1)
+              }}
+            >
+              <SelectTrigger className="h-8 w-44">
+                <SelectValue placeholder="Warehouse" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All warehouses</SelectItem>
+                {warehousesData?.data.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         }
         page={page}
         pageSize={pageSize}
@@ -125,7 +142,7 @@ export default function StockPage() {
       <Dialog open={!!adjusting} onOpenChange={(open) => !open && setAdjusting(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Adjust stock — {adjusting?.productName}</DialogTitle>
+            <DialogTitle>Adjust stock — {adjusting?.product.name}</DialogTitle>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3.5">
@@ -144,10 +161,10 @@ export default function StockPage() {
               />
               <FormField
                 control={form.control}
-                name="reason"
+                name="note"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Reason</FormLabel>
+                    <FormLabel>Note</FormLabel>
                     <FormControl>
                       <Input placeholder="e.g. cycle count correction" {...field} />
                     </FormControl>

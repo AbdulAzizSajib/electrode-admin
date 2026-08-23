@@ -1,63 +1,78 @@
+/** Real backend shipment calls — follows the same envelope/error pattern as `categories.ts`/`products.ts`. One shipment per order: `POST` 409s if one exists, `PATCH` 404s if none does. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, delay, generateId } from '@/lib/api/client'
+import { ApiError, BASE_URL, type PaginationMeta } from '@/lib/api/client'
 import { queryKeys } from '@/lib/api/query-keys'
-import { recordAuditEntry } from '@/lib/api/audit-logs'
-import { _advanceOrderToShipped, _getAllOrders, _getOrderById } from '@/lib/api/orders'
+import type { ShippingMethod } from '@/lib/api/shipping-methods'
 
-export type ShipmentStatus = 'label_created' | 'in_transit' | 'delivered'
+export type ShipmentStatus =
+  | 'PENDING'
+  | 'PROCESSING'
+  | 'SHIPPED'
+  | 'IN_TRANSIT'
+  | 'OUT_FOR_DELIVERY'
+  | 'DELIVERED'
+  | 'FAILED'
+  | 'RETURNED'
 
 export interface Shipment {
   id: string
   orderId: string
-  carrier: string
-  trackingNumber: string
+  shippingMethodId: string | null
+  shippingMethod: ShippingMethod | null
+  trackingNumber: string | null
+  carrier: string | null
   status: ShipmentStatus
+  shippedAt: string | null
+  deliveredAt: string | null
   createdAt: string
   updatedAt: string
 }
 
-let shipments: Shipment[] = []
-
-function seed() {
-  for (const order of _getAllOrders()) {
-    if (order.fulfillmentStatus === 'shipped' || order.fulfillmentStatus === 'delivered') {
-      shipments.push({
-        id: generateId('shp'),
-        orderId: order.id,
-        carrier: ['UPS', 'FedEx', 'USPS'][Math.floor(Math.random() * 3)],
-        trackingNumber: `1Z${Math.random().toString(36).slice(2, 12).toUpperCase()}`,
-        status: order.fulfillmentStatus === 'delivered' ? 'delivered' : 'in_transit',
-        createdAt: order.createdAt,
-        updatedAt: order.createdAt,
-      })
-    }
-  }
+export interface ShipmentInput {
+  shippingMethodId?: string
+  trackingNumber?: string
+  carrier?: string
+  status?: ShipmentStatus
 }
-seed()
+
+interface ApiEnvelope<T> {
+  success: boolean
+  message: string
+  data: T
+  meta?: PaginationMeta
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
+
+  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
+  if (!res.ok || !json?.success) {
+    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
+  }
+  return json
+}
 
 async function getShipmentByOrder(orderId: string): Promise<Shipment | null> {
-  return delay(shipments.find((s) => s.orderId === orderId) ?? null)
+  try {
+    const res = await request<Shipment>(`/orders/${orderId}/shipment`)
+    return res.data
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null
+    throw err
+  }
 }
 
-async function upsertShipment(orderId: string, carrier: string, trackingNumber: string): Promise<Shipment> {
-  const order = _getOrderById(orderId)
-  if (!order) throw new ApiError('Order not found', 404)
-
-  const existingIndex = shipments.findIndex((s) => s.orderId === orderId)
-  const now = new Date().toISOString()
-
-  if (existingIndex >= 0) {
-    const updated = { ...shipments[existingIndex], carrier, trackingNumber, updatedAt: now }
-    shipments = shipments.map((s) => (s.orderId === orderId ? updated : s))
-    recordAuditEntry({ action: 'shipment.updated', resourceType: 'shipment', resourceId: updated.id, resourceLabel: order.orderNumber })
-    return delay(updated)
-  }
-
-  const shipment: Shipment = { id: generateId('shp'), orderId, carrier, trackingNumber, status: 'label_created', createdAt: now, updatedAt: now }
-  shipments = [shipment, ...shipments]
-  _advanceOrderToShipped(orderId)
-  recordAuditEntry({ action: 'shipment.created', resourceType: 'shipment', resourceId: shipment.id, resourceLabel: order.orderNumber })
-  return delay(shipment)
+/** Creates the order's shipment if it has none yet, otherwise updates the existing one. */
+async function upsertShipment(orderId: string, input: ShipmentInput, hasExisting: boolean): Promise<Shipment> {
+  const res = await request<Shipment>(`/orders/${orderId}/shipment`, {
+    method: hasExisting ? 'PATCH' : 'POST',
+    body: JSON.stringify(input),
+  })
+  return res.data
 }
 
 export function useShipmentByOrder(orderId: string | undefined) {
@@ -71,8 +86,8 @@ export function useShipmentByOrder(orderId: string | undefined) {
 export function useUpsertShipment() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ orderId, carrier, trackingNumber }: { orderId: string; carrier: string; trackingNumber: string }) =>
-      upsertShipment(orderId, carrier, trackingNumber),
+    mutationFn: ({ orderId, input, hasExisting }: { orderId: string; input: ShipmentInput; hasExisting: boolean }) =>
+      upsertShipment(orderId, input, hasExisting),
     onSuccess: (_d, variables) => {
       client.invalidateQueries({ queryKey: queryKeys.shipments.byOrder(variables.orderId) })
       client.invalidateQueries({ queryKey: queryKeys.orders.detail(variables.orderId) })

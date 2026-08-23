@@ -1,11 +1,12 @@
 import * as React from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { ArrowLeft, PackageCheck, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, PackageCheck, Pencil, Trash2, Ban, Send } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -13,66 +14,88 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
 import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
-import { useSuppliers } from '@/lib/api/suppliers'
 import { useWarehouses } from '@/lib/api/warehouses'
-import { useProducts } from '@/lib/api/products'
-import { useDeletePurchaseOrder, usePurchaseOrder, useReceivePurchaseOrder, poTotal, type PurchaseOrderStatus } from '@/lib/api/purchase-orders'
+import {
+  useDeletePurchaseOrder,
+  usePurchaseOrder,
+  useReceivePurchaseOrder,
+  useUpdatePurchaseOrder,
+  type PurchaseOrderStatus,
+} from '@/lib/api/purchase-orders'
 import { formatCurrency, formatDateTime } from '@/lib/utils/format'
 
 const STATUS_LABEL: Record<PurchaseOrderStatus, string> = {
-  pending: 'Pending',
-  partially_received: 'Partially received',
-  received: 'Received',
-  cancelled: 'Cancelled',
+  DRAFT: 'Draft',
+  ORDERED: 'Ordered',
+  PARTIALLY_RECEIVED: 'Partially received',
+  RECEIVED: 'Received',
+  CANCELLED: 'Cancelled',
 }
-const STATUS_VARIANT: Record<PurchaseOrderStatus, 'secondary' | 'warning' | 'success' | 'destructive'> = {
-  pending: 'secondary',
-  partially_received: 'warning',
-  received: 'success',
-  cancelled: 'destructive',
+const STATUS_VARIANT: Record<PurchaseOrderStatus, 'secondary' | 'info' | 'warning' | 'success' | 'destructive'> = {
+  DRAFT: 'secondary',
+  ORDERED: 'info',
+  PARTIALLY_RECEIVED: 'warning',
+  RECEIVED: 'success',
+  CANCELLED: 'destructive',
 }
 
 export default function PurchaseOrderDetailPage() {
   const { poId } = useParams()
   const navigate = useNavigate()
   const { data: po, isLoading } = usePurchaseOrder(poId)
-  const { data: suppliersData } = useSuppliers()
   const { data: warehousesData } = useWarehouses()
-  const { data: productsData } = useProducts({ limit: 200 })
   const receiveMutation = useReceivePurchaseOrder()
+  const updateMutation = useUpdatePurchaseOrder()
   const deleteMutation = useDeletePurchaseOrder()
   const confirmDialog = useConfirmDialog()
 
   const [receiveOpen, setReceiveOpen] = React.useState(false)
+  const [receiveWarehouseId, setReceiveWarehouseId] = React.useState('')
   const [receiveQuantities, setReceiveQuantities] = React.useState<Record<string, number>>({})
 
-  useBreadcrumbLabel(po?.poNumber)
-
-  const productName = (id: string) => productsData?.data.find((p) => p.id === id)?.name ?? 'Unknown product'
-  const supplierName = suppliersData?.data.find((s) => s.id === po?.supplierId)?.name ?? '—'
-  const warehouseName = warehousesData?.data.find((w) => w.id === po?.warehouseId)?.name ?? '—'
+  useBreadcrumbLabel(po?.purchaseNumber)
 
   const openReceiveDialog = () => {
     if (!po) return
     const defaults: Record<string, number> = {}
     po.items.forEach((item) => {
-      defaults[item.productId] = Math.max(0, item.quantityOrdered - item.quantityReceived)
+      defaults[item.id] = Math.max(0, item.quantity - item.receivedQuantity)
     })
     setReceiveQuantities(defaults)
+    setReceiveWarehouseId('')
     setReceiveOpen(true)
   }
 
   const submitReceive = async () => {
     if (!po) return
+    if (!receiveWarehouseId) {
+      toast({ title: 'Select a warehouse to receive into', variant: 'destructive' })
+      return
+    }
     try {
       await receiveMutation.mutateAsync({
         id: po.id,
-        receipts: Object.entries(receiveQuantities).map(([productId, quantity]) => ({ productId, quantity })),
+        input: {
+          warehouseId: receiveWarehouseId,
+          items: Object.entries(receiveQuantities)
+            .filter(([, quantity]) => quantity > 0)
+            .map(([purchaseOrderItemId, quantity]) => ({ purchaseOrderItemId, quantity })),
+        },
       })
       toast({ title: 'Receipt recorded', description: 'Stock and status have been updated.' })
       setReceiveOpen(false)
     } catch (err) {
       toast({ title: 'Could not record receipt', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
+    }
+  }
+
+  const setStatus = async (status: 'ORDERED' | 'CANCELLED') => {
+    if (!po) return
+    try {
+      await updateMutation.mutateAsync({ id: po.id, input: { status } })
+      toast({ title: status === 'ORDERED' ? 'Marked as ordered' : 'Purchase order cancelled' })
+    } catch (err) {
+      toast({ title: 'Could not update status', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
     }
   }
 
@@ -87,8 +110,9 @@ export default function PurchaseOrderDetailPage() {
 
   if (!po) return <EmptyState title="Purchase order not found" />
 
-  const hasReceived = po.items.some((i) => i.quantityReceived > 0)
-  const canReceive = po.status === 'pending' || po.status === 'partially_received'
+  const hasReceived = po.items.some((i) => i.receivedQuantity > 0)
+  const canReceive = po.status !== 'CANCELLED' && po.status !== 'RECEIVED'
+  const canEdit = po.status === 'DRAFT' || po.status === 'ORDERED'
 
   return (
     <div className="flex flex-col gap-4">
@@ -98,21 +122,31 @@ export default function PurchaseOrderDetailPage() {
         </Button>
         <PageHeader
           className="flex-1"
-          title={po.poNumber}
-          description={supplierName}
+          title={po.purchaseNumber}
+          description={po.supplier.name}
           actions={
             <>
               <Badge variant={STATUS_VARIANT[po.status]} className="mr-1">{STATUS_LABEL[po.status]}</Badge>
+              {po.status === 'DRAFT' && (
+                <Button variant="outline" size="sm" onClick={() => setStatus('ORDERED')} loading={updateMutation.isPending}>
+                  <Send /> Mark as ordered
+                </Button>
+              )}
               {canReceive && (
                 <Button size="sm" onClick={openReceiveDialog}>
                   <PackageCheck /> Receive
                 </Button>
               )}
-              {po.status === 'pending' && (
+              {canEdit && (
                 <Button variant="outline" size="sm" asChild>
                   <Link to={`/inventory/purchase-orders/${po.id}/edit`}>
                     <Pencil /> Edit
                   </Link>
+                </Button>
+              )}
+              {canEdit && (
+                <Button variant="outline" size="sm" onClick={() => setStatus('CANCELLED')} loading={updateMutation.isPending}>
+                  <Ban /> Cancel
                 </Button>
               )}
               {!hasReceived && (
@@ -156,20 +190,22 @@ export default function PurchaseOrderDetailPage() {
             </TableHeader>
             <TableBody>
               {po.items.map((item) => (
-                <TableRow key={item.productId}>
-                  <TableCell className="font-medium text-foreground">{productName(item.productId)}</TableCell>
-                  <TableCell>{item.quantityOrdered}</TableCell>
-                  <TableCell>{item.quantityReceived}</TableCell>
-                  <TableCell>{formatCurrency(item.unitCost)}</TableCell>
-                  <TableCell>{formatCurrency(item.quantityOrdered * item.unitCost)}</TableCell>
+                <TableRow key={item.id}>
+                  <TableCell className="font-medium text-foreground">{item.product.name}</TableCell>
+                  <TableCell>{item.quantity}</TableCell>
+                  <TableCell>{item.receivedQuantity}</TableCell>
+                  <TableCell>{formatCurrency(Number(item.unitCost))}</TableCell>
+                  <TableCell>{formatCurrency(Number(item.totalCost))}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </CardContent>
-        <div className="flex items-center justify-between border-t border-border px-4 py-3 text-sm">
-          <span className="text-muted-foreground">Warehouse: {warehouseName}</span>
-          <span className="font-semibold text-foreground">Total: {formatCurrency(poTotal(po))}</span>
+        <div className="flex flex-col items-end gap-0.5 border-t border-border px-4 py-3 text-sm">
+          <span className="text-muted-foreground">Subtotal: {formatCurrency(Number(po.subtotal))}</span>
+          <span className="text-muted-foreground">Shipping: {formatCurrency(Number(po.shippingCost))}</span>
+          <span className="text-muted-foreground">Tax: {formatCurrency(Number(po.taxAmount))}</span>
+          <span className="font-semibold text-foreground">Total: {formatCurrency(Number(po.totalAmount))}</span>
         </div>
       </Card>
 
@@ -185,25 +221,37 @@ export default function PurchaseOrderDetailPage() {
       <Dialog open={receiveOpen} onOpenChange={setReceiveOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Receive items — {po.poNumber}</DialogTitle>
+            <DialogTitle>Receive items — {po.purchaseNumber}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-foreground">Warehouse</span>
+              <Select value={receiveWarehouseId} onValueChange={setReceiveWarehouseId}>
+                <SelectTrigger><SelectValue placeholder="Select a warehouse" /></SelectTrigger>
+                <SelectContent>
+                  {warehousesData?.data.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             {po.items.map((item) => {
-              const remaining = item.quantityOrdered - item.quantityReceived
+              const remaining = item.quantity - item.receivedQuantity
               return (
-                <div key={item.productId} className="flex items-center justify-between gap-3">
+                <div key={item.id} className="flex items-center justify-between gap-3">
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">{productName(item.productId)}</span>
-                    <span className="text-xs text-muted-foreground">{remaining} remaining of {item.quantityOrdered}</span>
+                    <span className="text-sm font-medium text-foreground">{item.product.name}</span>
+                    <span className="text-xs text-muted-foreground">{remaining} remaining of {item.quantity}</span>
                   </div>
                   <Input
                     type="number"
                     min={0}
                     max={remaining}
                     className="w-24"
-                    value={receiveQuantities[item.productId] ?? 0}
+                    disabled={remaining <= 0}
+                    value={receiveQuantities[item.id] ?? 0}
                     onChange={(e) =>
-                      setReceiveQuantities((prev) => ({ ...prev, [item.productId]: Math.max(0, Math.min(remaining, Number(e.target.value) || 0)) }))
+                      setReceiveQuantities((prev) => ({ ...prev, [item.id]: Math.max(0, Math.min(remaining, Number(e.target.value) || 0)) }))
                     }
                   />
                 </div>
