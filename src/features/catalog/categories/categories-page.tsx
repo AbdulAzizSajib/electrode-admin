@@ -12,7 +12,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/use-toast'
 import { useCategories, useCategoryTree, useDeleteCategory, type Category } from '@/lib/api/categories'
-import { CategoryFormModal } from '@/features/catalog/categories/category-form-modal'
+import { CategoryCreateModal, CategoryEditModal } from '@/features/catalog/categories/category-form-modal'
 import { CategoryTreeNode } from '@/features/catalog/categories/category-tree-node'
 import { formatDate } from '@/lib/utils/format'
 
@@ -23,7 +23,8 @@ export default function CategoriesPage() {
   const [search, setSearch] = React.useState('')
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
-  const [modalOpen, setModalOpen] = React.useState(false)
+  const [createOpen, setCreateOpen] = React.useState(false)
+  const [editOpen, setEditOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<Category | null>(null)
   const [defaultParentId, setDefaultParentId] = React.useState<string | null>(null)
 
@@ -110,7 +111,7 @@ export default function CategoriesPage() {
             <DropdownMenuItem
               onClick={() => {
                 setEditing(row.original)
-                setModalOpen(true)
+                setEditOpen(true)
               }}
             >
               <Pencil /> Edit
@@ -133,9 +134,8 @@ export default function CategoriesPage() {
           <Button
             size="sm"
             onClick={() => {
-              setEditing(null)
               setDefaultParentId(null)
-              setModalOpen(true)
+              setCreateOpen(true)
             }}
           >
             <Plus /> New category
@@ -200,13 +200,11 @@ export default function CategoriesPage() {
               depth={0}
               onEdit={(cat) => {
                 setEditing(cat)
-                setDefaultParentId(null)
-                setModalOpen(true)
+                setEditOpen(true)
               }}
               onAddChild={(parent) => {
-                setEditing(null)
                 setDefaultParentId(parent.id)
-                setModalOpen(true)
+                setCreateOpen(true)
               }}
               onDelete={handleDelete}
             />
@@ -214,13 +212,8 @@ export default function CategoriesPage() {
         </div>
       )}
 
-      <CategoryFormModal
-        open={modalOpen}
-        onOpenChange={setModalOpen}
-        category={editing}
-        categoryTree={treeQuery.data ?? []}
-        defaultParentId={defaultParentId}
-      />
+      <CategoryCreateModal open={createOpen} onOpenChange={setCreateOpen} categoryTree={treeQuery.data ?? []} defaultParentId={defaultParentId} />
+      <CategoryEditModal open={editOpen} onOpenChange={setEditOpen} category={editing} categoryTree={treeQuery.data ?? []} />
 
       <ConfirmDialog
         open={confirmDialog.open}

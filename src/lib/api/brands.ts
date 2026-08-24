@@ -29,6 +29,11 @@ export interface BrandListParams extends ListParams {
   status?: boolean
 }
 
+export interface BulkCreateBrandsResult {
+  created: Array<{ id: string; name: string; slug: string }>
+  skipped: Array<{ name: string; reason: string }>
+}
+
 interface ApiEnvelope<T> {
   success: boolean
   message: string
@@ -86,6 +91,11 @@ async function updateBrand(id: string, input: BrandInput): Promise<Brand> {
   return res.data
 }
 
+async function bulkCreateBrands(names: string[]): Promise<BulkCreateBrandsResult> {
+  const res = await request<BulkCreateBrandsResult>('/brands/bulk', { method: 'POST', body: JSON.stringify({ names }) })
+  return res.data
+}
+
 async function deleteBrand(id: string): Promise<void> {
   await request<Brand>(`/brands/${id}`, { method: 'DELETE' })
 }
@@ -110,6 +120,14 @@ export function useUpdateBrand() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: BrandInput }) => updateBrand(id, input),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.brands.all }),
+  })
+}
+
+export function useBulkCreateBrands() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: bulkCreateBrands,
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.brands.all }),
   })
 }

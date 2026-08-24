@@ -76,6 +76,13 @@ export interface Product {
   updatedAt: string
 }
 
+/** Metadata for one locally-picked file, matched by position to `ProductImageUpload.files[i]` — see `createProduct`/`updateProduct`. */
+export interface ImageSlotInput {
+  altText?: string
+  sortOrder?: number
+  isPrimary?: boolean
+}
+
 export interface ProductInput {
   name: string
   sku?: string
@@ -93,6 +100,17 @@ export interface ProductInput {
   images?: ProductImage[]
   variants?: ProductVariantInput[]
   attributes?: ProductAttribute[]
+}
+
+/**
+ * Locally-picked image files to upload alongside `ProductInput.images` (which stays URL-only —
+ * kept/new-by-URL entries). `files[i]`'s metadata is `imageSlots[i]`, matched by position — same
+ * contract as the backend's `add-product-image-upload` change. Omit entirely (or pass an empty
+ * `files` array) for a plain JSON request with no uploads.
+ */
+export interface ProductImageUpload {
+  files: File[]
+  imageSlots: ImageSlotInput[]
 }
 
 export interface ProductListParams extends ListParams {
@@ -135,6 +153,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope
   return json
 }
 
+/**
+ * Same envelope-unwrap as `request`, but for `multipart/form-data` — no `Content-Type` header
+ * (the browser sets the multipart boundary itself; setting it manually breaks the parse).
+ */
+async function requestMultipart<T>(path: string, method: string, form: FormData): Promise<ApiEnvelope<T>> {
+  const res = await fetch(`${BASE_URL}${path}`, { method, credentials: 'include', body: form })
+
+  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
+  if (!res.ok || !json?.success) {
+    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
+  }
+  return json
+}
+
+/** Builds the `data` + repeated `images` multipart body the backend's product routes expect. */
+function buildProductForm(input: ProductInput, upload: ProductImageUpload): FormData {
+  const form = new FormData()
+  form.append('data', JSON.stringify({ ...input, imageSlots: upload.imageSlots }))
+  for (const file of upload.files) {
+    form.append('images', file)
+  }
+  return form
+}
+
 async function listProducts(params: ProductListParams = {}): Promise<PaginatedResponse<ProductListRow>> {
   const limit = params.limit ?? 100
 
@@ -161,13 +203,19 @@ async function getProduct(id: string): Promise<ProductListRow> {
   return { ...res.data, stockStatus: stockStatus(res.data) }
 }
 
-async function createProduct(input: ProductInput): Promise<Product> {
-  const res = await request<Product>('/products', { method: 'POST', body: JSON.stringify(input) })
+async function createProduct(input: ProductInput, upload?: ProductImageUpload): Promise<Product> {
+  const res =
+    upload && upload.files.length > 0
+      ? await requestMultipart<Product>('/products', 'POST', buildProductForm(input, upload))
+      : await request<Product>('/products', { method: 'POST', body: JSON.stringify(input) })
   return res.data
 }
 
-async function updateProduct(id: string, input: ProductInput): Promise<Product> {
-  const res = await request<Product>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+async function updateProduct(id: string, input: ProductInput, upload?: ProductImageUpload): Promise<Product> {
+  const res =
+    upload && upload.files.length > 0
+      ? await requestMultipart<Product>(`/products/${id}`, 'PATCH', buildProductForm(input, upload))
+      : await request<Product>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
   return res.data
 }
 
@@ -185,13 +233,17 @@ export function useProduct(id: string | undefined) {
 
 export function useCreateProduct() {
   const client = useQueryClient()
-  return useMutation({ mutationFn: createProduct, onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.products.all }) })
+  return useMutation({
+    mutationFn: ({ input, upload }: { input: ProductInput; upload?: ProductImageUpload }) => createProduct(input, upload),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.products.all }),
+  })
 }
 
 export function useUpdateProduct() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, input }: { id: string; input: ProductInput }) => updateProduct(id, input),
+    mutationFn: ({ id, input, upload }: { id: string; input: ProductInput; upload?: ProductImageUpload }) =>
+      updateProduct(id, input, upload),
     onSuccess: (_data, variables) => {
       client.invalidateQueries({ queryKey: queryKeys.products.all })
       client.invalidateQueries({ queryKey: queryKeys.products.detail(variables.id) })

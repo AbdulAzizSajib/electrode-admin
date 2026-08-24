@@ -8,6 +8,11 @@
  * percentage trends for revenue/orders (against the immediately preceding period of equal length)
  * but has no time-series basis for total-customer-count or low-stock-count, so it doesn't fabricate
  * one — `DashboardSummary.kpis` only has `revenueTrend`/`ordersTrend`.
+ *
+ * The five reporting hooks below (`useTopProducts`, `useSalesByCategory`,
+ * `useOrderStatusBreakdown`, `usePaymentBreakdown`, `useReturnsRefunds`) are backed by
+ * `server/openspec/changes/add-analytics-reports-api` — same `range` param, same envelope, same
+ * `api/analytics` capability, just five more `GET /analytics/*` routes alongside `/dashboard`.
  */
 import { useQuery } from '@tanstack/react-query'
 import { ApiError, BASE_URL } from '@/lib/api/client'
@@ -35,6 +40,36 @@ export interface DashboardSummary {
   lowStockProducts: Array<{ id: string; name: string; stockQuantity: number; lowStockThreshold: number }>
 }
 
+export interface TopProduct {
+  productId: string
+  name: string
+  quantitySold: number
+  revenue: number
+}
+
+export interface CategorySales {
+  categoryId: string
+  categoryName: string
+  revenue: number
+  orderItemCount: number
+}
+
+export interface OrderStatusBreakdownEntry {
+  status: string
+  count: number
+}
+
+export interface PaymentBreakdown {
+  byMethod: Array<{ method: string; count: number; amount: number }>
+  byStatus: Array<{ status: string; count: number }>
+}
+
+export interface ReturnsRefundsSummary {
+  returnsByStatus: Array<{ status: string; count: number }>
+  refundsByStatus: Array<{ status: string; count: number; amount: number }>
+  refundRate: number
+}
+
 interface ApiEnvelope<T> {
   success: boolean
   message: string
@@ -56,6 +91,51 @@ async function getDashboardSummary(range: DashboardRange): Promise<DashboardSumm
   return res.data
 }
 
+async function getTopProducts(range: DashboardRange): Promise<TopProduct[]> {
+  const res = await request<TopProduct[]>(`/analytics/top-products?range=${range}`)
+  return res.data
+}
+
+async function getSalesByCategory(range: DashboardRange): Promise<CategorySales[]> {
+  const res = await request<CategorySales[]>(`/analytics/sales-by-category?range=${range}`)
+  return res.data
+}
+
+async function getOrderStatusBreakdown(range: DashboardRange): Promise<OrderStatusBreakdownEntry[]> {
+  const res = await request<OrderStatusBreakdownEntry[]>(`/analytics/order-status-breakdown?range=${range}`)
+  return res.data
+}
+
+async function getPaymentBreakdown(range: DashboardRange): Promise<PaymentBreakdown> {
+  const res = await request<PaymentBreakdown>(`/analytics/payment-breakdown?range=${range}`)
+  return res.data
+}
+
+async function getReturnsRefunds(range: DashboardRange): Promise<ReturnsRefundsSummary> {
+  const res = await request<ReturnsRefundsSummary>(`/analytics/returns-refunds?range=${range}`)
+  return res.data
+}
+
 export function useDashboardSummary(range: DashboardRange) {
   return useQuery({ queryKey: queryKeys.dashboard.summary(range), queryFn: () => getDashboardSummary(range) })
+}
+
+export function useTopProducts(range: DashboardRange) {
+  return useQuery({ queryKey: queryKeys.dashboard.topProducts(range), queryFn: () => getTopProducts(range) })
+}
+
+export function useSalesByCategory(range: DashboardRange) {
+  return useQuery({ queryKey: queryKeys.dashboard.salesByCategory(range), queryFn: () => getSalesByCategory(range) })
+}
+
+export function useOrderStatusBreakdown(range: DashboardRange) {
+  return useQuery({ queryKey: queryKeys.dashboard.orderStatusBreakdown(range), queryFn: () => getOrderStatusBreakdown(range) })
+}
+
+export function usePaymentBreakdown(range: DashboardRange) {
+  return useQuery({ queryKey: queryKeys.dashboard.paymentBreakdown(range), queryFn: () => getPaymentBreakdown(range) })
+}
+
+export function useReturnsRefunds(range: DashboardRange) {
+  return useQuery({ queryKey: queryKeys.dashboard.returnsRefunds(range), queryFn: () => getReturnsRefunds(range) })
 }

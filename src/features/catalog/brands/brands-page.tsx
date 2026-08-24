@@ -1,6 +1,6 @@
 import * as React from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { MoreHorizontal, Pencil, Plus, Trash2, Tag } from 'lucide-react'
+import { MoreHorizontal, Pencil, Plus, Trash2, Tag, ListPlus } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -10,14 +10,16 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
 import { useBrands, useDeleteBrand, type Brand } from '@/lib/api/brands'
-import { BrandFormSheet } from '@/features/catalog/brands/brand-form-sheet'
+import { BrandCreateModal, BrandEditModal, BrandBulkCreateModal } from '@/features/catalog/brands/brand-form-modal'
 import { formatDate, initials } from '@/lib/utils/format'
 
 export default function BrandsPage() {
   const [search, setSearch] = React.useState('')
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
-  const [sheetOpen, setSheetOpen] = React.useState(false)
+  const [createOpen, setCreateOpen] = React.useState(false)
+  const [bulkOpen, setBulkOpen] = React.useState(false)
+  const [editOpen, setEditOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<Brand | null>(null)
 
   const { data, isLoading, isError, refetch } = useBrands({ search, page, limit: pageSize })
@@ -60,7 +62,7 @@ export default function BrandsPage() {
             <DropdownMenuItem
               onClick={() => {
                 setEditing(row.original)
-                setSheetOpen(true)
+                setEditOpen(true)
               }}
             >
               <Pencil /> Edit
@@ -92,15 +94,14 @@ export default function BrandsPage() {
         title="Brands"
         description="Manage the brands carried in your store."
         actions={
-          <Button
-            size="sm"
-            onClick={() => {
-              setEditing(null)
-              setSheetOpen(true)
-            }}
-          >
-            <Plus /> New brand
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
+              <ListPlus /> Bulk add
+            </Button>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus /> New brand
+            </Button>
+          </div>
         }
       />
 
@@ -127,7 +128,9 @@ export default function BrandsPage() {
         }}
       />
 
-      <BrandFormSheet open={sheetOpen} onOpenChange={setSheetOpen} brand={editing} />
+      <BrandCreateModal open={createOpen} onOpenChange={setCreateOpen} />
+      <BrandBulkCreateModal open={bulkOpen} onOpenChange={setBulkOpen} />
+      <BrandEditModal open={editOpen} onOpenChange={setEditOpen} brand={editing} />
 
       <ConfirmDialog
         open={confirmDialog.open}

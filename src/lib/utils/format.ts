@@ -35,6 +35,11 @@ export function formatCompactNumber(value: number) {
   return compactNumberFormatter.format(value)
 }
 
+/** `value` is a 0-1 ratio (e.g. a refund rate) — rendered as a percentage with one decimal. */
+export function formatPercent(value: number) {
+  return `${(value * 100).toFixed(1)}%`
+}
+
 export function formatDate(value: string | Date) {
   const date = typeof value === 'string' ? new Date(value) : value
   return date.toLocaleDateString('en-US', {

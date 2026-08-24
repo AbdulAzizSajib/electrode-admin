@@ -1,3 +1,4 @@
+import * as React from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useFieldArray, useForm, type Control } from 'react-hook-form'
@@ -16,8 +17,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/use-toast'
 import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
 import { useProduct, useCreateProduct, useUpdateProduct, type ProductInput } from '@/lib/api/products'
-import { useCategories } from '@/lib/api/categories'
+import { useCategoryTree } from '@/lib/api/categories'
 import { useBrands } from '@/lib/api/brands'
+import { ImageUploadField, type PendingImage } from '@/features/catalog/products/components/image-upload-field'
+import { CategoryParentPicker } from '@/features/catalog/categories/category-parent-picker'
 
 const imageSchema = z.object({
   id: z.string().optional(),
@@ -190,7 +193,7 @@ export default function ProductFormPage() {
   const navigate = useNavigate()
 
   const { data: product, isLoading: loadingProduct } = useProduct(productId)
-  const { data: categoriesData } = useCategories()
+  const { data: categoryTree } = useCategoryTree()
   const { data: brandsData } = useBrands()
   const createMutation = useCreateProduct()
   const updateMutation = useUpdateProduct()
@@ -257,6 +260,13 @@ export default function ProductFormPage() {
   const attributeArray = useFieldArray({ control: form.control, name: 'attributes' })
   const variantArray = useFieldArray({ control: form.control, name: 'variants' })
 
+  // Locally-picked files pending upload — separate from `imageArray` (URL-based rows only).
+  // Reset whenever the product being edited changes, same as the form's own `values` re-sync.
+  const [pendingImages, setPendingImages] = React.useState<PendingImage[]>([])
+  React.useEffect(() => {
+    setPendingImages([])
+  }, [product?.id])
+
   const onSubmit = async (values: OutputValues) => {
     const images = values.images.map((img, index) => ({
       ...(img.id ? { id: img.id } : {}),
@@ -265,9 +275,9 @@ export default function ProductFormPage() {
       sortOrder: index,
       isPrimary: img.isPrimary,
     }))
-    // Exactly one image must be primary once there's at least one — default to the first
-    // rather than blocking submission over it.
-    if (images.length > 0 && !images.some((img) => img.isPrimary)) {
+    // Exactly one image must be primary once there's at least one (across URL rows AND pending
+    // uploads) — default to the first URL row only when no upload already claimed it either.
+    if (images.length > 0 && !images.some((img) => img.isPrimary) && !pendingImages.some((p) => p.isPrimary)) {
       images[0].isPrimary = true
     }
 
@@ -300,13 +310,22 @@ export default function ProductFormPage() {
           : [],
     }
 
+    // Positional match to `imageSlots[i]` <-> `files[i]` — see ProductImageUpload in lib/api/products.ts.
+    const upload =
+      pendingImages.length > 0
+        ? {
+            files: pendingImages.map((p) => p.file),
+            imageSlots: pendingImages.map((p) => ({ altText: p.altText || undefined, isPrimary: p.isPrimary })),
+          }
+        : undefined
+
     try {
       if (isEdit && productId) {
-        await updateMutation.mutateAsync({ id: productId, input })
+        await updateMutation.mutateAsync({ id: productId, input, upload })
         toast({ title: 'Product updated' })
         navigate(`/catalog/products/${productId}`)
       } else {
-        const created = await createMutation.mutateAsync(input)
+        const created = await createMutation.mutateAsync({ input, upload })
         toast({ title: 'Product created' })
         navigate(`/catalog/products/${created.id}`)
       }
@@ -506,6 +525,8 @@ export default function ProductFormPage() {
                                 onCheckedChange={(checked) => {
                                   if (!checked) return
                                   imageArray.fields.forEach((_, i) => form.setValue(`images.${i}.isPrimary`, i === index))
+                                  // At most one primary image across both URL rows and pending uploads.
+                                  setPendingImages((prev) => prev.map((p) => ({ ...p, isPrimary: false })))
                                 }}
                               />
                             </FormControl>
@@ -519,6 +540,18 @@ export default function ProductFormPage() {
                     </div>
                   ))}
                   {imageArray.fields.length === 0 && <p className="text-sm text-muted-foreground">No images added yet.</p>}
+
+                  <ImageUploadField
+                    pending={pendingImages}
+                    onChange={(next) => {
+                      setPendingImages(next)
+                      // At most one primary image across both lists — a newly-checked upload wins.
+                      if (next.some((p) => p.isPrimary)) {
+                        imageArray.fields.forEach((_, i) => form.setValue(`images.${i}.isPrimary`, false))
+                      }
+                    }}
+                    hasPrimaryElsewhere={imageArray.fields.some((_, i) => form.getValues(`images.${i}.isPrimary`))}
+                  />
                 </CardContent>
               </Card>
 
@@ -603,20 +636,15 @@ export default function ProductFormPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Category</FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a category" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {categoriesData?.data.map((c) => (
-                              <SelectItem key={c.id} value={c.id}>
-                                {c.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <FormControl>
+                          {/* Cascading parent -> child picker (same component/behavior as the
+                              Category admin page), not a flat list mixing every depth together. */}
+                          <CategoryParentPicker
+                            tree={categoryTree ?? []}
+                            value={field.value || null}
+                            onChange={(id) => field.onChange(id ?? '')}
+                          />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
