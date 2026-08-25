@@ -325,9 +325,9 @@ export default function ProductFormPage() {
         toast({ title: 'Product updated' })
         navigate(`/catalog/products/${productId}`)
       } else {
-        const created = await createMutation.mutateAsync({ input, upload })
+        await createMutation.mutateAsync({ input, upload })
         toast({ title: 'Product created' })
-        navigate(`/catalog/products/${created.id}`)
+        navigate('/catalog/products')
       }
     } catch (err) {
       toast({ title: 'Something went wrong', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
