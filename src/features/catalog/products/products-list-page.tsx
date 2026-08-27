@@ -52,6 +52,7 @@ export default function ProductsListPage() {
       header: 'Product',
       cell: ({ row }) => (
         <div className="flex items-center gap-2.5">
+        {/* fff */}
           <img
             src={row.original.images[0]?.url}
             alt=""
