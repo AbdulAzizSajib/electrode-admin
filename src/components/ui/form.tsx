@@ -7,6 +7,7 @@ import {
   type FieldPath,
   type FieldValues,
 } from 'react-hook-form'
+import { Slot } from '@radix-ui/react-slot'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils/cn'
 
@@ -81,11 +82,17 @@ export const FormLabel = React.forwardRef<
 })
 FormLabel.displayName = 'FormLabel'
 
-export const FormControl = React.forwardRef<HTMLDivElement, React.ComponentProps<'div'>>(
+/**
+ * Merges its accessibility props onto the control it wraps rather than rendering a wrapper element.
+ * Must stay a `Slot`: Radix compound controls (notably `Select`) require their trigger to be a
+ * direct child of the root, and an intervening `<div>` silently breaks that link — the trigger then
+ * renders without its selected value.
+ */
+export const FormControl = React.forwardRef<HTMLElement, React.ComponentProps<typeof Slot>>(
   ({ ...props }, ref) => {
     const { error, formItemId, formDescriptionId, formMessageId } = useFormField()
     return (
-      <div
+      <Slot
         ref={ref}
         id={formItemId}
         aria-describedby={!error ? formDescriptionId : `${formDescriptionId} ${formMessageId}`}

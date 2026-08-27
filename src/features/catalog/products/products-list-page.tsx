@@ -11,8 +11,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
 import { useProducts, useDeleteProduct, type ProductListRow, type ProductStatus } from '@/lib/api/products'
-import { useCategories } from '@/lib/api/categories'
+import { useCategoryTree } from '@/lib/api/categories'
 import { useBrands } from '@/lib/api/brands'
+import { CategoryFilter } from '@/features/catalog/products/category-filter'
 import { formatCurrency } from '@/lib/utils/format'
 
 const STOCK_VARIANT = { in_stock: 'success', low_stock: 'warning', out_of_stock: 'destructive' } as const
@@ -24,7 +25,7 @@ const STATUS_LABEL = { DRAFT: 'Draft', ACTIVE: 'Active', ARCHIVED: 'Archived' } 
 export default function ProductsListPage() {
   const navigate = useNavigate()
   const [search, setSearch] = React.useState('')
-  const [categoryId, setCategoryId] = React.useState('all')
+  const [categoryId, setCategoryId] = React.useState<string | null>(null)
   const [brandId, setBrandId] = React.useState('all')
   const [status, setStatus] = React.useState('all')
   const [page, setPage] = React.useState(1)
@@ -34,11 +35,11 @@ export default function ProductsListPage() {
     search,
     page,
     limit: pageSize,
-    categoryId: categoryId === 'all' ? undefined : categoryId,
+    categoryId: categoryId ?? undefined,
     brandId: brandId === 'all' ? undefined : brandId,
     status: status === 'all' ? undefined : (status as ProductStatus),
   })
-  const { data: categoriesData } = useCategories()
+  const { data: categoryTree } = useCategoryTree()
   const { data: brandsData } = useBrands()
   const deleteMutation = useDeleteProduct()
   const confirmDialog = useConfirmDialog()
@@ -102,8 +103,10 @@ export default function ProductsListPage() {
               onClick={() =>
                 confirmDialog.confirm(async () => {
                   try {
-                    await deleteMutation.mutateAsync(row.original.id)
-                    toast({ title: 'Product deleted' })
+                    // The server archives rather than deletes when the product is
+                    // referenced by orders; its message says which happened.
+                    const { message } = await deleteMutation.mutateAsync(row.original.id)
+                    toast({ title: 'Product deleted', description: message })
                   } catch (err) {
                     toast({ title: 'Could not delete product', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
                   }
@@ -146,25 +149,14 @@ export default function ProductsListPage() {
         emptyState={{ icon: Package, title: 'No products found', description: 'Try adjusting your filters or add a new product.' }}
         toolbar={
           <div className="flex flex-wrap items-center gap-2">
-            <Select
+            <CategoryFilter
+              tree={categoryTree ?? []}
               value={categoryId}
-              onValueChange={(v) => {
+              onChange={(v) => {
                 setCategoryId(v)
                 resetPage()
               }}
-            >
-              <SelectTrigger className="h-8 w-40">
-                <SelectValue placeholder="Category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All categories</SelectItem>
-                {categoriesData?.data.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            />
             <Select
               value={brandId}
               onValueChange={(v) => {
@@ -172,7 +164,7 @@ export default function ProductsListPage() {
                 resetPage()
               }}
             >
-              <SelectTrigger className="h-8 w-36">
+              <SelectTrigger className="h-8 w-auto min-w-32 max-w-48">
                 <SelectValue placeholder="Brand" />
               </SelectTrigger>
               <SelectContent>
@@ -191,7 +183,7 @@ export default function ProductsListPage() {
                 resetPage()
               }}
             >
-              <SelectTrigger className="h-8 w-32">
+              <SelectTrigger className="h-8 w-auto min-w-32">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>

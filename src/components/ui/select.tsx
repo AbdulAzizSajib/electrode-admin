@@ -14,7 +14,10 @@ export const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-8 w-full items-center justify-between gap-1.5 rounded-md border border-input bg-background px-2.5 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted-foreground',
+      // `min-w-0` + truncation on the value span keep a long label (e.g. a deep category name) on
+      // one line and ellipsised inside the trigger instead of wrapping and overflowing the box.
+      // Scoped to the value span, not `*:`, so the chevron keeps its intrinsic size.
+      'flex h-8 w-full min-w-0 items-center justify-between gap-1.5 whitespace-nowrap rounded-md border border-input bg-background px-2.5 py-1 text-sm text-foreground [&>span:first-child]:min-w-0 [&>span:first-child]:overflow-hidden [&>span:first-child]:text-ellipsis focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted-foreground',
       className,
     )}
     {...props}

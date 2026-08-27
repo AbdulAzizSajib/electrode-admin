@@ -70,8 +70,10 @@ export default function ProductDetailPage() {
                 onClick={() =>
                   confirmDialog.confirm(async () => {
                     try {
-                      await deleteMutation.mutateAsync(product.id)
-                      toast({ title: 'Product deleted' })
+                      // The server archives rather than deletes when the product
+                      // is referenced by orders; its message says which happened.
+                      const { message } = await deleteMutation.mutateAsync(product.id)
+                      toast({ title: 'Product deleted', description: message })
                       navigate('/catalog/products')
                     } catch (err) {
                       toast({ title: 'Could not delete product', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })

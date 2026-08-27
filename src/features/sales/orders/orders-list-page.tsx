@@ -50,7 +50,8 @@ export default function OrdersListPage() {
         <span className="text-xs text-muted-foreground">{row.original.customer.email ?? '—'}</span>
       </div>
     ) },
-    { id: 'items', header: 'Items', cell: ({ row }) => row.original.items.reduce((sum, i) => sum + i.quantity, 0) },
+    // The list endpoint omits `items`; fall back to an em dash rather than a misleading 0.
+    { id: 'items', header: 'Items', cell: ({ row }) => row.original.items?.reduce((sum, i) => sum + i.quantity, 0) ?? '—' },
     { id: 'total', header: 'Total', cell: ({ row }) => formatCurrency(Number(row.original.totalAmount)) },
     { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={STATUS_VARIANT[row.original.status]}>{STATUS_LABEL[row.original.status]}</Badge> },
     { accessorKey: 'createdAt', header: 'Placed', cell: ({ row }) => formatDate(row.original.createdAt) },

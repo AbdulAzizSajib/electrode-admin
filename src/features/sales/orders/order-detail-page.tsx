@@ -216,7 +216,7 @@ export default function OrderDetailPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {order.items.map((item, i) => (
+                  {(order.items ?? []).map((item, i) => (
                     <TableRow key={`${item.productId}-${i}`}>
                       <TableCell className="font-medium text-foreground">
                         {item.productName}

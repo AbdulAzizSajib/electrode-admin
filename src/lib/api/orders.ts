@@ -66,7 +66,8 @@ export interface Order {
   customerId: string
   customer: OrderCustomerRef
   status: OrderStatus
-  items: OrderLineItem[]
+  /** Only present on detail responses (`GET /orders/:id`) — list rows omit it. */
+  items?: OrderLineItem[]
   /** Decimal column — arrives as a string from the API. */
   subtotal: string
   /** Decimal column — arrives as a string from the API. */

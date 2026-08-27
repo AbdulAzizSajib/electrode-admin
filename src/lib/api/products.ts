@@ -219,8 +219,14 @@ async function updateProduct(id: string, input: ProductInput, upload?: ProductIm
   return res.data
 }
 
-async function deleteProduct(id: string): Promise<void> {
-  await request<Product>(`/products/${id}`, { method: 'DELETE' })
+/**
+ * Products referenced by orders or purchase orders are archived rather than
+ * deleted server-side, so the response message is the only signal telling the
+ * two outcomes apart. Return it for the caller to surface.
+ */
+async function deleteProduct(id: string): Promise<{ message: string }> {
+  const res = await request<Product>(`/products/${id}`, { method: 'DELETE' })
+  return { message: res.message }
 }
 
 export function useProducts(params: ProductListParams = {}) {
