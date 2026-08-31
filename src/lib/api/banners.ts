@@ -1,117 +1,193 @@
+/** Real backend banner calls — follows the same envelope/error pattern as `categories.ts`. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, delay, generateId, paginate, type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
-import { recordAuditEntry } from '@/lib/api/audit-logs'
 
-export type BannerPosition = 'homepage_hero' | 'homepage_secondary' | 'category_top' | 'checkout_sidebar'
+/**
+ * Enum values are declared as `const` arrays and the TS unions derived from them, so the option
+ * lists the UI renders and the types it checks against cannot drift apart. A stale string literal
+ * would otherwise typecheck fine and simply match nothing at runtime.
+ */
+export const BANNER_PLACEMENTS = [
+  'HEADER',
+  'MID',
+  'FOOTER',
+  'SIDEBAR',
+  'POPUP',
+  'HERO_SLIDER',
+  'HERO_SIDE',
+  'HERO_PROMO',
+] as const
+export type BannerPlacement = (typeof BANNER_PLACEMENTS)[number]
+
+export const BANNER_STATUSES = ['DRAFT', 'ACTIVE', 'INACTIVE', 'SCHEDULED'] as const
+export type BannerStatus = (typeof BANNER_STATUSES)[number]
+
+/** IMAGE is artwork-only; DYNAMIC draws text/price/button over a background. */
+export const BANNER_TYPES = ['IMAGE', 'DYNAMIC'] as const
+export type BannerType = (typeof BANNER_TYPES)[number]
+
+/**
+ * Fields the backend renders only for a DYNAMIC banner. It *rejects* an IMAGE banner that carries
+ * any of them rather than storing content nothing would draw, so the form must strip them when the
+ * type is IMAGE — see `toBannerPayload`.
+ */
+export const DYNAMIC_ONLY_FIELDS = [
+  'title',
+  'subtitle',
+  'description',
+  'price',
+  'discountPrice',
+  'buttonText',
+  'bgColor',
+  'textColor',
+] as const
 
 export interface Banner {
   id: string
-  title: string
-  imageUrl: string
-  linkUrl: string
-  position: BannerPosition
+  type: BannerType
+  placement: BannerPlacement
+  image: string | null
+  mobileImage: string | null
+  title: string | null
+  subtitle: string | null
+  description: string | null
+  price: string | null
+  discountPrice: string | null
+  buttonText: string | null
+  bgColor: string | null
+  textColor: string | null
+  link: string | null
+  productId: string | null
+  status: BannerStatus
   sortOrder: number
-  isActive: boolean
+  /** Null on either side means that end of the schedule is open — not "now". */
+  startsAt: string | null
+  endsAt: string | null
   createdAt: string
+  updatedAt: string
 }
 
 export interface BannerInput {
-  title: string
-  imageUrl: string
-  linkUrl: string
-  position: BannerPosition
-  sortOrder: number
-  isActive: boolean
+  type: BannerType
+  placement: BannerPlacement
+  image?: string
+  mobileImage?: string
+  title?: string
+  subtitle?: string
+  description?: string
+  price?: number
+  discountPrice?: number
+  buttonText?: string
+  bgColor?: string
+  textColor?: string
+  link?: string
+  productId?: string
+  status?: BannerStatus
+  sortOrder?: number
+  startsAt?: string
+  endsAt?: string
 }
 
-let banners: Banner[] = [
-  { id: generateId('bnr'), title: 'Winter Clearance — Up to 40% Off', imageUrl: 'https://picsum.photos/seed/bnr1/960/320', linkUrl: '/campaigns/winter-clearance', position: 'homepage_hero', sortOrder: 1, isActive: true, createdAt: '2025-11-20T09:00:00Z' },
-  { id: generateId('bnr'), title: 'New Arrivals: Aurora Ultrabooks', imageUrl: 'https://picsum.photos/seed/bnr2/960/320', linkUrl: '/catalog/laptops', position: 'homepage_secondary', sortOrder: 2, isActive: true, createdAt: '2025-12-01T09:00:00Z' },
-  { id: generateId('bnr'), title: 'Free Shipping Over $50', imageUrl: 'https://picsum.photos/seed/bnr3/960/320', linkUrl: '/shipping-info', position: 'checkout_sidebar', sortOrder: 1, isActive: false, createdAt: '2025-12-05T09:00:00Z' },
-]
-
-async function listBanners(params: ListParams = {}): Promise<PaginatedResponse<Banner>> {
-  const sorted = [...banners].sort((a, b) => a.sortOrder - b.sortOrder)
-  return delay(paginate(sorted, { ...params, limit: params.limit ?? 100 }))
+/** A banner write plus the optional artwork files to upload with it. */
+export interface BannerMutationInput {
+  input: BannerInput
+  imageFile?: File | null
+  mobileImageFile?: File | null
 }
 
-async function createBanner(input: BannerInput): Promise<Banner> {
-  const banner: Banner = { id: generateId('bnr'), createdAt: new Date().toISOString(), ...input }
-  banners = [...banners, banner]
-  recordAuditEntry({ action: 'banner.created', resourceType: 'banner', resourceId: banner.id, resourceLabel: banner.title })
-  return delay(banner)
+export interface BannerListParams extends ListParams {
+  status?: BannerStatus
+  type?: BannerType
+  placement?: BannerPlacement
 }
 
-async function updateBanner(id: string, input: BannerInput): Promise<Banner> {
-  const index = banners.findIndex((b) => b.id === id)
-  if (index === -1) throw new ApiError('Banner not found', 404)
-  const updated = { ...banners[index], ...input }
-  banners = banners.map((b) => (b.id === id ? updated : b))
-  recordAuditEntry({ action: 'banner.updated', resourceType: 'banner', resourceId: id, resourceLabel: updated.title })
-  return delay(updated)
+/**
+ * Multipart when artwork is attached, plain JSON otherwise — the backend's banner routes accept
+ * either, with the non-file payload riding along under `data`.
+ */
+function bannerBody(input: BannerInput, imageFile?: File | null, mobileImageFile?: File | null): BodyInit {
+  if (!imageFile && !mobileImageFile) return JSON.stringify(input)
+
+  const form = new FormData()
+  form.append('data', JSON.stringify(input))
+  if (imageFile) form.append('image', imageFile)
+  if (mobileImageFile) form.append('mobileImage', mobileImageFile)
+  return form
+}
+
+async function listBanners(params: BannerListParams = {}): Promise<PaginatedResponse<Banner>> {
+  const limit = params.limit ?? 100
+
+  const query = new URLSearchParams()
+  if (params.page) query.set('page', String(params.page))
+  query.set('limit', String(limit))
+  if (params.search) query.set('searchTerm', params.search)
+  if (params.status) query.set('status', params.status)
+  if (params.type) query.set('type', params.type)
+  if (params.placement) query.set('placement', params.placement)
+
+  const res = await request<Banner[]>(`/banners/admin?${query}`)
+  return {
+    data: res.data,
+    meta: res.meta ?? { page: params.page ?? 1, limit, total: res.data.length, totalPages: 1 },
+  }
+}
+
+async function getBanner(id: string): Promise<Banner> {
+  const res = await request<Banner>(`/banners/admin/${id}`)
+  return res.data
+}
+
+async function createBanner({ input, imageFile, mobileImageFile }: BannerMutationInput): Promise<Banner> {
+  const res = await request<Banner>('/banners', {
+    method: 'POST',
+    body: bannerBody(input, imageFile, mobileImageFile),
+  })
+  return res.data
+}
+
+async function updateBanner(id: string, { input, imageFile, mobileImageFile }: BannerMutationInput): Promise<Banner> {
+  const res = await request<Banner>(`/banners/${id}`, {
+    method: 'PATCH',
+    body: bannerBody(input, imageFile, mobileImageFile),
+  })
+  return res.data
 }
 
 async function deleteBanner(id: string): Promise<void> {
-  const target = banners.find((b) => b.id === id)
-  banners = banners.filter((b) => b.id !== id)
-  recordAuditEntry({ action: 'banner.deleted', resourceType: 'banner', resourceId: id, resourceLabel: target?.title })
-  return delay(undefined)
+  await request<Banner>(`/banners/${id}`, { method: 'DELETE' })
 }
 
-async function reorderBanner(id: string, direction: 'up' | 'down'): Promise<Banner[]> {
-  const sorted = [...banners].sort((a, b) => a.sortOrder - b.sortOrder)
-  const index = sorted.findIndex((b) => b.id === id)
-  const swapWith = direction === 'up' ? index - 1 : index + 1
-  if (index === -1 || swapWith < 0 || swapWith >= sorted.length) return delay(sorted)
-  const a = sorted[index]
-  const b = sorted[swapWith]
-  const tmp = a.sortOrder
-  a.sortOrder = b.sortOrder
-  b.sortOrder = tmp
-  banners = sorted
-  return delay([...banners].sort((x, y) => x.sortOrder - y.sortOrder))
-}
-
-async function toggleBannerActive(id: string): Promise<Banner> {
-  const index = banners.findIndex((b) => b.id === id)
-  if (index === -1) throw new ApiError('Banner not found', 404)
-  const updated = { ...banners[index], isActive: !banners[index].isActive }
-  banners = banners.map((b) => (b.id === id ? updated : b))
-  return delay(updated)
-}
-
-export function useBanners(params: ListParams = {}) {
+export function useBanners(params: BannerListParams = {}) {
   return useQuery({ queryKey: queryKeys.banners.list(params), queryFn: () => listBanners(params) })
+}
+
+export function useBanner(id: string | undefined) {
+  return useQuery({ queryKey: queryKeys.banners.detail(id ?? ''), queryFn: () => getBanner(id!), enabled: !!id })
 }
 
 export function useCreateBanner() {
   const client = useQueryClient()
-  return useMutation({ mutationFn: createBanner, onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.banners.all }) })
+  return useMutation({
+    mutationFn: createBanner,
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.banners.all }),
+  })
 }
 
 export function useUpdateBanner() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, input }: { id: string; input: BannerInput }) => updateBanner(id, input),
+    mutationFn: ({ id, ...mutation }: { id: string } & BannerMutationInput) => updateBanner(id, mutation),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.banners.all }),
   })
 }
 
 export function useDeleteBanner() {
   const client = useQueryClient()
-  return useMutation({ mutationFn: deleteBanner, onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.banners.all }) })
-}
-
-export function useReorderBanner() {
-  const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, direction }: { id: string; direction: 'up' | 'down' }) => reorderBanner(id, direction),
+    mutationFn: deleteBanner,
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.banners.all }),
   })
-}
-
-export function useToggleBannerActive() {
-  const client = useQueryClient()
-  return useMutation({ mutationFn: toggleBannerActive, onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.banners.all }) })
 }

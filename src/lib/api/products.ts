@@ -1,6 +1,7 @@
 /** Real backend product calls — follows the same envelope/error pattern as `categories.ts`/`brands.ts`. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, BASE_URL, type ListParams, type PaginatedResponse, type PaginationMeta } from '@/lib/api/client'
+import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
 import type { Category } from '@/lib/api/categories'
 import type { Brand } from '@/lib/api/brands'
@@ -131,40 +132,12 @@ function stockStatus(p: Pick<Product, 'stockQuantity' | 'lowStockThreshold'>): S
   return 'in_stock'
 }
 
-interface ApiEnvelope<T> {
-  success: boolean
-  message: string
-  data: T
-  meta?: PaginationMeta
-}
-
-/** One shared fetch helper: unwraps the `{ success, message, data }` envelope, throws on failure. */
-async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  })
-
-  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
-  if (!res.ok || !json?.success) {
-    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
-  }
-  return json
-}
-
 /**
- * Same envelope-unwrap as `request`, but for `multipart/form-data` — no `Content-Type` header
- * (the browser sets the multipart boundary itself; setting it manually breaks the parse).
+ * Multipart helper kept as a thin wrapper over the shared `request`, which omits the JSON
+ * `Content-Type` for `FormData` bodies so the browser can set the multipart boundary itself.
  */
-async function requestMultipart<T>(path: string, method: string, form: FormData): Promise<ApiEnvelope<T>> {
-  const res = await fetch(`${BASE_URL}${path}`, { method, credentials: 'include', body: form })
-
-  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
-  if (!res.ok || !json?.success) {
-    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
-  }
-  return json
+function requestMultipart<T>(path: string, method: string, form: FormData) {
+  return request<T>(path, { method, body: form })
 }
 
 /** Builds the `data` + repeated `images` multipart body the backend's product routes expect. */

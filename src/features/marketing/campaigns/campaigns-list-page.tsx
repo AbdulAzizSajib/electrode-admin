@@ -10,46 +10,83 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Switch } from '@/components/ui/switch'
 import { DataTable } from '@/components/ui/data-table'
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { toast } from '@/components/ui/use-toast'
-import { useCampaigns, useCreateCampaign, type Campaign } from '@/lib/api/campaigns'
+import {
+  useCampaigns,
+  useCreateCampaign,
+  CAMPAIGN_PLACEMENTS,
+  CAMPAIGN_STATUSES,
+  CAMPAIGN_STATUS_VARIANT,
+  type Campaign,
+  type CampaignInput,
+  type CampaignStatus,
+} from '@/lib/api/campaigns'
 import { formatDate } from '@/lib/utils/format'
 
-const schema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  description: z.string().min(1, 'Description is required'),
-  startDate: z.string().min(1, 'Start date is required'),
-  endDate: z.string().min(1, 'End date is required'),
-  isActive: z.boolean(),
-})
+const NO_PLACEMENT = 'none'
+
+const schema = z
+  .object({
+    name: z.string().trim().min(2, 'Name must be at least 2 characters').max(200),
+    description: z.string().trim().max(2000),
+    status: z.enum(CAMPAIGN_STATUSES),
+    placement: z.string(),
+    startsAt: z.string(),
+    endsAt: z.string(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.startsAt && v.endsAt && v.endsAt < v.startsAt) {
+      ctx.addIssue({ code: 'custom', message: 'End must be after the start', path: ['endsAt'] })
+    }
+  })
 type Values = z.infer<typeof schema>
+
+function toCampaignPayload(v: Values): CampaignInput {
+  const input: CampaignInput = { name: v.name, status: v.status }
+  if (v.description) input.description = v.description
+  if (v.placement && v.placement !== NO_PLACEMENT) {
+    input.placement = v.placement as CampaignInput['placement']
+  }
+  if (v.startsAt) input.startsAt = new Date(`${v.startsAt}T00:00:00.000Z`).toISOString()
+  if (v.endsAt) input.endsAt = new Date(`${v.endsAt}T23:59:59.999Z`).toISOString()
+  return input
+}
 
 export default function CampaignsListPage() {
   const navigate = useNavigate()
   const [search, setSearch] = React.useState('')
   const [sheetOpen, setSheetOpen] = React.useState(false)
+  const [statusFilter, setStatusFilter] = React.useState<'all' | CampaignStatus>('all')
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
 
-  const { data, isLoading, isError, refetch } = useCampaigns({ search })
-  const createMutation = useCreateCampaign()
-
-  const [defaultWindow] = React.useState(() => {
-    const now = Date.now()
-    return { startDate: new Date(now).toISOString().slice(0, 10), endDate: new Date(now + 14 * 86_400_000).toISOString().slice(0, 10) }
+  const { data, isLoading, isError, refetch } = useCampaigns({
+    search,
+    page,
+    limit: pageSize,
+    status: statusFilter === 'all' ? undefined : statusFilter,
   })
+  const createMutation = useCreateCampaign()
 
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { name: '', description: '', ...defaultWindow, isActive: true },
+    defaultValues: {
+      name: '',
+      description: '',
+      status: 'DRAFT',
+      placement: NO_PLACEMENT,
+      startsAt: '',
+      endsAt: '',
+    },
   })
 
   const onSubmit = async (values: Values) => {
     try {
-      const created = await createMutation.mutateAsync({ ...values, couponIds: [], productIds: [] })
+      const created = await createMutation.mutateAsync(toCampaignPayload(values))
       toast({ title: 'Campaign created' })
       setSheetOpen(false)
       form.reset()
@@ -59,22 +96,31 @@ export default function CampaignsListPage() {
     }
   }
 
-  const all = React.useMemo(() => data?.data ?? [], [data])
-  const filteredPage = React.useMemo(() => all.slice((page - 1) * pageSize, page * pageSize), [all, page, pageSize])
-
   const columns: ColumnDef<Campaign>[] = [
     { accessorKey: 'name', header: 'Name', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.name}</span> },
-    { id: 'window', header: 'Window', cell: ({ row }) => `${formatDate(row.original.startDate)} – ${formatDate(row.original.endDate)}` },
-    { id: 'views', header: 'Views', cell: ({ row }) => row.original.metrics.views.toLocaleString() },
-    { id: 'redemptions', header: 'Redemptions', cell: ({ row }) => row.original.metrics.redemptions.toLocaleString() },
-    { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={row.original.isActive ? 'success' : 'secondary'}>{row.original.isActive ? 'Active' : 'Inactive'}</Badge> },
+    {
+      id: 'window',
+      header: 'Window',
+      cell: ({ row }) => {
+        const { startsAt, endsAt } = row.original
+        if (!startsAt && !endsAt) return <span className="text-muted-foreground">Always</span>
+        return `${startsAt ? formatDate(startsAt) : '—'} – ${endsAt ? formatDate(endsAt) : '—'}`
+      },
+    },
+    {
+      id: 'placement',
+      header: 'Placement',
+      cell: ({ row }) => row.original.placement ?? <span className="text-muted-foreground">—</span>,
+    },
+    { id: 'products', header: 'Products', cell: ({ row }) => row.original.products.length },
+    { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={CAMPAIGN_STATUS_VARIANT[row.original.status]}>{row.original.status}</Badge> },
   ]
 
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Campaigns"
-        description="Group promotions across coupons, products, and banners."
+        description="Time-boxed promotions that discount a set of products."
         actions={
           <Button size="sm" onClick={() => setSheetOpen(true)}>
             <Plus /> New campaign
@@ -84,7 +130,7 @@ export default function CampaignsListPage() {
 
       <DataTable
         columns={columns}
-        data={filteredPage}
+        data={data?.data ?? []}
         isLoading={isLoading}
         isError={isError}
         onRetry={() => refetch()}
@@ -93,9 +139,18 @@ export default function CampaignsListPage() {
         searchPlaceholder="Search campaigns…"
         onRowClick={(row) => navigate(`/marketing/campaigns/${row.id}`)}
         emptyState={{ icon: Megaphone, title: 'No campaigns yet' }}
+        toolbar={
+          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as 'all' | CampaignStatus); setPage(1) }}>
+            <SelectTrigger className="h-8 w-40"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              {CAMPAIGN_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        }
         page={page}
         pageSize={pageSize}
-        total={all.length}
+        total={data?.meta.total ?? 0}
         onPageChange={setPage}
         onPageSizeChange={(size) => { setPageSize(size); setPage(1) }}
       />
@@ -112,19 +167,40 @@ export default function CampaignsListPage() {
                 <FormItem><FormLabel>Description</FormLabel><FormControl><Textarea rows={3} {...field} /></FormControl><FormMessage /></FormItem>
               )} />
               <div className="grid grid-cols-2 gap-3.5">
-                <FormField control={form.control} name="startDate" render={({ field }) => (
-                  <FormItem><FormLabel>Start date</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                <FormField control={form.control} name="status" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Status</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        {CAMPAIGN_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
                 )} />
-                <FormField control={form.control} name="endDate" render={({ field }) => (
-                  <FormItem><FormLabel>End date</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                <FormField control={form.control} name="placement" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Placement</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value={NO_PLACEMENT}>None</SelectItem>
+                        {CAMPAIGN_PLACEMENTS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
                 )} />
               </div>
-              <FormField control={form.control} name="isActive" render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between gap-2">
-                  <FormLabel className="text-sm font-normal text-foreground">Active</FormLabel>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                </FormItem>
-              )} />
+              <div className="grid grid-cols-2 gap-3.5">
+                <FormField control={form.control} name="startsAt" render={({ field }) => (
+                  <FormItem><FormLabel>Starts</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={form.control} name="endsAt" render={({ field }) => (
+                  <FormItem><FormLabel>Ends</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+              </div>
               <SheetFooter>
                 <Button type="button" variant="outline" onClick={() => setSheetOpen(false)}>Cancel</Button>
                 <Button type="submit" loading={form.formState.isSubmitting}>Create campaign</Button>

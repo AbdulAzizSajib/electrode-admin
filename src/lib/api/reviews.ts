@@ -5,7 +5,8 @@
  * only admin-side mutations available.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, BASE_URL, type ListParams, type PaginatedResponse, type PaginationMeta } from '@/lib/api/client'
+import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
 
 export type ReviewStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'HIDDEN'
@@ -43,27 +44,6 @@ export interface ReviewListParams extends ListParams {
   status?: ReviewStatus
   productId?: string
   rating?: number
-}
-
-interface ApiEnvelope<T> {
-  success: boolean
-  message: string
-  data: T
-  meta?: PaginationMeta
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  })
-
-  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
-  if (!res.ok || !json?.success) {
-    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
-  }
-  return json
 }
 
 async function listReviews(params: ReviewListParams = {}): Promise<PaginatedResponse<Review>> {

@@ -4,7 +4,8 @@
  * pattern as `src/lib/api/categories.ts`.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, BASE_URL, type ListParams, type PaginatedResponse, type PaginationMeta } from '@/lib/api/client'
+import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
 
 export interface Brand {
@@ -29,31 +30,19 @@ export interface BrandListParams extends ListParams {
   status?: boolean
 }
 
+/**
+ * A brand write, plus the optional logo file to upload with it. The file is kept separate from
+ * `BrandInput` because it is not part of the record's shape — the backend replaces it with the
+ * hosted URL that comes back on `Brand.logo`.
+ */
+export interface BrandMutationInput {
+  input: BrandInput
+  logoFile?: File | null
+}
+
 export interface BulkCreateBrandsResult {
   created: Array<{ id: string; name: string; slug: string }>
   skipped: Array<{ name: string; reason: string }>
-}
-
-interface ApiEnvelope<T> {
-  success: boolean
-  message: string
-  data: T
-  meta?: PaginationMeta
-}
-
-/** One shared fetch helper: unwraps the `{ success, message, data }` envelope, throws on failure. */
-async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  })
-
-  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
-  if (!res.ok || !json?.success) {
-    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
-  }
-  return json
 }
 
 async function listBrands(params: BrandListParams = {}): Promise<PaginatedResponse<Brand>> {
@@ -81,13 +70,28 @@ async function getBrand(id: string): Promise<Brand> {
   return res.data
 }
 
-async function createBrand(input: BrandInput): Promise<Brand> {
-  const res = await request<Brand>('/brands', { method: 'POST', body: JSON.stringify(input) })
+/**
+ * The backend's brand routes accept *either* a plain JSON body carrying a pre-hosted `logo` URL,
+ * or a multipart body with the payload under `data` and the file in a `logo` field, which it
+ * uploads and turns into that same URL. Only build multipart when a file was actually picked —
+ * sending an empty file field makes the backend reject the request outright.
+ */
+function brandBody(input: BrandInput, logoFile?: File | null): BodyInit {
+  if (!logoFile) return JSON.stringify(input)
+
+  const form = new FormData()
+  form.append('data', JSON.stringify(input))
+  form.append('logo', logoFile)
+  return form
+}
+
+async function createBrand({ input, logoFile }: BrandMutationInput): Promise<Brand> {
+  const res = await request<Brand>('/brands', { method: 'POST', body: brandBody(input, logoFile) })
   return res.data
 }
 
-async function updateBrand(id: string, input: BrandInput): Promise<Brand> {
-  const res = await request<Brand>(`/brands/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+async function updateBrand(id: string, { input, logoFile }: BrandMutationInput): Promise<Brand> {
+  const res = await request<Brand>(`/brands/${id}`, { method: 'PATCH', body: brandBody(input, logoFile) })
   return res.data
 }
 
@@ -119,7 +123,7 @@ export function useCreateBrand() {
 export function useUpdateBrand() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, input }: { id: string; input: BrandInput }) => updateBrand(id, input),
+    mutationFn: ({ id, ...mutation }: { id: string } & BrandMutationInput) => updateBrand(id, mutation),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.brands.all }),
   })
 }

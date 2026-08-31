@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Modal, Form, Input, Switch, Alert } from 'antd'
 import { toast } from '@/components/ui/use-toast'
+import { SingleImageField } from '@/components/forms/single-image-field'
 import { useCreateBrand, useUpdateBrand, useBulkCreateBrands, type Brand, type BrandInput } from '@/lib/api/brands'
 
 interface FormValues {
@@ -26,15 +27,31 @@ function toInput(values: FormValues): BrandInput {
   }
 }
 
-/** The four fields shared by both the create and edit modals. */
-function BrandFormFields() {
+interface BrandFormFieldsProps {
+  logoFile: File | null
+  onLogoFileChange: (file: File | null) => void
+  /** The brand's existing logo, shown in the picker when editing and no new file is chosen. */
+  currentLogo?: string | null
+}
+
+/** The fields shared by both the create and edit modals. */
+function BrandFormFields({ logoFile, onLogoFileChange, currentLogo }: BrandFormFieldsProps) {
   return (
     <>
       <Form.Item name="name" label="Name" rules={[{ required: true, message: 'Name is required' }]}>
         <Input />
       </Form.Item>
+      {/* Upload and URL are alternatives, not a pair — the backend accepts either. */}
+      <Form.Item label="Logo">
+        <SingleImageField
+          value={logoFile}
+          onChange={onLogoFileChange}
+          currentUrl={currentLogo}
+          label="Upload logo"
+        />
+      </Form.Item>
       <Form.Item name="logo" label="Logo URL">
-        <Input placeholder="https://…" />
+        <Input placeholder="https://…" disabled={!!logoFile} />
       </Form.Item>
       <Form.Item name="description" label="Description">
         <Input.TextArea rows={3} />
@@ -54,10 +71,13 @@ export interface BrandCreateModalProps {
 /** Always-blank form for creating a new brand. Never touched by edit state. */
 export function BrandCreateModal({ open, onOpenChange }: BrandCreateModalProps) {
   const [form] = Form.useForm<FormValues>()
+  const [logoFile, setLogoFile] = React.useState<File | null>(null)
   const createMutation = useCreateBrand()
 
   // Re-blank the form every time the modal opens (not just on mount) — covers opening it twice
-  // in a row, where a key-based remount wouldn't fire.
+  // in a row, where a key-based remount wouldn't fire. The picked file is cleared alongside it in
+  // the close/submit paths rather than here, since it is React state and resetting it from an
+  // effect would cascade an extra render.
   React.useEffect(() => {
     if (open) {
       form.resetFields()
@@ -65,11 +85,16 @@ export function BrandCreateModal({ open, onOpenChange }: BrandCreateModalProps) 
     }
   }, [open, form])
 
+  const close = () => {
+    setLogoFile(null)
+    onOpenChange(false)
+  }
+
   const handleSubmit = async (values: FormValues) => {
     try {
-      await createMutation.mutateAsync(toInput(values))
+      await createMutation.mutateAsync({ input: toInput(values), logoFile })
       toast({ title: 'Brand created' })
-      onOpenChange(false)
+      close()
     } catch (err) {
       toast({ title: 'Something went wrong', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
     }
@@ -79,14 +104,14 @@ export function BrandCreateModal({ open, onOpenChange }: BrandCreateModalProps) 
     <Modal
       title="New brand"
       open={open}
-      onCancel={() => onOpenChange(false)}
+      onCancel={close}
       onOk={() => form.submit()}
       okText="Create brand"
       confirmLoading={createMutation.isPending}
       destroyOnHidden
     >
       <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={EMPTY_VALUES}>
-        <BrandFormFields />
+        <BrandFormFields logoFile={logoFile} onLogoFileChange={setLogoFile} />
       </Form>
     </Modal>
   )
@@ -203,6 +228,7 @@ export interface BrandEditModalProps {
 /** Form for editing an existing brand. Always re-syncs to `brand` on open, never leaks create-form state. */
 export function BrandEditModal({ open, onOpenChange, brand }: BrandEditModalProps) {
   const [form] = Form.useForm<FormValues>()
+  const [logoFile, setLogoFile] = React.useState<File | null>(null)
   const updateMutation = useUpdateBrand()
 
   // Re-sync to the brand being edited every time the modal opens — covers switching straight
@@ -220,12 +246,17 @@ export function BrandEditModal({ open, onOpenChange, brand }: BrandEditModalProp
     }
   }, [open, brand, form])
 
+  const close = () => {
+    setLogoFile(null)
+    onOpenChange(false)
+  }
+
   const handleSubmit = async (values: FormValues) => {
     if (!brand) return
     try {
-      await updateMutation.mutateAsync({ id: brand.id, input: toInput(values) })
+      await updateMutation.mutateAsync({ id: brand.id, input: toInput(values), logoFile })
       toast({ title: 'Brand updated' })
-      onOpenChange(false)
+      close()
     } catch (err) {
       toast({ title: 'Something went wrong', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
     }
@@ -235,14 +266,14 @@ export function BrandEditModal({ open, onOpenChange, brand }: BrandEditModalProp
     <Modal
       title="Edit brand"
       open={open}
-      onCancel={() => onOpenChange(false)}
+      onCancel={close}
       onOk={() => form.submit()}
       okText="Save changes"
       confirmLoading={updateMutation.isPending}
       destroyOnHidden
     >
       <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={EMPTY_VALUES}>
-        <BrandFormFields />
+        <BrandFormFields logoFile={logoFile} onLogoFileChange={setLogoFile} currentLogo={brand?.logo} />
       </Form>
     </Modal>
   )

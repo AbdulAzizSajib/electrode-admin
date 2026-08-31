@@ -1,109 +1,147 @@
+/** Real backend support-ticket calls — follows the same envelope/error pattern as `categories.ts`. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, delay, generateId, paginate, type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
-import { recordAuditEntry } from '@/lib/api/audit-logs'
-import { _getAllUsers } from '@/lib/api/users'
-import { useSessionStore } from '@/lib/store/session-store'
 
-export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed'
-export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent'
+export const TICKET_STATUSES = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const
+export type TicketStatus = (typeof TICKET_STATUSES)[number]
 
-export interface TicketMessage {
+export const TICKET_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const
+export type TicketPriority = (typeof TICKET_PRIORITIES)[number]
+
+/** Presentation maps, shared by the ticket list and detail pages. */
+export const TICKET_STATUS_LABEL: Record<TicketStatus, string> = {
+  OPEN: 'Open',
+  IN_PROGRESS: 'In progress',
+  RESOLVED: 'Resolved',
+  CLOSED: 'Closed',
+}
+export const TICKET_STATUS_VARIANT: Record<TicketStatus, 'secondary' | 'warning' | 'success' | 'outline'> = {
+  OPEN: 'secondary',
+  IN_PROGRESS: 'warning',
+  RESOLVED: 'success',
+  CLOSED: 'outline',
+}
+export const TICKET_PRIORITY_LABEL: Record<TicketPriority, string> = {
+  LOW: 'Low',
+  MEDIUM: 'Medium',
+  HIGH: 'High',
+  URGENT: 'Urgent',
+}
+export const TICKET_PRIORITY_VARIANT: Record<TicketPriority, 'secondary' | 'outline' | 'warning' | 'destructive'> = {
+  LOW: 'secondary',
+  MEDIUM: 'outline',
+  HIGH: 'warning',
+  URGENT: 'destructive',
+}
+
+/** The customer summary embedded in ticket responses. */
+export interface TicketCustomer {
   id: string
-  ticketId: string
-  authorType: 'customer' | 'staff'
-  authorName: string
-  message: string
-  createdAt: string
+  userId: string | null
+  firstName: string
+  lastName: string | null
+  email: string | null
+}
+
+/** A staff user summary — nullable everywhere, since the relation is `onDelete: SetNull`. */
+export interface TicketUserRef {
+  id: string
+  name: string
+  email: string
 }
 
 export interface SupportTicket {
   id: string
-  subject: string
+  ticketNumber: string
   customerId: string
+  customer: TicketCustomer
+  subject: string
+  description: string
   status: TicketStatus
   priority: TicketPriority
+  assignedToId: string | null
+  assignedTo: TicketUserRef | null
   createdAt: string
   updatedAt: string
 }
 
-let tickets: SupportTicket[] = []
-let messages: TicketMessage[] = []
-
-function seed() {
-  const customers = _getAllUsers().filter((u) => u.role === 'CUSTOMER')
-  const seeds: Array<{ subject: string; status: TicketStatus; priority: TicketPriority; thread: Array<[string, 'customer' | 'staff']> }> = [
-    { subject: 'Order arrived with a damaged item', status: 'open', priority: 'high', thread: [['My order #ORD-58212 arrived with a cracked screen protector.', 'customer']] },
-    { subject: 'Question about return policy', status: 'in_progress', priority: 'medium', thread: [['How many days do I have to return an item?', 'customer'], ['You have 30 days from delivery — happy to start that for you.', 'staff']] },
-    { subject: 'Unable to apply coupon code', status: 'resolved', priority: 'low', thread: [['WELCOME10 says invalid at checkout.', 'customer'], ['That code requires a $0 minimum and is single-use per account — could you confirm it hasn’t been used before?', 'staff'], ['Ah, I see — it worked this time, thank you!', 'customer']] },
-    { subject: 'Wrong item shipped', status: 'open', priority: 'urgent', thread: [['I ordered the 13" Ultrabook but received a monitor instead.', 'customer']] },
-    { subject: 'Delayed delivery', status: 'closed', priority: 'medium', thread: [['My package has been in transit for 10 days.', 'customer'], ['Apologies for the delay — reaching out to the carrier now.', 'staff'], ['It arrived today, thanks for checking!', 'customer']] },
-  ]
-
-  seeds.forEach((s, i) => {
-    const ticket: SupportTicket = {
-      id: generateId('tix'),
-      subject: s.subject,
-      customerId: customers[i % customers.length].id,
-      status: s.status,
-      priority: s.priority,
-      createdAt: new Date(Date.now() - (seeds.length - i) * 86_400_000).toISOString(),
-      updatedAt: new Date(Date.now() - (seeds.length - i) * 43_200_000).toISOString(),
-    }
-    tickets.push(ticket)
-    s.thread.forEach(([message, authorType], mi) => {
-      messages.push({
-        id: generateId('msg'),
-        ticketId: ticket.id,
-        authorType,
-        authorName: authorType === 'customer' ? customers[i % customers.length].name : 'Support Team',
-        message,
-        createdAt: new Date(new Date(ticket.createdAt).getTime() + mi * 3_600_000).toISOString(),
-      })
-    })
-  })
+export interface TicketMessage {
+  id: string
+  ticketId: string
+  senderId: string | null
+  /** Null when the sending account has since been deleted — rendered as an unknown sender. */
+  sender: TicketUserRef | null
+  message: string
+  attachments: unknown
+  createdAt: string
 }
-seed()
+
+/** The customer relation carries first/last name separately, and last name is optional. */
+export function customerName(ticket: SupportTicket): string {
+  return [ticket.customer.firstName, ticket.customer.lastName].filter(Boolean).join(' ')
+}
 
 export interface TicketListParams extends ListParams {
   status?: TicketStatus
   priority?: TicketPriority
+  assignedToId?: string
 }
 
-async function listTickets(params: TicketListParams = {}) {
-  const customers = _getAllUsers()
-  let filtered = [...tickets].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  if (params.status) filtered = filtered.filter((t) => t.status === params.status)
-  if (params.priority) filtered = filtered.filter((t) => t.priority === params.priority)
-  const rows = filtered.map((t) => ({ ...t, customerName: customers.find((c) => c.id === t.customerId)?.name ?? 'Unknown' }))
-  return delay(paginate(rows, params) as PaginatedResponse<(typeof rows)[number]>)
+export interface TicketPatch {
+  status?: TicketStatus
+  priority?: TicketPriority
+  /** Null clears the assignment; the backend accepts it explicitly here, unlike most fields. */
+  assignedToId?: string | null
 }
 
-async function getTicket(id: string) {
-  const ticket = tickets.find((t) => t.id === id)
-  if (!ticket) throw new ApiError('Ticket not found', 404)
-  const customer = _getAllUsers().find((u) => u.id === ticket.customerId)
-  const thread = messages.filter((m) => m.ticketId === id).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-  return delay({ ticket: { ...ticket, customerName: customer?.name ?? 'Unknown' }, messages: thread })
+async function listTickets(params: TicketListParams = {}): Promise<PaginatedResponse<SupportTicket>> {
+  const limit = params.limit ?? 20
+
+  const query = new URLSearchParams()
+  if (params.page) query.set('page', String(params.page))
+  query.set('limit', String(limit))
+  if (params.search) query.set('searchTerm', params.search)
+  if (params.status) query.set('status', params.status)
+  if (params.priority) query.set('priority', params.priority)
+  if (params.assignedToId) query.set('assignedToId', params.assignedToId)
+
+  const res = await request<SupportTicket[]>(`/support-tickets?${query}`)
+  return {
+    data: res.data,
+    meta: res.meta ?? { page: params.page ?? 1, limit, total: res.data.length, totalPages: 1 },
+  }
+}
+
+async function getTicket(id: string): Promise<SupportTicket> {
+  const res = await request<SupportTicket>(`/support-tickets/${id}`)
+  return res.data
+}
+
+/**
+ * Messages live behind their own nested endpoint rather than riding along on the ticket, and come
+ * back as a plain chronological array — there is no pagination envelope here.
+ */
+async function getTicketMessages(ticketId: string): Promise<TicketMessage[]> {
+  const res = await request<TicketMessage[]>(`/support-tickets/${ticketId}/messages`)
+  return res.data
 }
 
 async function replyToTicket(ticketId: string, message: string): Promise<TicketMessage> {
-  const ticket = tickets.find((t) => t.id === ticketId)
-  if (!ticket) throw new ApiError('Ticket not found', 404)
-  const staffName = useSessionStore.getState().user?.name ?? 'Support Team'
-  const entry: TicketMessage = { id: generateId('msg'), ticketId, authorType: 'staff', authorName: staffName, message, createdAt: new Date().toISOString() }
-  messages = [...messages, entry]
-  tickets = tickets.map((t) => (t.id === ticketId ? { ...t, updatedAt: entry.createdAt } : t))
-  return delay(entry)
+  const res = await request<TicketMessage>(`/support-tickets/${ticketId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  })
+  return res.data
 }
 
-async function updateTicket(id: string, patch: { status?: TicketStatus; priority?: TicketPriority }): Promise<SupportTicket> {
-  const index = tickets.findIndex((t) => t.id === id)
-  if (index === -1) throw new ApiError('Ticket not found', 404)
-  const updated = { ...tickets[index], ...patch, updatedAt: new Date().toISOString() }
-  tickets = tickets.map((t) => (t.id === id ? updated : t))
-  recordAuditEntry({ action: 'support_ticket.updated', resourceType: 'support_ticket', resourceId: id, resourceLabel: updated.subject })
-  return delay(updated)
+async function updateTicket(id: string, patch: TicketPatch): Promise<SupportTicket> {
+  const res = await request<SupportTicket>(`/support-tickets/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+  return res.data
 }
 
 export function useSupportTickets(params: TicketListParams = {}) {
@@ -111,26 +149,35 @@ export function useSupportTickets(params: TicketListParams = {}) {
 }
 
 export function useSupportTicket(id: string | undefined) {
-  return useQuery({ queryKey: queryKeys.supportTickets.detail(id ?? ''), queryFn: () => getTicket(id!), enabled: !!id })
+  return useQuery({
+    queryKey: queryKeys.supportTickets.detail(id ?? ''),
+    queryFn: () => getTicket(id!),
+    enabled: !!id,
+  })
 }
 
-function invalidateTicket(client: ReturnType<typeof useQueryClient>, id: string) {
-  client.invalidateQueries({ queryKey: queryKeys.supportTickets.all })
-  client.invalidateQueries({ queryKey: queryKeys.supportTickets.detail(id) })
+export function useTicketMessages(ticketId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.supportTickets.messages(ticketId ?? ''),
+    queryFn: () => getTicketMessages(ticketId!),
+    enabled: !!ticketId,
+  })
 }
 
 export function useReplyToTicket() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: ({ ticketId, message }: { ticketId: string; message: string }) => replyToTicket(ticketId, message),
-    onSuccess: (_d, v) => invalidateTicket(client, v.ticketId),
+    // Refresh the thread so the new reply appears without a manual reload.
+    onSuccess: (_data, { ticketId }) =>
+      client.invalidateQueries({ queryKey: queryKeys.supportTickets.messages(ticketId) }),
   })
 }
 
 export function useUpdateTicket() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: { status?: TicketStatus; priority?: TicketPriority } }) => updateTicket(id, patch),
-    onSuccess: (_d, v) => invalidateTicket(client, v.id),
+    mutationFn: ({ id, patch }: { id: string; patch: TicketPatch }) => updateTicket(id, patch),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.supportTickets.all }),
   })
 }

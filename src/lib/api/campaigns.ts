@@ -1,74 +1,111 @@
+/** Real backend campaign calls — follows the same envelope/error pattern as `categories.ts`. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, delay, generateId, matchesSearch, paginate, type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
-import { recordAuditEntry } from '@/lib/api/audit-logs'
+
+export const CAMPAIGN_STATUSES = ['DRAFT', 'SCHEDULED', 'ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELLED'] as const
+export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number]
+
+export const CAMPAIGN_PLACEMENTS = ['DEAL_OF_WEEK', 'FLASH_SALE'] as const
+export type CampaignPlacement = (typeof CAMPAIGN_PLACEMENTS)[number]
+
+/** Badge styling per status, shared by the campaign list and detail pages. */
+export const CAMPAIGN_STATUS_VARIANT: Record<CampaignStatus, 'success' | 'secondary' | 'warning'> = {
+  ACTIVE: 'success',
+  SCHEDULED: 'warning',
+  PAUSED: 'warning',
+  DRAFT: 'secondary',
+  COMPLETED: 'secondary',
+  CANCELLED: 'secondary',
+}
+
+export const CAMPAIGN_DISCOUNT_TYPES = ['PERCENTAGE', 'FIXED'] as const
+export type CampaignDiscountType = (typeof CAMPAIGN_DISCOUNT_TYPES)[number]
+
+/**
+ * A product in a campaign carries its own discount — the association is not a bare product id.
+ * The nested `product` summary is present on responses; writes send `productId` instead.
+ */
+export interface CampaignProduct {
+  id: string
+  campaignId: string
+  productId: string
+  discountType: CampaignDiscountType
+  discountValue: string
+  product?: { id: string; name: string; slug: string }
+}
+
+export interface CampaignProductInput {
+  productId: string
+  discountType: CampaignDiscountType
+  discountValue: number
+}
 
 export interface Campaign {
   id: string
   name: string
-  description: string
-  couponIds: string[]
-  productIds: string[]
-  startDate: string
-  endDate: string
-  isActive: boolean
-  metrics: { views: number; redemptions: number }
+  description: string | null
+  status: CampaignStatus
+  placement: CampaignPlacement | null
+  /** Null on either side means that end of the window is open. */
+  startsAt: string | null
+  endsAt: string | null
+  products: CampaignProduct[]
   createdAt: string
+  updatedAt: string
 }
 
 export interface CampaignInput {
   name: string
-  description: string
-  couponIds: string[]
-  productIds: string[]
-  startDate: string
-  endDate: string
-  isActive: boolean
+  description?: string
+  status?: CampaignStatus
+  placement?: CampaignPlacement
+  startsAt?: string
+  endsAt?: string
+  products?: CampaignProductInput[]
 }
 
-let campaigns: Campaign[] = [
-  { id: generateId('cmp'), name: 'Winter Clearance', description: 'Storewide discounts on winter apparel and gear.', couponIds: [], productIds: [], startDate: '2025-12-01', endDate: '2026-01-15', isActive: true, metrics: { views: 18420, redemptions: 612 }, createdAt: '2025-11-20T09:00:00Z' },
-  { id: generateId('cmp'), name: 'New Year Electronics Sale', description: 'Featured deals on audio and mobile devices.', couponIds: [], productIds: [], startDate: '2025-12-28', endDate: '2026-01-10', isActive: true, metrics: { views: 9310, redemptions: 245 }, createdAt: '2025-12-15T09:00:00Z' },
-  { id: generateId('cmp'), name: 'Back to Office', description: 'Laptops and productivity gear bundle promo.', couponIds: [], productIds: [], startDate: '2025-08-01', endDate: '2025-09-15', isActive: false, metrics: { views: 5210, redemptions: 130 }, createdAt: '2025-07-20T09:00:00Z' },
-]
+export interface CampaignListParams extends ListParams {
+  status?: CampaignStatus
+}
 
-async function listCampaigns(params: ListParams = {}): Promise<PaginatedResponse<Campaign>> {
-  const filtered = campaigns.filter((c) => matchesSearch([c.name], params.search))
-  return delay(paginate(filtered, params))
+async function listCampaigns(params: CampaignListParams = {}): Promise<PaginatedResponse<Campaign>> {
+  const limit = params.limit ?? 20
+
+  const query = new URLSearchParams()
+  if (params.page) query.set('page', String(params.page))
+  query.set('limit', String(limit))
+  if (params.search) query.set('searchTerm', params.search)
+  if (params.status) query.set('status', params.status)
+
+  const res = await request<Campaign[]>(`/campaigns?${query}`)
+  return {
+    data: res.data,
+    meta: res.meta ?? { page: params.page ?? 1, limit, total: res.data.length, totalPages: 1 },
+  }
 }
 
 async function getCampaign(id: string): Promise<Campaign> {
-  const found = campaigns.find((c) => c.id === id)
-  if (!found) throw new ApiError('Campaign not found', 404)
-  return delay(found)
+  const res = await request<Campaign>(`/campaigns/${id}`)
+  return res.data
 }
 
 async function createCampaign(input: CampaignInput): Promise<Campaign> {
-  if (input.endDate < input.startDate) throw new ApiError('End date must be after the start date.', 422)
-  const campaign: Campaign = { id: generateId('cmp'), metrics: { views: 0, redemptions: 0 }, createdAt: new Date().toISOString(), ...input }
-  campaigns = [campaign, ...campaigns]
-  recordAuditEntry({ action: 'campaign.created', resourceType: 'campaign', resourceId: campaign.id, resourceLabel: campaign.name })
-  return delay(campaign)
+  const res = await request<Campaign>('/campaigns', { method: 'POST', body: JSON.stringify(input) })
+  return res.data
 }
 
 async function updateCampaign(id: string, input: CampaignInput): Promise<Campaign> {
-  const index = campaigns.findIndex((c) => c.id === id)
-  if (index === -1) throw new ApiError('Campaign not found', 404)
-  if (input.endDate < input.startDate) throw new ApiError('End date must be after the start date.', 422)
-  const updated = { ...campaigns[index], ...input }
-  campaigns = campaigns.map((c) => (c.id === id ? updated : c))
-  recordAuditEntry({ action: 'campaign.updated', resourceType: 'campaign', resourceId: id, resourceLabel: updated.name })
-  return delay(updated)
+  const res = await request<Campaign>(`/campaigns/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+  return res.data
 }
 
 async function deleteCampaign(id: string): Promise<void> {
-  const target = campaigns.find((c) => c.id === id)
-  campaigns = campaigns.filter((c) => c.id !== id)
-  recordAuditEntry({ action: 'campaign.deleted', resourceType: 'campaign', resourceId: id, resourceLabel: target?.name })
-  return delay(undefined)
+  await request<Campaign>(`/campaigns/${id}`, { method: 'DELETE' })
 }
 
-export function useCampaigns(params: ListParams = {}) {
+export function useCampaigns(params: CampaignListParams = {}) {
   return useQuery({ queryKey: queryKeys.campaigns.list(params), queryFn: () => listCampaigns(params) })
 }
 
@@ -78,21 +115,24 @@ export function useCampaign(id: string | undefined) {
 
 export function useCreateCampaign() {
   const client = useQueryClient()
-  return useMutation({ mutationFn: createCampaign, onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.campaigns.all }) })
+  return useMutation({
+    mutationFn: createCampaign,
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.campaigns.all }),
+  })
 }
 
 export function useUpdateCampaign() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: CampaignInput }) => updateCampaign(id, input),
-    onSuccess: (_d, v) => {
-      client.invalidateQueries({ queryKey: queryKeys.campaigns.all })
-      client.invalidateQueries({ queryKey: queryKeys.campaigns.detail(v.id) })
-    },
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.campaigns.all }),
   })
 }
 
 export function useDeleteCampaign() {
   const client = useQueryClient()
-  return useMutation({ mutationFn: deleteCampaign, onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.campaigns.all }) })
+  return useMutation({
+    mutationFn: deleteCampaign,
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.campaigns.all }),
+  })
 }

@@ -30,7 +30,7 @@ export const queryKeys = {
   staffUsers: { all: ['staff-users'] as const, list: (p?: object) => ['staff-users', 'list', p] as const },
   reviews: { all: ['reviews'] as const, list: (p?: object) => ['reviews', 'list', p] as const },
 
-  supportTickets: { all: ['support-tickets'] as const, list: (p?: object) => ['support-tickets', 'list', p] as const, detail: (id: string) => ['support-tickets', 'detail', id] as const },
+  supportTickets: { all: ['support-tickets'] as const, list: (p?: object) => ['support-tickets', 'list', p] as const, detail: (id: string) => ['support-tickets', 'detail', id] as const, messages: (id: string) => ['support-tickets', 'messages', id] as const },
   notifications: { all: ['notifications'] as const, list: (p?: object) => ['notifications', 'list', p] as const, unreadCount: ['notifications', 'unread-count'] as const },
 
   storeSettings: { detail: ['store-settings'] as const },

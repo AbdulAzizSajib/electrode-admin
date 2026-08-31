@@ -4,7 +4,8 @@
  * scoped to the caller's own order) — there's no admin "create a return" capability to wrap.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, BASE_URL, type ListParams, type PaginatedResponse, type PaginationMeta } from '@/lib/api/client'
+import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
 
 export type ReturnStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'RECEIVED' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED'
@@ -53,27 +54,6 @@ export interface UpdateReturnStatusInput {
   status: ReturnStatus
   /** Required only when `status` is `COMPLETED` — the warehouse that receives the restocked items. */
   warehouseId?: string
-}
-
-interface ApiEnvelope<T> {
-  success: boolean
-  message: string
-  data: T
-  meta?: PaginationMeta
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  })
-
-  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
-  if (!res.ok || !json?.success) {
-    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
-  }
-  return json
 }
 
 async function listReturns(params: ReturnListParams = {}): Promise<PaginatedResponse<ReturnRequest>> {

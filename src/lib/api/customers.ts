@@ -1,55 +1,94 @@
+/**
+ * Real backend customer calls, against admin endpoints added alongside this change — the server
+ * previously exposed only `/customers/me/addresses`, so there was nothing for this page to call.
+ */
 import { useQuery } from '@tanstack/react-query'
-import { ApiError, delay, matchesSearch, paginate, type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
-import { _getAllUsers, _getUserById } from '@/lib/api/users'
-import { _getAllOrders } from '@/lib/api/orders'
-import type { Address } from '@/lib/api/shared-types'
+
+export const CUSTOMER_STATUSES = ['ACTIVE', 'INACTIVE', 'BLOCKED'] as const
+export type CustomerStatus = (typeof CUSTOMER_STATUSES)[number]
+
+export const ADDRESS_TYPES = ['SHIPPING', 'BILLING'] as const
+export type AddressType = (typeof ADDRESS_TYPES)[number]
+
+export interface CustomerAddress {
+  id: string
+  customerId: string
+  type: AddressType
+  fullName: string
+  phone: string
+  addressLine1: string
+  addressLine2: string | null
+  city: string
+  state: string | null
+  postalCode: string | null
+  country: string
+  isDefault: boolean
+  createdAt: string
+  updatedAt: string
+}
 
 export interface CustomerRow {
   id: string
-  name: string
-  email: string
-  joinedAt: string
-  isActive: boolean
+  userId: string | null
+  firstName: string
+  /** Optional — a customer created from a single-word name has no last name. */
+  lastName: string | null
+  email: string | null
+  phone: string | null
+  avatar: string | null
+  status: CustomerStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CustomerDetail extends CustomerRow {
+  addresses: CustomerAddress[]
+  /** Aggregated server-side over all non-cancelled orders, not summed from a page of results. */
   orderCount: number
   totalSpent: number
 }
 
-export interface CustomerDetail extends CustomerRow {
-  addresses: Address[]
+export interface CustomerListParams extends ListParams {
+  status?: CustomerStatus
 }
 
-function toRow(userId: string): CustomerRow {
-  const user = _getUserById(userId)!
-  const orders = _getAllOrders().filter((o) => o.customerId === userId && o.status !== 'CANCELLED')
+/** Display name from the split first/last columns. */
+export function customerFullName(c: Pick<CustomerRow, 'firstName' | 'lastName'>): string {
+  return [c.firstName, c.lastName].filter(Boolean).join(' ')
+}
+
+async function listCustomers(params: CustomerListParams = {}): Promise<PaginatedResponse<CustomerRow>> {
+  const limit = params.limit ?? 20
+
+  const query = new URLSearchParams()
+  if (params.page) query.set('page', String(params.page))
+  query.set('limit', String(limit))
+  if (params.search) query.set('searchTerm', params.search)
+  if (params.status) query.set('status', params.status)
+
+  const res = await request<CustomerRow[]>(`/customers?${query}`)
   return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    joinedAt: user.createdAt,
-    isActive: user.isActive,
-    orderCount: orders.length,
-    totalSpent: Math.round(orders.reduce((sum, o) => sum + Number(o.totalAmount), 0) * 100) / 100,
+    data: res.data,
+    meta: res.meta ?? { page: params.page ?? 1, limit, total: res.data.length, totalPages: 1 },
   }
 }
 
-async function listCustomers(params: ListParams = {}): Promise<PaginatedResponse<CustomerRow>> {
-  const customers = _getAllUsers().filter((u) => u.role === 'CUSTOMER')
-  const filtered = customers.filter((c) => matchesSearch([c.name, c.email], params.search))
-  const rows = filtered.map((c) => toRow(c.id)).sort((a, b) => b.joinedAt.localeCompare(a.joinedAt))
-  return delay(paginate(rows, params))
-}
-
 async function getCustomer(id: string): Promise<CustomerDetail> {
-  const user = _getUserById(id)
-  if (!user || user.role !== 'CUSTOMER') throw new ApiError('Customer not found', 404)
-  return delay({ ...toRow(id), addresses: user.addresses })
+  const res = await request<CustomerDetail>(`/customers/${id}`)
+  return res.data
 }
 
-export function useCustomers(params: ListParams = {}) {
+export function useCustomers(params: CustomerListParams = {}) {
   return useQuery({ queryKey: queryKeys.customers.list(params), queryFn: () => listCustomers(params) })
 }
 
 export function useCustomer(id: string | undefined) {
-  return useQuery({ queryKey: queryKeys.customers.detail(id ?? ''), queryFn: () => getCustomer(id!), enabled: !!id })
+  return useQuery({
+    queryKey: queryKeys.customers.detail(id ?? ''),
+    queryFn: () => getCustomer(id!),
+    enabled: !!id,
+  })
 }

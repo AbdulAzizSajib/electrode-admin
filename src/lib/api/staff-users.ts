@@ -1,49 +1,61 @@
+/** Real backend staff-user calls — `GET /users` and `PATCH /users/:id`, OWNER/ADMIN only. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, delay, matchesSearch, paginate, type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
-import { recordAuditEntry } from '@/lib/api/audit-logs'
-import { _getAllUsers, _setUsers, type User, type UserRole } from '@/lib/api/users'
+import type { User, UserStatus } from '@/lib/api/users'
 
-export type StaffRole = Exclude<UserRole, 'CUSTOMER'>
+export type StaffUserRow = User
 
-export interface StaffUserRow {
-  id: string
-  name: string
-  email: string
-  role: StaffRole
-  isActive: boolean
-  createdAt: string
+export interface StaffUserListParams extends ListParams {
+  roleId?: string
+  status?: UserStatus
+  isActive?: boolean
 }
 
-function toRow(u: User): StaffUserRow {
-  return { id: u.id, name: u.name, email: u.email, role: u.role as StaffRole, isActive: u.isActive, createdAt: u.createdAt }
+export interface StaffUserPatch {
+  /**
+   * OWNER-only on the backend: assigning a role is the same privilege `/roles` is gated on, so an
+   * ADMIN attempting it gets a 403 with a message rather than a silent no-op.
+   */
+  roleId?: string
+  status?: UserStatus
+  isActive?: boolean
+  name?: string
+  contactNumber?: string
 }
 
-async function listStaffUsers(params: ListParams = {}): Promise<PaginatedResponse<StaffUserRow>> {
-  const staff = _getAllUsers().filter((u) => u.role !== 'CUSTOMER')
-  const filtered = staff.filter((u) => matchesSearch([u.name, u.email], params.search))
-  return delay(paginate(filtered.map(toRow), { ...params, limit: params.limit ?? 100 }))
+async function listStaffUsers(params: StaffUserListParams = {}): Promise<PaginatedResponse<StaffUserRow>> {
+  const limit = params.limit ?? 20
+
+  const query = new URLSearchParams()
+  if (params.page) query.set('page', String(params.page))
+  query.set('limit', String(limit))
+  if (params.search) query.set('searchTerm', params.search)
+  if (params.roleId) query.set('roleId', params.roleId)
+  if (params.status) query.set('status', params.status)
+  if (params.isActive !== undefined) query.set('isActive', String(params.isActive))
+
+  const res = await request<StaffUserRow[]>(`/users?${query}`)
+  return {
+    data: res.data,
+    meta: res.meta ?? { page: params.page ?? 1, limit, total: res.data.length, totalPages: 1 },
+  }
 }
 
-async function updateStaffUser(id: string, patch: { role?: StaffRole; isActive?: boolean }): Promise<StaffUserRow> {
-  const all = _getAllUsers()
-  const index = all.findIndex((u) => u.id === id)
-  if (index === -1) throw new ApiError('User not found', 404)
-  const updated: User = { ...all[index], ...patch }
-  const next = all.map((u) => (u.id === id ? updated : u))
-  _setUsers(next)
-  recordAuditEntry({ action: 'staff_user.updated', resourceType: 'user', resourceId: id, resourceLabel: `${updated.name} (${updated.role}${updated.isActive ? '' : ', inactive'})` })
-  return delay(toRow(updated))
+async function updateStaffUser(id: string, patch: StaffUserPatch): Promise<StaffUserRow> {
+  const res = await request<StaffUserRow>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+  return res.data
 }
 
-export function useStaffUsers(params: ListParams = {}) {
+export function useStaffUsers(params: StaffUserListParams = {}) {
   return useQuery({ queryKey: queryKeys.staffUsers.list(params), queryFn: () => listStaffUsers(params) })
 }
 
 export function useUpdateStaffUser() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: { role?: StaffRole; isActive?: boolean } }) => updateStaffUser(id, patch),
+    mutationFn: ({ id, patch }: { id: string; patch: StaffUserPatch }) => updateStaffUser(id, patch),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.staffUsers.all }),
   })
 }

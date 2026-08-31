@@ -8,72 +8,164 @@ import { PageHeader } from '@/components/ui/page-header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
 import { DataTable } from '@/components/ui/data-table'
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
-import { useCoupons, useCreateCoupon, useUpdateCoupon, useDeleteCoupon, type Coupon } from '@/lib/api/coupons'
+import {
+  useCoupons,
+  useCreateCoupon,
+  useUpdateCoupon,
+  useDeleteCoupon,
+  COUPON_STATUSES,
+  COUPON_TYPES,
+  type Coupon,
+  type CouponInput,
+  type CouponStatus,
+  type CouponType,
+} from '@/lib/api/coupons'
 import { formatDate } from '@/lib/utils/format'
 
-const schema = z.object({
-  code: z.string().min(1, 'Code is required'),
-  discountType: z.enum(['percentage', 'fixed']),
-  discountValue: z.coerce.number().min(0, 'Cannot be negative'),
-  usageLimit: z.coerce.number().min(1, 'Must be at least 1'),
-  minOrderAmount: z.coerce.number().min(0, 'Cannot be negative'),
-  startDate: z.string().min(1, 'Start date is required'),
-  endDate: z.string().min(1, 'End date is required'),
-  isActive: z.boolean(),
-})
+const TYPE_LABEL: Record<CouponType, string> = {
+  PERCENTAGE: 'Percentage',
+  FIXED: 'Fixed amount',
+  FREE_SHIPPING: 'Free shipping',
+}
+
+const STATUS_VARIANT: Record<CouponStatus, 'success' | 'secondary' | 'warning'> = {
+  ACTIVE: 'success',
+  INACTIVE: 'secondary',
+  EXPIRED: 'warning',
+}
+
+/** Blank clears the value: these are optional on the backend, so an empty field is omitted. */
+const optionalNumber = z.preprocess(
+  (v) => (v === '' || v === null ? undefined : v),
+  z.coerce.number().nonnegative('Cannot be negative').optional(),
+)
+const optionalPositiveInt = z.preprocess(
+  (v) => (v === '' || v === null ? undefined : v),
+  z.coerce.number().int('Must be a whole number').positive('Must be at least 1').optional(),
+)
+
+const schema = z
+  .object({
+    code: z.string().trim().min(2, 'Code must be at least 2 characters').max(50),
+    description: z.string().trim().max(500),
+    type: z.enum(COUPON_TYPES),
+    value: z.coerce.number().nonnegative('Cannot be negative'),
+    minimumOrderAmount: optionalNumber,
+    maximumDiscountAmount: optionalNumber,
+    usageLimit: optionalPositiveInt,
+    perCustomerLimit: optionalPositiveInt,
+    startsAt: z.string(),
+    expiresAt: z.string(),
+    status: z.enum(COUPON_STATUSES),
+  })
+  .superRefine((v, ctx) => {
+    if (v.startsAt && v.expiresAt && v.expiresAt < v.startsAt) {
+      ctx.addIssue({ code: 'custom', message: 'Expiry must be after the start', path: ['expiresAt'] })
+    }
+    if (v.type === 'PERCENTAGE' && v.value > 100) {
+      ctx.addIssue({ code: 'custom', message: 'A percentage cannot exceed 100', path: ['value'] })
+    }
+  })
 type Values = z.input<typeof schema>
 type OutputValues = z.output<typeof schema>
+
+const EMPTY_VALUES: Values = {
+  code: '',
+  description: '',
+  type: 'PERCENTAGE',
+  value: 10,
+  minimumOrderAmount: '',
+  maximumDiscountAmount: '',
+  usageLimit: '',
+  perCustomerLimit: '',
+  startsAt: '',
+  expiresAt: '',
+  status: 'ACTIVE',
+}
+
+function toFormValues(c: Coupon): Values {
+  return {
+    code: c.code,
+    description: c.description ?? '',
+    type: c.type,
+    value: c.value,
+    minimumOrderAmount: c.minimumOrderAmount ?? '',
+    maximumDiscountAmount: c.maximumDiscountAmount ?? '',
+    usageLimit: c.usageLimit ?? '',
+    perCustomerLimit: c.perCustomerLimit ?? '',
+    startsAt: c.startsAt ? c.startsAt.slice(0, 10) : '',
+    expiresAt: c.expiresAt ? c.expiresAt.slice(0, 10) : '',
+    status: c.status,
+  }
+}
+
+function toCouponPayload(v: OutputValues): CouponInput {
+  const input: CouponInput = {
+    code: v.code,
+    type: v.type,
+    value: v.value,
+    status: v.status,
+  }
+  if (v.description) input.description = v.description
+  if (v.minimumOrderAmount !== undefined) input.minimumOrderAmount = v.minimumOrderAmount
+  if (v.maximumDiscountAmount !== undefined) input.maximumDiscountAmount = v.maximumDiscountAmount
+  if (v.usageLimit !== undefined) input.usageLimit = v.usageLimit
+  if (v.perCustomerLimit !== undefined) input.perCustomerLimit = v.perCustomerLimit
+  // Date inputs give "YYYY-MM-DD"; the backend validates full ISO datetimes. The expiry is pushed
+  // to end-of-day so a coupon does not silently die at midnight on the date the admin picked.
+  if (v.startsAt) input.startsAt = new Date(`${v.startsAt}T00:00:00.000Z`).toISOString()
+  if (v.expiresAt) input.expiresAt = new Date(`${v.expiresAt}T23:59:59.999Z`).toISOString()
+  return input
+}
+
+/** `FREE_SHIPPING` carries no numeric amount to show. */
+function formatDiscount(c: Coupon): string {
+  if (c.type === 'FREE_SHIPPING') return 'Free shipping'
+  if (c.type === 'PERCENTAGE') return `${c.value}%`
+  return c.value
+}
 
 export default function CouponsPage() {
   const [search, setSearch] = React.useState('')
   const [sheetOpen, setSheetOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<Coupon | null>(null)
+  const [statusFilter, setStatusFilter] = React.useState<'all' | CouponStatus>('all')
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
 
-  const { data, isLoading, isError, refetch } = useCoupons({ search })
+  const { data, isLoading, isError, refetch } = useCoupons({
+    search,
+    page,
+    limit: pageSize,
+    status: statusFilter === 'all' ? undefined : statusFilter,
+  })
   const createMutation = useCreateCoupon()
   const updateMutation = useUpdateCoupon()
   const deleteMutation = useDeleteCoupon()
   const confirmDialog = useConfirmDialog()
 
-  const [defaultWindow] = React.useState(() => {
-    const now = Date.now()
-    return {
-      startDate: new Date(now).toISOString().slice(0, 10),
-      endDate: new Date(now + 30 * 86_400_000).toISOString().slice(0, 10),
-    }
-  })
-
   const form = useForm<Values, unknown, OutputValues>({
     resolver: zodResolver(schema),
-    values: {
-      code: editing?.code ?? '',
-      discountType: editing?.discountType ?? 'percentage',
-      discountValue: editing?.discountValue ?? 10,
-      usageLimit: editing?.usageLimit ?? 100,
-      minOrderAmount: editing?.minOrderAmount ?? 0,
-      startDate: editing?.startDate ?? defaultWindow.startDate,
-      endDate: editing?.endDate ?? defaultWindow.endDate,
-      isActive: editing?.isActive ?? true,
-    },
+    values: editing ? toFormValues(editing) : EMPTY_VALUES,
   })
+
+  const couponType = form.watch('type')
 
   const onSubmit = async (values: OutputValues) => {
     try {
+      const input = toCouponPayload(values)
       if (editing) {
-        await updateMutation.mutateAsync({ id: editing.id, input: values })
+        await updateMutation.mutateAsync({ id: editing.id, input })
         toast({ title: 'Coupon updated' })
       } else {
-        await createMutation.mutateAsync(values)
+        await createMutation.mutateAsync(input)
         toast({ title: 'Coupon created' })
       }
       setSheetOpen(false)
@@ -82,15 +174,25 @@ export default function CouponsPage() {
     }
   }
 
-  const all = React.useMemo(() => data?.data ?? [], [data])
-  const filteredPage = React.useMemo(() => all.slice((page - 1) * pageSize, page * pageSize), [all, page, pageSize])
-
   const columns: ColumnDef<Coupon>[] = [
     { accessorKey: 'code', header: 'Code', cell: ({ row }) => <span className="font-mono font-medium text-foreground">{row.original.code}</span> },
-    { id: 'discount', header: 'Discount', cell: ({ row }) => (row.original.discountType === 'percentage' ? `${row.original.discountValue}%` : `$${row.original.discountValue.toFixed(2)}`) },
-    { id: 'usage', header: 'Usage', cell: ({ row }) => `${row.original.usageCount} / ${row.original.usageLimit}` },
-    { id: 'window', header: 'Valid', cell: ({ row }) => `${formatDate(row.original.startDate)} – ${formatDate(row.original.endDate)}` },
-    { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={row.original.isActive ? 'success' : 'secondary'}>{row.original.isActive ? 'Active' : 'Inactive'}</Badge> },
+    { id: 'discount', header: 'Discount', cell: ({ row }) => formatDiscount(row.original) },
+    {
+      id: 'usage',
+      header: 'Usage',
+      // Redemption counts are recorded server-side as orders are placed — shown, never edited.
+      cell: ({ row }) => `${row.original.usageCount} / ${row.original.usageLimit ?? '∞'}`,
+    },
+    {
+      id: 'window',
+      header: 'Valid',
+      cell: ({ row }) => {
+        const { startsAt, expiresAt } = row.original
+        if (!startsAt && !expiresAt) return <span className="text-muted-foreground">Always</span>
+        return `${startsAt ? formatDate(startsAt) : '—'} – ${expiresAt ? formatDate(expiresAt) : '—'}`
+      },
+    },
+    { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={STATUS_VARIANT[row.original.status]}>{row.original.status}</Badge> },
     {
       id: 'actions',
       header: '',
@@ -138,7 +240,7 @@ export default function CouponsPage() {
 
       <DataTable
         columns={columns}
-        data={filteredPage}
+        data={data?.data ?? []}
         isLoading={isLoading}
         isError={isError}
         onRetry={() => refetch()}
@@ -146,9 +248,18 @@ export default function CouponsPage() {
         onSearchChange={(v) => { setSearch(v); setPage(1) }}
         searchPlaceholder="Search by code…"
         emptyState={{ icon: Ticket, title: 'No coupons yet' }}
+        toolbar={
+          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as 'all' | CouponStatus); setPage(1) }}>
+            <SelectTrigger className="h-8 w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              {COUPON_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        }
         page={page}
         pageSize={pageSize}
-        total={all.length}
+        total={data?.meta.total ?? 0}
         onPageChange={setPage}
         onPageSizeChange={(size) => { setPageSize(size); setPage(1) }}
       />
@@ -161,44 +272,83 @@ export default function CouponsPage() {
               <FormField control={form.control} name="code" render={({ field }) => (
                 <FormItem><FormLabel>Code</FormLabel><FormControl><Input {...field} className="uppercase" /></FormControl><FormMessage /></FormItem>
               )} />
+              <FormField control={form.control} name="description" render={({ field }) => (
+                <FormItem><FormLabel>Description</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
               <div className="grid grid-cols-2 gap-3.5">
-                <FormField control={form.control} name="discountType" render={({ field }) => (
+                <FormField control={form.control} name="type" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Type</FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
-                        <SelectItem value="percentage">Percentage</SelectItem>
-                        <SelectItem value="fixed">Fixed amount</SelectItem>
+                        {COUPON_TYPES.map((t) => <SelectItem key={t} value={t}>{TYPE_LABEL[t]}</SelectItem>)}
                       </SelectContent>
                     </Select>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={form.control} name="discountValue" render={({ field }) => (
-                  <FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" step="0.01" min="0" {...field} value={field.value === undefined ? '' : String(field.value)} /></FormControl><FormMessage /></FormItem>
+                <FormField control={form.control} name="value" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{couponType === 'PERCENTAGE' ? 'Percent off' : 'Value'}</FormLabel>
+                    <FormControl><Input type="number" step="0.01" min="0" {...field} value={field.value === undefined ? '' : String(field.value)} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+              <div className="grid grid-cols-2 gap-3.5">
+                <FormField control={form.control} name="minimumOrderAmount" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Min. order amount</FormLabel>
+                    <FormControl><Input type="number" step="0.01" min="0" {...field} value={field.value === undefined ? '' : String(field.value)} /></FormControl>
+                    <FormDescription>Blank means no minimum.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="maximumDiscountAmount" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Max. discount</FormLabel>
+                    <FormControl><Input type="number" step="0.01" min="0" {...field} value={field.value === undefined ? '' : String(field.value)} /></FormControl>
+                    <FormDescription>Caps a percentage discount.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
                 )} />
               </div>
               <div className="grid grid-cols-2 gap-3.5">
                 <FormField control={form.control} name="usageLimit" render={({ field }) => (
-                  <FormItem><FormLabel>Usage limit</FormLabel><FormControl><Input type="number" min="1" {...field} value={field.value === undefined ? '' : String(field.value)} /></FormControl><FormMessage /></FormItem>
+                  <FormItem>
+                    <FormLabel>Usage limit</FormLabel>
+                    <FormControl><Input type="number" min="1" {...field} value={field.value === undefined ? '' : String(field.value)} /></FormControl>
+                    <FormDescription>Blank means unlimited.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
                 )} />
-                <FormField control={form.control} name="minOrderAmount" render={({ field }) => (
-                  <FormItem><FormLabel>Min. order amount</FormLabel><FormControl><Input type="number" step="0.01" min="0" {...field} value={field.value === undefined ? '' : String(field.value)} /></FormControl><FormMessage /></FormItem>
+                <FormField control={form.control} name="perCustomerLimit" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Per-customer limit</FormLabel>
+                    <FormControl><Input type="number" min="1" {...field} value={field.value === undefined ? '' : String(field.value)} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )} />
               </div>
               <div className="grid grid-cols-2 gap-3.5">
-                <FormField control={form.control} name="startDate" render={({ field }) => (
-                  <FormItem><FormLabel>Start date</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                <FormField control={form.control} name="startsAt" render={({ field }) => (
+                  <FormItem><FormLabel>Starts</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
-                <FormField control={form.control} name="endDate" render={({ field }) => (
-                  <FormItem><FormLabel>End date</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                <FormField control={form.control} name="expiresAt" render={({ field }) => (
+                  <FormItem><FormLabel>Expires</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
                 )} />
               </div>
-              <FormField control={form.control} name="isActive" render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between gap-2">
-                  <FormLabel className="text-sm font-normal text-foreground">Active</FormLabel>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+              <FormField control={form.control} name="status" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Status</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {COUPON_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
                 </FormItem>
               )} />
               <SheetFooter>

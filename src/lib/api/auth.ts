@@ -6,7 +6,7 @@
  * httpOnly `accessToken`/`refreshToken` cookies the server also sets; the
  * token values in the response body are what the client can actually read.
  */
-import { BASE_URL, ApiError } from '@/lib/api/client'
+import { requestData as request } from '@/lib/api/request'
 
 export interface AuthTokens {
   token: string
@@ -22,26 +22,6 @@ export interface AuthUser {
   image: string | null
   isActive: boolean
   needPasswordChange: boolean
-}
-
-interface ApiEnvelope<T> {
-  success: boolean
-  message: string
-  data: T
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  })
-
-  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
-  if (!res.ok || !json?.success) {
-    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
-  }
-  return json.data
 }
 
 export function login(email: string, password: string) {

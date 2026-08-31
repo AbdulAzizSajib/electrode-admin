@@ -1,9 +1,10 @@
 import * as React from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { ArrowLeft, Send } from 'lucide-react'
+import { ArrowLeft, MessagesSquare, Send } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -13,25 +14,31 @@ import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
 import {
   useReplyToTicket,
   useSupportTicket,
+  useTicketMessages,
   useUpdateTicket,
+  customerName,
+  TICKET_PRIORITIES,
+  TICKET_PRIORITY_LABEL,
+  TICKET_STATUSES,
+  TICKET_STATUS_LABEL,
+  TICKET_STATUS_VARIANT,
   type TicketPriority,
   type TicketStatus,
 } from '@/lib/api/support-tickets'
 import { cn } from '@/lib/utils/cn'
 import { formatDateTime } from '@/lib/utils/format'
 
-const STATUS_LABEL: Record<TicketStatus, string> = { open: 'Open', in_progress: 'In progress', resolved: 'Resolved', closed: 'Closed' }
-const PRIORITY_LABEL: Record<TicketPriority, string> = { low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' }
-
 export default function SupportTicketDetailPage() {
   const { ticketId } = useParams()
   const navigate = useNavigate()
-  const { data, isLoading } = useSupportTicket(ticketId)
+  const { data: ticket, isLoading } = useSupportTicket(ticketId)
+  // Messages come from their own nested endpoint, so they load independently of the ticket.
+  const { data: messages, isLoading: messagesLoading } = useTicketMessages(ticketId)
   const replyMutation = useReplyToTicket()
   const updateMutation = useUpdateTicket()
   const [message, setMessage] = React.useState('')
 
-  useBreadcrumbLabel(data?.ticket.subject)
+  useBreadcrumbLabel(ticket?.subject)
 
   if (isLoading) {
     return (
@@ -41,9 +48,7 @@ export default function SupportTicketDetailPage() {
       </div>
     )
   }
-  if (!data || !ticketId) return <EmptyState title="Ticket not found" />
-
-  const { ticket, messages } = data
+  if (!ticket || !ticketId) return <EmptyState title="Ticket not found" />
 
   const sendReply = async () => {
     if (!message.trim()) return
@@ -55,13 +60,26 @@ export default function SupportTicketDetailPage() {
     }
   }
 
+  const triage = async (patch: { status?: TicketStatus; priority?: TicketPriority }) => {
+    try {
+      await updateMutation.mutateAsync({ id: ticketId, patch })
+    } catch (err) {
+      toast({ title: 'Could not update ticket', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon" className="size-7" onClick={() => navigate('/support/tickets')}>
           <ArrowLeft className="size-4" />
         </Button>
-        <PageHeader className="flex-1" title={ticket.subject} description={ticket.customerName} />
+        <PageHeader
+          className="flex-1"
+          title={ticket.subject}
+          description={`${ticket.ticketNumber} · ${customerName(ticket)}`}
+          actions={<Badge variant={TICKET_STATUS_VARIANT[ticket.status]}>{TICKET_STATUS_LABEL[ticket.status]}</Badge>}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -69,15 +87,36 @@ export default function SupportTicketDetailPage() {
           <Card>
             <CardHeader><CardTitle>Conversation</CardTitle></CardHeader>
             <CardContent className="flex flex-col gap-3">
-              {messages.map((m) => (
-                <div key={m.id} className={cn('flex flex-col gap-0.5 rounded-md p-2.5 text-sm', m.authorType === 'staff' ? 'ml-6 bg-info-bg' : 'mr-6 bg-muted')}>
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-foreground">{m.authorName}</span>
-                    <span className="text-xs text-muted-foreground">{formatDateTime(m.createdAt)}</span>
-                  </div>
-                  <p className="text-foreground">{m.message}</p>
+              {/* The ticket's own description opens the thread — it is not a message row. */}
+              <div className="flex flex-col gap-0.5 rounded-md bg-muted p-2.5 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-foreground">{customerName(ticket)}</span>
+                  <span className="text-xs text-muted-foreground">{formatDateTime(ticket.createdAt)}</span>
                 </div>
-              ))}
+                <p className="text-foreground">{ticket.description}</p>
+              </div>
+
+              {messagesLoading ? (
+                <Skeleton className="h-24 w-full" />
+              ) : !messages || messages.length === 0 ? (
+                <EmptyState icon={MessagesSquare} title="No replies yet" description="Send the first reply below." />
+              ) : (
+                messages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={cn('flex flex-col gap-0.5 rounded-md p-2.5 text-sm', m.sender ? 'ml-6 bg-info-bg' : 'mr-6 bg-muted')}
+                  >
+                    <div className="flex items-center justify-between">
+                      {/* The sender relation is nullable: the account may have been deleted. */}
+                      <span className={cn('font-medium', m.sender ? 'text-foreground' : 'text-muted-foreground')}>
+                        {m.sender?.name ?? 'Unknown sender'}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{formatDateTime(m.createdAt)}</span>
+                    </div>
+                    <p className="text-foreground">{m.message}</p>
+                  </div>
+                ))
+              )}
             </CardContent>
             <div className="flex flex-col gap-2 border-t border-border p-3">
               <Textarea rows={3} placeholder="Write a reply…" value={message} onChange={(e) => setMessage(e.target.value)} />
@@ -96,21 +135,31 @@ export default function SupportTicketDetailPage() {
             <CardContent className="flex flex-col gap-3">
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted-foreground">Status</span>
-                <Select value={ticket.status} onValueChange={(v) => updateMutation.mutate({ id: ticketId, patch: { status: v as TicketStatus } })}>
+                <Select value={ticket.status} onValueChange={(v) => triage({ status: v as TicketStatus })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(STATUS_LABEL).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                    {TICKET_STATUSES.map((s) => <SelectItem key={s} value={s}>{TICKET_STATUS_LABEL[s]}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted-foreground">Priority</span>
-                <Select value={ticket.priority} onValueChange={(v) => updateMutation.mutate({ id: ticketId, patch: { priority: v as TicketPriority } })}>
+                <Select value={ticket.priority} onValueChange={(v) => triage({ priority: v as TicketPriority })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(PRIORITY_LABEL).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                    {TICKET_PRIORITIES.map((p) => <SelectItem key={p} value={p}>{TICKET_PRIORITY_LABEL[p]}</SelectItem>)}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Assignee</span>
+                <span className={cn(!ticket.assignedTo && 'text-muted-foreground')}>
+                  {ticket.assignedTo?.name ?? 'Unassigned'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Customer</span>
+                <span>{customerName(ticket)}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Created</span>

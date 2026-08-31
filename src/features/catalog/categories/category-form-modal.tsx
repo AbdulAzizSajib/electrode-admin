@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Modal, Form, Input, InputNumber, Switch } from 'antd'
 import { toast } from '@/components/ui/use-toast'
+import { SingleImageField } from '@/components/forms/single-image-field'
 import { useCreateCategory, useUpdateCategory, type Category, type CategoryInput } from '@/lib/api/categories'
 import { CategoryParentPicker } from '@/features/catalog/categories/category-parent-picker'
 
@@ -38,8 +39,29 @@ function toInput(values: FormValues): CategoryInput {
   return input
 }
 
-/** The six fields shared by both the create and edit modals. */
-function CategoryFormFields({ categoryTree, excludeId }: { categoryTree: Category[]; excludeId?: string }) {
+interface CategoryFormFieldsProps {
+  categoryTree: Category[]
+  excludeId?: string
+  imageFile: File | null
+  onImageFileChange: (file: File | null) => void
+  bannerFile: File | null
+  onBannerFileChange: (file: File | null) => void
+  /** The category's existing artwork, shown in the pickers when editing and no new file is chosen. */
+  currentImage?: string | null
+  currentBanner?: string | null
+}
+
+/** The fields shared by both the create and edit modals. */
+function CategoryFormFields({
+  categoryTree,
+  excludeId,
+  imageFile,
+  onImageFileChange,
+  bannerFile,
+  onBannerFileChange,
+  currentImage,
+  currentBanner,
+}: CategoryFormFieldsProps) {
   return (
     <>
       <Form.Item name="name" label="Name" rules={[{ required: true, message: 'Name is required' }]}>
@@ -51,8 +73,25 @@ function CategoryFormFields({ categoryTree, excludeId }: { categoryTree: Categor
       <Form.Item name="description" label="Description">
         <Input.TextArea rows={3} />
       </Form.Item>
+      {/* Upload and URL are alternatives, not a pair — the backend accepts either. */}
+      <Form.Item label="Image">
+        <SingleImageField
+          value={imageFile}
+          onChange={onImageFileChange}
+          currentUrl={currentImage}
+          label="Upload image"
+        />
+      </Form.Item>
       <Form.Item name="image" label="Image URL">
-        <Input placeholder="https://example.com/image.jpg" />
+        <Input placeholder="https://example.com/image.jpg" disabled={!!imageFile} />
+      </Form.Item>
+      <Form.Item label="Banner">
+        <SingleImageField
+          value={bannerFile}
+          onChange={onBannerFileChange}
+          currentUrl={currentBanner}
+          label="Upload banner"
+        />
       </Form.Item>
       <Form.Item name="sortOrder" label="Sort order">
         <InputNumber className="w-full" />
@@ -76,6 +115,8 @@ export interface CategoryCreateModalProps {
 /** Always-blank form for creating a new category. Never touched by edit state. */
 export function CategoryCreateModal({ open, onOpenChange, categoryTree, defaultParentId }: CategoryCreateModalProps) {
   const [form] = Form.useForm<FormValues>()
+  const [imageFile, setImageFile] = React.useState<File | null>(null)
+  const [bannerFile, setBannerFile] = React.useState<File | null>(null)
   const createMutation = useCreateCategory()
 
   // Re-blank the form every time the modal opens (not just on mount) — covers opening it twice in a
@@ -87,11 +128,19 @@ export function CategoryCreateModal({ open, onOpenChange, categoryTree, defaultP
     }
   }, [open, defaultParentId, form])
 
+  // Picked files are cleared in the close/submit paths rather than the effect above, since they
+  // are React state and resetting them from an effect would cascade an extra render.
+  const close = () => {
+    setImageFile(null)
+    setBannerFile(null)
+    onOpenChange(false)
+  }
+
   const handleSubmit = async (values: FormValues) => {
     try {
-      await createMutation.mutateAsync(toInput(values))
+      await createMutation.mutateAsync({ input: toInput(values), imageFile, bannerFile })
       toast({ title: 'Category created' })
-      onOpenChange(false)
+      close()
     } catch (err) {
       toast({ title: 'Something went wrong', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
     }
@@ -101,14 +150,20 @@ export function CategoryCreateModal({ open, onOpenChange, categoryTree, defaultP
     <Modal
       title="New category"
       open={open}
-      onCancel={() => onOpenChange(false)}
+      onCancel={close}
       onOk={() => form.submit()}
       okText="Create category"
       confirmLoading={createMutation.isPending}
       destroyOnHidden
     >
       <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={EMPTY_VALUES}>
-        <CategoryFormFields categoryTree={categoryTree} />
+        <CategoryFormFields
+          categoryTree={categoryTree}
+          imageFile={imageFile}
+          onImageFileChange={setImageFile}
+          bannerFile={bannerFile}
+          onBannerFileChange={setBannerFile}
+        />
       </Form>
     </Modal>
   )
@@ -125,6 +180,8 @@ export interface CategoryEditModalProps {
 /** Form for editing an existing category. Always re-syncs to `category` on open, never leaks create-form state. */
 export function CategoryEditModal({ open, onOpenChange, category, categoryTree }: CategoryEditModalProps) {
   const [form] = Form.useForm<FormValues>()
+  const [imageFile, setImageFile] = React.useState<File | null>(null)
+  const [bannerFile, setBannerFile] = React.useState<File | null>(null)
   const updateMutation = useUpdateCategory()
 
   // Re-sync to the category being edited every time the modal opens — covers switching straight from
@@ -144,12 +201,18 @@ export function CategoryEditModal({ open, onOpenChange, category, categoryTree }
     }
   }, [open, category, form])
 
+  const close = () => {
+    setImageFile(null)
+    setBannerFile(null)
+    onOpenChange(false)
+  }
+
   const handleSubmit = async (values: FormValues) => {
     if (!category) return
     try {
-      await updateMutation.mutateAsync({ id: category.id, input: toInput(values) })
+      await updateMutation.mutateAsync({ id: category.id, input: toInput(values), imageFile, bannerFile })
       toast({ title: 'Category updated' })
-      onOpenChange(false)
+      close()
     } catch (err) {
       toast({ title: 'Something went wrong', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
     }
@@ -159,14 +222,23 @@ export function CategoryEditModal({ open, onOpenChange, category, categoryTree }
     <Modal
       title="Edit category"
       open={open}
-      onCancel={() => onOpenChange(false)}
+      onCancel={close}
       onOk={() => form.submit()}
       okText="Save changes"
       confirmLoading={updateMutation.isPending}
       destroyOnHidden
     >
       <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={EMPTY_VALUES}>
-        <CategoryFormFields categoryTree={categoryTree} excludeId={category?.id} />
+        <CategoryFormFields
+          categoryTree={categoryTree}
+          excludeId={category?.id}
+          imageFile={imageFile}
+          onImageFileChange={setImageFile}
+          bannerFile={bannerFile}
+          onBannerFileChange={setBannerFile}
+          currentImage={category?.image}
+          currentBanner={category?.banner}
+        />
       </Form>
     </Modal>
   )

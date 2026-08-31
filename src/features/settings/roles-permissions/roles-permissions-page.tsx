@@ -17,17 +17,21 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { toast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils/cn'
 import { usePermissions } from '@/lib/api/permissions'
-import { useCreateRole, useDeleteRole, useRoles, useTogglePermission } from '@/lib/api/roles'
+import { useCreateRole, useDeleteRole, useGrantPermission, useRevokePermission, useRoles } from '@/lib/api/roles'
 
-const schema = z.object({ name: z.string().min(1, 'Name is required'), description: z.string().min(1, 'Description is required') })
+const schema = z.object({
+  name: z.string().trim().min(1, 'Name is required'),
+  description: z.string().trim(),
+})
 type Values = z.infer<typeof schema>
 
 export default function RolesPermissionsPage() {
-  const { data: rolesData, isLoading } = useRoles()
+  const { data: rolesData, isLoading, error } = useRoles()
   const { data: permissionsData } = usePermissions()
   const createMutation = useCreateRole()
   const deleteMutation = useDeleteRole()
-  const toggleMutation = useTogglePermission()
+  const grantMutation = useGrantPermission()
+  const revokeMutation = useRevokePermission()
   const confirmDialog = useConfirmDialog()
 
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
@@ -37,22 +41,49 @@ export default function RolesPermissionsPage() {
   const permissions = permissionsData?.data ?? []
   const selected = roles.find((r) => r.id === selectedId) ?? roles[0] ?? null
 
-  const grouped = permissions.reduce<Record<string, typeof permissions>>((acc, p) => {
-    acc[p.category] = acc[p.category] ? [...acc[p.category], p] : [p]
-    return acc
-  }, {})
+  // The backend `Permission` has no category, so the picker is a flat list rather than grouped.
+  const grantedIds = React.useMemo(
+    () => new Set(selected?.permissions.map((rp) => rp.permissionId) ?? []),
+    [selected],
+  )
 
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { name: '', description: '' } })
 
   const onSubmit = async (values: Values) => {
     try {
-      const created = await createMutation.mutateAsync(values)
+      const created = await createMutation.mutateAsync({
+        name: values.name,
+        ...(values.description ? { description: values.description } : {}),
+      })
       toast({ title: 'Role created' })
       setSheetOpen(false)
       form.reset()
       setSelectedId(created.id)
     } catch (err) {
       toast({ title: 'Something went wrong', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
+    }
+  }
+
+  /**
+   * Grant and revoke are distinct endpoints, and each returns the refreshed role — so the checkbox
+   * reflects what the server stored rather than an optimistic local guess. On failure the query
+   * is left untouched and the backend's message is surfaced.
+   */
+  const togglePermission = async (permissionId: string) => {
+    if (!selected) return
+    const isGranted = grantedIds.has(permissionId)
+    try {
+      if (isGranted) {
+        await revokeMutation.mutateAsync({ roleId: selected.id, permissionId })
+      } else {
+        await grantMutation.mutateAsync({ roleId: selected.id, permissionId })
+      }
+    } catch (err) {
+      toast({
+        title: isGranted ? 'Could not revoke permission' : 'Could not grant permission',
+        description: err instanceof Error ? err.message : undefined,
+        variant: 'destructive',
+      })
     }
   }
 
@@ -64,6 +95,17 @@ export default function RolesPermissionsPage() {
       </div>
     )
   }
+
+  if (error) {
+    return (
+      <div className="flex flex-col gap-4">
+        <PageHeader title="Roles & Permissions" description="Define what each role can access." />
+        <p className="text-sm text-destructive">{error instanceof Error ? error.message : 'Could not load roles.'}</p>
+      </div>
+    )
+  }
+
+  const isToggling = grantMutation.isPending || revokeMutation.isPending
 
   return (
     <div className="flex flex-col gap-4">
@@ -91,7 +133,7 @@ export default function RolesPermissionsPage() {
                 )}
               >
                 <span className="font-medium text-foreground">{role.name}</span>
-                <span className="text-xs text-muted-foreground">{role.permissionIds.length} permissions</span>
+                <span className="text-xs text-muted-foreground">{role.permissions.length} permissions</span>
               </button>
             ))}
           </CardContent>
@@ -107,7 +149,9 @@ export default function RolesPermissionsPage() {
               <CardHeader className="flex-row items-center justify-between space-y-0">
                 <div>
                   <CardTitle>{selected.name}</CardTitle>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{selected.description}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {selected.description ?? 'No description'}
+                  </p>
                 </div>
                 <Button
                   variant="destructive"
@@ -127,23 +171,29 @@ export default function RolesPermissionsPage() {
                   <Trash2 /> Delete role
                 </Button>
               </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                {Object.entries(grouped).map(([category, perms]) => (
-                  <div key={category} className="flex flex-col gap-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{category}</span>
-                    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                      {perms.map((perm) => (
-                        <label key={perm.id} className="flex items-center gap-2 text-sm">
-                          <Checkbox
-                            checked={selected.permissionIds.includes(perm.id)}
-                            onCheckedChange={() => toggleMutation.mutate({ roleId: selected.id, permissionId: perm.id })}
-                          />
-                          {perm.label}
-                        </label>
-                      ))}
-                    </div>
+              <CardContent>
+                {permissions.length === 0 ? (
+                  <EmptyState icon={ShieldCheck} title="No permissions defined" />
+                ) : (
+                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                    {permissions.map((perm) => (
+                      <label key={perm.id} className="flex items-start gap-2 text-sm">
+                        <Checkbox
+                          className="mt-0.5"
+                          checked={grantedIds.has(perm.id)}
+                          disabled={isToggling}
+                          onCheckedChange={() => togglePermission(perm.id)}
+                        />
+                        <span className="flex flex-col">
+                          <span className="text-foreground">{perm.name}</span>
+                          {perm.description && (
+                            <span className="text-xs text-muted-foreground">{perm.description}</span>
+                          )}
+                        </span>
+                      </label>
+                    ))}
                   </div>
-                ))}
+                )}
               </CardContent>
             </>
           )}

@@ -6,42 +6,65 @@ import { PageHeader } from '@/components/ui/page-header'
 import { Badge } from '@/components/ui/badge'
 import { DataTable } from '@/components/ui/data-table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useSupportTickets, type TicketPriority, type TicketStatus } from '@/lib/api/support-tickets'
+import {
+  useSupportTickets,
+  customerName,
+  TICKET_PRIORITIES,
+  TICKET_PRIORITY_LABEL,
+  TICKET_PRIORITY_VARIANT,
+  TICKET_STATUSES,
+  TICKET_STATUS_LABEL,
+  TICKET_STATUS_VARIANT,
+  type SupportTicket,
+  type TicketPriority,
+  type TicketStatus,
+} from '@/lib/api/support-tickets'
 import { formatRelativeTime } from '@/lib/utils/format'
-
-const STATUS_LABEL: Record<TicketStatus, string> = { open: 'Open', in_progress: 'In progress', resolved: 'Resolved', closed: 'Closed' }
-const STATUS_VARIANT: Record<TicketStatus, 'secondary' | 'warning' | 'success' | 'outline'> = { open: 'secondary', in_progress: 'warning', resolved: 'success', closed: 'outline' }
-const PRIORITY_LABEL: Record<TicketPriority, string> = { low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' }
-const PRIORITY_VARIANT: Record<TicketPriority, 'secondary' | 'outline' | 'warning' | 'destructive'> = { low: 'secondary', medium: 'outline', high: 'warning', urgent: 'destructive' }
-
-interface TicketRow {
-  id: string
-  subject: string
-  customerName: string
-  status: TicketStatus
-  priority: TicketPriority
-  updatedAt: string
-}
 
 export default function SupportTicketsListPage() {
   const navigate = useNavigate()
+  const [search, setSearch] = React.useState('')
   const [status, setStatus] = React.useState('all')
   const [priority, setPriority] = React.useState('all')
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
 
   const { data, isLoading, isError, refetch } = useSupportTickets({
+    search,
     page,
     limit: pageSize,
     status: status === 'all' ? undefined : (status as TicketStatus),
     priority: priority === 'all' ? undefined : (priority as TicketPriority),
   })
 
-  const columns: ColumnDef<TicketRow>[] = [
+  const columns: ColumnDef<SupportTicket>[] = [
+    {
+      accessorKey: 'ticketNumber',
+      header: 'Ticket',
+      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.ticketNumber}</span>,
+    },
     { accessorKey: 'subject', header: 'Subject', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.subject}</span> },
-    { accessorKey: 'customerName', header: 'Customer' },
-    { id: 'priority', header: 'Priority', cell: ({ row }) => <Badge variant={PRIORITY_VARIANT[row.original.priority]}>{PRIORITY_LABEL[row.original.priority]}</Badge> },
-    { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={STATUS_VARIANT[row.original.status]}>{STATUS_LABEL[row.original.status]}</Badge> },
+    { id: 'customer', header: 'Customer', cell: ({ row }) => customerName(row.original) },
+    {
+      id: 'assignedTo',
+      header: 'Assignee',
+      cell: ({ row }) =>
+        row.original.assignedTo ? (
+          row.original.assignedTo.name
+        ) : (
+          <span className="text-muted-foreground">Unassigned</span>
+        ),
+    },
+    {
+      id: 'priority',
+      header: 'Priority',
+      cell: ({ row }) => <Badge variant={TICKET_PRIORITY_VARIANT[row.original.priority]}>{TICKET_PRIORITY_LABEL[row.original.priority]}</Badge>,
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      cell: ({ row }) => <Badge variant={TICKET_STATUS_VARIANT[row.original.status]}>{TICKET_STATUS_LABEL[row.original.status]}</Badge>,
+    },
     { accessorKey: 'updatedAt', header: 'Last updated', cell: ({ row }) => formatRelativeTime(row.original.updatedAt) },
   ]
 
@@ -51,10 +74,13 @@ export default function SupportTicketsListPage() {
 
       <DataTable
         columns={columns}
-        data={(data?.data ?? []) as TicketRow[]}
+        data={data?.data ?? []}
         isLoading={isLoading}
         isError={isError}
         onRetry={() => refetch()}
+        searchValue={search}
+        onSearchChange={(v) => { setSearch(v); setPage(1) }}
+        searchPlaceholder="Search by ticket number or subject…"
         onRowClick={(row) => navigate(`/support/tickets/${row.id}`)}
         emptyState={{ icon: LifeBuoy, title: 'No support tickets' }}
         toolbar={
@@ -63,14 +89,14 @@ export default function SupportTicketsListPage() {
               <SelectTrigger className="h-8 w-36"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
-                {Object.entries(STATUS_LABEL).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                {TICKET_STATUSES.map((s) => <SelectItem key={s} value={s}>{TICKET_STATUS_LABEL[s]}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={priority} onValueChange={(v) => { setPriority(v); setPage(1) }}>
               <SelectTrigger className="h-8 w-32"><SelectValue placeholder="Priority" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All priorities</SelectItem>
-                {Object.entries(PRIORITY_LABEL).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                {TICKET_PRIORITIES.map((p) => <SelectItem key={p} value={p}>{TICKET_PRIORITY_LABEL[p]}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

@@ -1,6 +1,7 @@
 /** Real backend purchase-order calls — follows the same envelope/error pattern as `categories.ts`/`products.ts`. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, BASE_URL, type ListParams, type PaginatedResponse, type PaginationMeta } from '@/lib/api/client'
+import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
 import type { Supplier } from '@/lib/api/suppliers'
 
@@ -72,27 +73,6 @@ export interface PurchaseOrderReceiveInput {
 export interface PurchaseOrderListParams extends ListParams {
   status?: PurchaseOrderStatus
   supplierId?: string
-}
-
-interface ApiEnvelope<T> {
-  success: boolean
-  message: string
-  data: T
-  meta?: PaginationMeta
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  })
-
-  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
-  if (!res.ok || !json?.success) {
-    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
-  }
-  return json
 }
 
 async function listPurchaseOrders(params: PurchaseOrderListParams = {}): Promise<PaginatedResponse<PurchaseOrder>> {

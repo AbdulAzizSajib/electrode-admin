@@ -4,7 +4,8 @@
  * Follows the same envelope/error pattern as `src/lib/api/auth.ts`.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ApiError, BASE_URL, type ListParams, type PaginatedResponse, type PaginationMeta } from '@/lib/api/client'
+import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
 
 export interface Category {
@@ -42,26 +43,15 @@ export interface CategoryListParams extends ListParams {
   parentId?: string
 }
 
-interface ApiEnvelope<T> {
-  success: boolean
-  message: string
-  data: T
-  meta?: PaginationMeta
-}
-
-/** One shared fetch helper: unwraps the `{ success, message, data }` envelope, throws on failure. */
-async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  })
-
-  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
-  if (!res.ok || !json?.success) {
-    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
-  }
-  return json
+/**
+ * A category write, plus the optional artwork files to upload with it. Files are kept separate
+ * from `CategoryInput` because they are not part of the record's shape — the backend replaces
+ * them with the hosted URLs that come back on `Category.image` / `Category.banner`.
+ */
+export interface CategoryMutationInput {
+  input: CategoryInput
+  imageFile?: File | null
+  bannerFile?: File | null
 }
 
 async function listCategories(params: CategoryListParams = {}): Promise<PaginatedResponse<Category>> {
@@ -93,13 +83,35 @@ async function getCategoryTree(): Promise<Category[]> {
   return res.data
 }
 
-async function createCategory(input: CategoryInput): Promise<Category> {
-  const res = await request<Category>('/categories', { method: 'POST', body: JSON.stringify(input) })
+/**
+ * The backend's category routes accept *either* a plain JSON body carrying pre-hosted `image`
+ * URLs, or a multipart body with the payload under `data` and files in `image`/`banner` fields,
+ * which it uploads and turns into those same URLs. Only build multipart when at least one file
+ * was actually picked — an empty file field makes the backend reject the request outright.
+ */
+function categoryBody(input: CategoryInput, imageFile?: File | null, bannerFile?: File | null): BodyInit {
+  if (!imageFile && !bannerFile) return JSON.stringify(input)
+
+  const form = new FormData()
+  form.append('data', JSON.stringify(input))
+  if (imageFile) form.append('image', imageFile)
+  if (bannerFile) form.append('banner', bannerFile)
+  return form
+}
+
+async function createCategory({ input, imageFile, bannerFile }: CategoryMutationInput): Promise<Category> {
+  const res = await request<Category>('/categories', {
+    method: 'POST',
+    body: categoryBody(input, imageFile, bannerFile),
+  })
   return res.data
 }
 
-async function updateCategory(id: string, input: CategoryInput): Promise<Category> {
-  const res = await request<Category>(`/categories/${id}`, { method: 'PATCH', body: JSON.stringify(input) })
+async function updateCategory(id: string, { input, imageFile, bannerFile }: CategoryMutationInput): Promise<Category> {
+  const res = await request<Category>(`/categories/${id}`, {
+    method: 'PATCH',
+    body: categoryBody(input, imageFile, bannerFile),
+  })
   return res.data
 }
 
@@ -135,7 +147,7 @@ export function useCreateCategory() {
 export function useUpdateCategory() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, input }: { id: string; input: CategoryInput }) => updateCategory(id, input),
+    mutationFn: ({ id, ...mutation }: { id: string } & CategoryMutationInput) => updateCategory(id, mutation),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.categories.all }),
   })
 }

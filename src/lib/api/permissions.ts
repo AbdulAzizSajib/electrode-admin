@@ -1,34 +1,35 @@
+/** Real backend permission calls — OWNER-only, like every route under `/permissions`. */
 import { useQuery } from '@tanstack/react-query'
-import { delay, generateId, paginate, type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
 
+/**
+ * The backend `Permission` model is `{ id, name, description }` — there is no `category`, so the
+ * permission picker is a flat list rather than the grouped one the mock implied.
+ */
 export interface Permission {
   id: string
-  key: string
-  label: string
-  category: string
-}
-
-const permissions: Permission[] = [
-  { id: generateId('perm'), key: 'catalog.read', label: 'View catalog', category: 'Catalog' },
-  { id: generateId('perm'), key: 'catalog.write', label: 'Manage catalog', category: 'Catalog' },
-  { id: generateId('perm'), key: 'inventory.read', label: 'View inventory', category: 'Inventory' },
-  { id: generateId('perm'), key: 'inventory.write', label: 'Manage inventory', category: 'Inventory' },
-  { id: generateId('perm'), key: 'orders.read', label: 'View orders', category: 'Sales' },
-  { id: generateId('perm'), key: 'orders.write', label: 'Manage orders', category: 'Sales' },
-  { id: generateId('perm'), key: 'marketing.write', label: 'Manage marketing', category: 'Marketing' },
-  { id: generateId('perm'), key: 'customers.read', label: 'View customers', category: 'Customers' },
-  { id: generateId('perm'), key: 'support.write', label: 'Manage support tickets', category: 'Support' },
-  { id: generateId('perm'), key: 'settings.write', label: 'Manage store settings', category: 'Settings' },
-  { id: generateId('perm'), key: 'roles.write', label: 'Manage roles & permissions', category: 'Settings' },
-]
-
-export function _getAllPermissions() {
-  return permissions
+  name: string
+  description: string | null
+  createdAt: string
 }
 
 async function listPermissions(params: ListParams = {}): Promise<PaginatedResponse<Permission>> {
-  return delay(paginate(permissions, { ...params, limit: params.limit ?? 100 }))
+  // The roles page needs every permission at once to render its grant checkboxes, so the default
+  // limit is high rather than the usual page size.
+  const limit = params.limit ?? 100
+
+  const query = new URLSearchParams()
+  if (params.page) query.set('page', String(params.page))
+  query.set('limit', String(limit))
+  if (params.search) query.set('searchTerm', params.search)
+
+  const res = await request<Permission[]>(`/permissions?${query}`)
+  return {
+    data: res.data,
+    meta: res.meta ?? { page: params.page ?? 1, limit, total: res.data.length, totalPages: 1 },
+  }
 }
 
 export function usePermissions(params: ListParams = {}) {

@@ -15,7 +15,7 @@
  * `api/analytics` capability, just five more `GET /analytics/*` routes alongside `/dashboard`.
  */
 import { useQuery } from '@tanstack/react-query'
-import { ApiError, BASE_URL } from '@/lib/api/client'
+import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
 
 export type DashboardRange = '7d' | '30d' | '90d'
@@ -68,22 +68,6 @@ export interface ReturnsRefundsSummary {
   returnsByStatus: Array<{ status: string; count: number }>
   refundsByStatus: Array<{ status: string; count: number; amount: number }>
   refundRate: number
-}
-
-interface ApiEnvelope<T> {
-  success: boolean
-  message: string
-  data: T
-}
-
-async function request<T>(path: string): Promise<ApiEnvelope<T>> {
-  const res = await fetch(`${BASE_URL}${path}`, { credentials: 'include' })
-
-  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
-  if (!res.ok || !json?.success) {
-    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
-  }
-  return json
 }
 
 async function getDashboardSummary(range: DashboardRange): Promise<DashboardSummary> {

@@ -1,6 +1,7 @@
 /** Real backend stock-movement calls — follows the same envelope/error pattern as `categories.ts`/`products.ts`. Read-only: movements are only ever created as a side effect of stock-adjust or purchase-order-receive, never directly. */
 import { useQuery } from '@tanstack/react-query'
-import { ApiError, BASE_URL, type ListParams, type PaginatedResponse, type PaginationMeta } from '@/lib/api/client'
+import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
+import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
 
 export type StockMovementType =
@@ -46,27 +47,6 @@ export interface StockMovementListParams extends ListParams {
   variantId?: string
   warehouseId?: string
   type?: StockMovementType
-}
-
-interface ApiEnvelope<T> {
-  success: boolean
-  message: string
-  data: T
-  meta?: PaginationMeta
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  })
-
-  const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
-  if (!res.ok || !json?.success) {
-    throw new ApiError(json?.message ?? `Request to ${path} failed`, res.status)
-  }
-  return json
 }
 
 async function listStockMovements(params: StockMovementListParams = {}): Promise<PaginatedResponse<StockMovement>> {
