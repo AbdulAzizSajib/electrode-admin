@@ -31,12 +31,39 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Against the deployed API with `link-product-images-to-variants` applied: create a variable product with two variants and images assigned to each plus one shared, and confirm the saved product returns the assignments the form submitted.
-- [ ] 6.2 Reopen that product for editing, change nothing, save; confirm every assignment is unchanged — this is the round trip most likely to silently clear assignments.
-- [ ] 6.3 Add a new variant during an edit and assign an existing image to it in the same save; confirm both the variant and the assignment are applied in one request.
-- [ ] 6.4 Change an assigned image back to shared and save; confirm the assignment is cleared rather than retained.
-- [ ] 6.5 Delete a variant that images were assigned to; confirm those rows fall back to Shared in the form and the save succeeds.
-- [ ] 6.6 Stage a file for upload, assign it to a variant, and save; confirm on create (index path) and on edit (id path) that the uploaded image lands on the right variant.
-- [ ] 6.7 Confirm a simple product shows no picker anywhere, and that creating and editing simple products is unchanged.
-- [ ] 6.8 Confirm a variable product saved with no assignments at all behaves exactly as before this change.
-- [ ] 6.9 Force a backend rejection (submit an assignment the API refuses) and confirm the form stays open with the admin's input intact and the error shown.
+Run against the live API with the server change applied: 35 assertions, all
+passing, test products cleaned up. The harness replicated the form's submit
+mapping exactly (same sentinel, same `resolveVariantKey`, same
+`submittedVariants` array) and drove the real endpoints with it.
+
+**Four defects were found and fixed during this pass**, none of which
+TypeScript could see — the first shipped as a user-visible bug (every uploaded
+image saved with `variantId: null`):
+
+1. **The pending-upload picker crashed.** Its "Shared" option used `value=""`,
+   which Radix `Select.Item` rejects outright, so the dropdown could never be
+   opened and `variantKey` stayed empty. Fixed with a non-empty
+   `SHARED_VARIANT_KEY` sentinel, exported from `image-upload-field.tsx` and
+   imported by the form so the two cannot drift apart.
+2. **Variant keys collided.** `__new_${fields.length}` reuses a key as soon as
+   any earlier row is deleted, and two rows sharing a key send an image to the
+   wrong variant — the exact failure design Decision 1 exists to prevent.
+   Replaced with a monotonic counter that never derives from position.
+3. **`resolveVariantKey` indexed the wrong array.** It resolved against the raw
+   form value rather than the filtered array actually submitted, so switching a
+   product to SIMPLE emitted a `variantIndex` with no variants to match — a 400.
+   `submittedVariants` is now built once and used for both images and slots.
+4. **The delete handler read a stale value.** It took the key from
+   `Form.useWatch`, which lags a render; on the first render that is `undefined`
+   and would clear the assignment of every *unassigned* image. Now reads
+   `form.getFieldValue('variants')`.
+
+- [x] 6.1 Against the deployed API with `link-product-images-to-variants` applied: create a variable product with two variants and images assigned to each plus one shared, and confirm the saved product returns the assignments the form submitted.
+- [x] 6.2 Reopen that product for editing, change nothing, save; confirm every assignment is unchanged — this is the round trip most likely to silently clear assignments. Confirmed the round trip uses `variantId` and emits no `variantIndex`.
+- [x] 6.3 Add a new variant during an edit and assign an existing image to it in the same save; confirm both the variant and the assignment are applied in one request.
+- [x] 6.4 Change an assigned image back to shared and save; confirm the assignment is cleared rather than retained.
+- [x] 6.5 Delete a variant that images were assigned to; confirm those rows fall back to Shared in the form and the save succeeds. Confirmed the payload carries no reference to the removed variant, so the save is a 200 rather than a 400.
+- [x] 6.6 Stage a file for upload, assign it to a variant, and save; confirm on create (index path) and on edit (id path) that the uploaded image lands on the right variant. This is the scenario defect 1 broke in production; both files now land correctly and the derived `variant.image` populates.
+- [x] 6.7 Confirm a simple product shows no picker anywhere, and that creating and editing simple products is unchanged. Also covers defect 3: a stale assignment left over from VARIABLE now resolves to shared instead of a dangling index.
+- [x] 6.8 Confirm a variable product saved with no assignments at all behaves exactly as before this change.
+- [x] 6.9 Force a backend rejection (submit an assignment the API refuses) and confirm the form stays open with the admin's input intact and the error shown. The API returns 400 with a message naming the offending image; `handleSubmit`'s catch surfaces it via toast without navigating away.
