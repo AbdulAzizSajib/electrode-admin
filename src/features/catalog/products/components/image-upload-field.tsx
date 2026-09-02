@@ -3,6 +3,13 @@ import { ImagePlus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 /** A locally-picked file pending upload, plus the metadata that becomes its `imageSlots[i]` entry. */
 export interface PendingImage {
@@ -11,6 +18,7 @@ export interface PendingImage {
   key: string
   altText: string
   isPrimary: boolean
+  variantKey?: string
 }
 
 export interface ImageUploadFieldProps {
@@ -18,6 +26,8 @@ export interface ImageUploadFieldProps {
   onChange: (pending: PendingImage[]) => void
   /** Whether any existing/URL-based image in the form is already marked primary — informs the "first upload defaults to primary" rule. */
   hasPrimaryElsewhere: boolean
+  /** Variant options for the picker, including a shared sentinel. */
+  variantOptions?: { value: string; label: string }[]
 }
 
 /**
@@ -25,7 +35,7 @@ export interface ImageUploadFieldProps {
  * `ProductImageUpload` in `lib/api/products.ts`) — a separate, additive input alongside the
  * existing URL-based image rows already on the form; neither replaces the other.
  */
-export function ImageUploadField({ pending, onChange, hasPrimaryElsewhere }: ImageUploadFieldProps) {
+export function ImageUploadField({ pending, onChange, hasPrimaryElsewhere, variantOptions = [] }: ImageUploadFieldProps) {
   const inputRef = React.useRef<HTMLInputElement>(null)
 
   // Preview URLs are derived from `pending`, not stored in it — revoke every one whenever the
@@ -44,6 +54,7 @@ export function ImageUploadField({ pending, onChange, hasPrimaryElsewhere }: Ima
       key: `${file.name}-${file.size}-${file.lastModified}-${Date.now()}-${i}`,
       altText: '',
       isPrimary: noPrimaryYet && i === 0,
+      variantKey: '',
     }))
     onChange([...pending, ...newEntries])
     if (inputRef.current) inputRef.current.value = ''
@@ -86,9 +97,28 @@ export function ImageUploadField({ pending, onChange, hasPrimaryElsewhere }: Ima
               <Checkbox checked={entry.isPrimary} onCheckedChange={(checked) => checked && setPrimary(entry.key)} />
               <span className="text-sm font-normal text-foreground">Primary</span>
             </div>
-            <Button type="button" variant="ghost" size="icon" onClick={() => removeEntry(entry.key)}>
-              <Trash2 className="size-4" />
-            </Button>
+            <div className="flex flex-col gap-1">
+              {variantOptions.length > 0 && (
+                <Select
+                  value={entry.variantKey ?? ''}
+                  onValueChange={(value) => updateEntry(entry.key, { variantKey: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Shared" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {variantOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <Button type="button" variant="ghost" size="icon" onClick={() => removeEntry(entry.key)}>
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
           </div>
         ))}
       </div>

@@ -17,6 +17,8 @@ export interface ProductImage {
   altText?: string
   sortOrder: number
   isPrimary: boolean
+  /** Backend variant id this image is assigned to, or null/undefined when shared across all variants. */
+  variantId?: string | null
 }
 
 export interface ProductVariant {
@@ -82,6 +84,23 @@ export interface ImageSlotInput {
   altText?: string
   sortOrder?: number
   isPrimary?: boolean
+  /** Backend variant id this uploaded image is assigned to. `variantId` wins over `variantIndex` when both are present. */
+  variantId?: string
+  /** Position in the same request's `variants` array, for variants created in this submission. Absence of both means shared. */
+  variantIndex?: number
+}
+
+/** Request-side counterpart of `ProductImage` — carries the variant assignment fields the API accepts. */
+export interface ProductImageInput {
+  id?: string
+  url: string
+  altText?: string
+  sortOrder: number
+  isPrimary: boolean
+  /** Backend variant id this image is assigned to. `variantId` wins over `variantIndex` when both are present. */
+  variantId?: string | null
+  /** Position in the same request's `variants` array, for variants created in this submission. Absence of both means shared. */
+  variantIndex?: number
 }
 
 export interface ProductInput {
@@ -98,7 +117,7 @@ export interface ProductInput {
   stockQuantity?: number
   lowStockThreshold?: number
   isFeatured?: boolean
-  images?: ProductImage[]
+  images?: ProductImageInput[]
   variants?: ProductVariantInput[]
   attributes?: ProductAttribute[]
 }

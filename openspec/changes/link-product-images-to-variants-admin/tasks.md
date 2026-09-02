@@ -1,33 +1,33 @@
 ## 1. API types
 
-- [ ] 1.1 Add `variantId?: string | null` to the `ProductImage` response type in `src/lib/api/products.ts`.
-- [ ] 1.2 Add `variantId?: string` and `variantIndex?: number` to `ImageSlotInput` and to the image entries accepted by `ProductInput`, documenting that `variantId` wins when both are present and that absence means shared.
-- [ ] 1.3 Confirm `buildProductForm` needs no change — both new fields ride inside the existing `data` JSON blob (design Decision 7).
+- [x] 1.1 Add `variantId?: string | null` to the `ProductImage` response type in `src/lib/api/products.ts`.
+- [x] 1.2 Add `variantId?: string` and `variantIndex?: number` to `ImageSlotInput` and to the image entries accepted by `ProductInput`, documenting that `variantId` wins when both are present and that absence means shared.
+- [x] 1.3 Confirm `buildProductForm` needs no change — both new fields ride inside the existing `data` JSON blob (design Decision 7).
 
 ## 2. Variant identity in the form
 
-- [ ] 2.1 Give each variant row a stable local key that survives reordering and deletion of other rows, so an assignment can point at an unsaved variant without using the array index (design Decision 1). For saved variants the key is the backend `id`.
-- [ ] 2.2 Derive the picker's option list from `Form.useWatch('variants', form)`, labeled by each variant's `name` and filtered to variants that have a non-empty one (design Decision 5). Include a "Shared — all variants" sentinel as the default.
-- [ ] 2.3 Handle the empty case: when the product is variable but no variant has a name yet, the control reports there is nothing to choose rather than rendering an empty list.
+- [x] 2.1 Give each variant row a stable local key that survives reordering and deletion of other rows, so an assignment can point at an unsaved variant without using the array index (design Decision 1). For saved variants the key is the backend `id`.
+- [x] 2.2 Derive the picker's option list from `Form.useWatch('variants', form)`, labeled by each variant's `name` and filtered to variants that have a non-empty one (design Decision 5). Include a "Shared — all variants" sentinel as the default.
+- [x] 2.3 Handle the empty case: when the product is variable but no variant has a name yet, the control reports there is nothing to choose rather than rendering an empty list.
 
 ## 3. The picker in both image inputs
 
-- [ ] 3.1 Add a `variantKey` field to the form-local `ImageValue` type and an antd `Select` inside a `Form.Item` to each row of the `images` `Form.List`, shown only when `type === 'VARIABLE'`.
-- [ ] 3.2 Add the same reference to `PendingImage` in `image-upload-field.tsx` and a shadcn `Select` to each pending row, driven by the existing `onChange` callback (design Decision 3). Pass the option list and the product type into the component.
-- [ ] 3.3 Fit the picker into the existing row grids rather than adding a line per image; check the layout at the form's minimum supported width.
-- [ ] 3.4 Add a short note near the image section explaining that shared images appear for every variant, so the default is understood rather than guessed at.
+- [x] 3.1 Add a `variantKey` field to the form-local `ImageValue` type and an antd `Select` inside a `Form.Item` to each row of the `images` `Form.List`, shown only when `type === 'VARIABLE'`.
+- [x] 3.2 Add the same reference to `PendingImage` in `image-upload-field.tsx` and a shadcn `Select` to each pending row, driven by the existing `onChange` callback (design Decision 3). Pass the option list and the product type into the component.
+- [x] 3.3 Fit the picker into the existing row grids rather than adding a line per image; check the layout at the form's minimum supported width.
+- [x] 3.4 Add a short note near the image section explaining that shared images appear for every variant, so the default is understood rather than guessed at.
 
 ## 4. Submit
 
-- [ ] 4.1 Write one helper that resolves a `variantKey` to `{ variantId }` for a saved variant, `{ variantIndex }` for a variant being created in this submission, or neither for shared — resolving the index against the same `variants` array being submitted (design Decision 1).
-- [ ] 4.2 Apply it in the submit mapper for both the URL `images` entries and the `imageSlots` entries, so create and edit share one code path.
-- [ ] 4.3 Confirm the `variants` array used for index resolution is the exact array submitted in the same request, built in the same pass — not a separately-derived list.
+- [x] 4.1 Write one helper that resolves a `variantKey` to `{ variantId }` for a saved variant, `{ variantIndex }` for a variant being created in this submission, or neither for shared — resolving the index against the same `variants` array being submitted (design Decision 1).
+- [x] 4.2 Apply it in the submit mapper for both the URL `images` entries and the `imageSlots` entries, so create and edit share one code path.
+- [x] 4.3 Confirm the `variants` array used for index resolution is the exact array submitted in the same request, built in the same pass — not a separately-derived list.
 
 ## 5. Load, delete, and display
 
-- [ ] 5.1 In the edit-mode load effect, map each saved image's `variantId` to the matching variant's key so the picker shows the saved assignment as its current selection.
-- [ ] 5.2 On variant row delete, clear `variantKey` on any image row and any pending image that named it, so the form never submits a reference to a variant not in the payload (design Decision 4).
-- [ ] 5.3 Add a read-only assignment label to each image on the product detail page — the variant's name, or "Shared".
+- [x] 5.1 In the edit-mode load effect, map each saved image's `variantId` to the matching variant's key so the picker shows the saved assignment as its current selection.
+- [x] 5.2 On variant row delete, clear `variantKey` on any image row and any pending image that named it, so the form never submits a reference to a variant not in the payload (design Decision 4).
+- [x] 5.3 Add a read-only assignment label to each image on the product detail page — the variant's name, or "Shared".
 
 ## 6. Verification
 

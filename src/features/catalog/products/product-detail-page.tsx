@@ -46,6 +46,7 @@ export default function ProductDetailPage() {
   const images = [...product.images].sort((a, b) => a.sortOrder - b.sortOrder)
   const variants = product.variants ?? []
   const attributes = product.attributes ?? []
+  const variantNameById = Object.fromEntries(variants.map((v) => [v.id ?? '', v.name]))
 
   return (
     <div className="flex flex-col gap-4">
@@ -102,6 +103,11 @@ export default function ProductDetailPage() {
                   {img.isPrimary && (
                     <Badge variant="default" className="absolute -top-1.5 -right-1.5">
                       Primary
+                    </Badge>
+                  )}
+                  {product.type === 'VARIABLE' && (
+                    <Badge variant="outline" className="absolute -bottom-1.5 -left-1.5 text-[10px]">
+                      {img.variantId ? variantNameById[img.variantId] ?? 'Variant' : 'Shared'}
                     </Badge>
                   )}
                 </div>

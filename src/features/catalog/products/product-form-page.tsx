@@ -19,6 +19,7 @@ interface ImageValue {
   url: string
   altText?: string
   isPrimary: boolean
+  variantKey?: string
 }
 
 interface AttributeValue {
@@ -34,6 +35,7 @@ interface VariantAttributeValue {
 
 interface VariantValue {
   id?: string
+  variantKey: string
   name: string
   sku: string
   price: number
@@ -135,6 +137,16 @@ export default function ProductFormPage() {
       form.setFieldsValue(EMPTY_VALUES)
       return
     }
+    const loadedVariants = (product.variants ?? []).map((v, i) => ({
+      id: v.id,
+      variantKey: v.id ?? `__new_${i}`,
+      name: v.name,
+      sku: v.sku,
+      price: v.price === undefined ? 0 : Number(v.price),
+      stockQuantity: v.stockQuantity ?? 0,
+      attributes: Object.entries(v.attributes ?? {}).map(([name, value]) => ({ name, value })),
+    }))
+    const savedVariantKeys = new Set(loadedVariants.map((v) => v.variantKey))
     form.setFieldsValue({
       name: product.name,
       sku: product.sku ?? '',
@@ -154,20 +166,34 @@ export default function ProductFormPage() {
         url: img.url,
         altText: img.altText ?? '',
         isPrimary: img.isPrimary,
+        variantKey: img.variantId && savedVariantKeys.has(img.variantId) ? img.variantId : undefined,
       })),
       attributes: (product.attributes ?? []).map((a) => ({ id: a.id, name: a.name, value: a.value })),
-      variants: (product.variants ?? []).map((v) => ({
-        id: v.id,
-        name: v.name,
-        sku: v.sku,
-        price: v.price === undefined ? 0 : Number(v.price),
-        stockQuantity: v.stockQuantity ?? 0,
-        attributes: Object.entries(v.attributes ?? {}).map(([name, value]) => ({ name, value })),
-      })),
+      variants: loadedVariants,
     })
   }, [product, form])
 
   const type = Form.useWatch('type', form)
+  const variantsField = Form.useWatch('variants', form) as VariantValue[] | undefined
+
+  const variantOptions = React.useMemo(() => {
+    const opts = (variantsField ?? [])
+      .filter((v) => !!v?.name)
+      .map((v) => ({ value: v.variantKey, label: v.name }))
+    return [{ value: '', label: 'Shared — all variants' }, ...opts]
+  }, [variantsField])
+
+  const resolveVariantKey = React.useCallback(
+    (variantKey: string | undefined, variants: VariantValue[]): { variantId?: string; variantIndex?: number } => {
+      if (!variantKey) return {}
+      const index = variants.findIndex((v) => v.variantKey === variantKey)
+      if (index === -1) return {}
+      const variant = variants[index]
+      if (variant.id) return { variantId: variant.id }
+      return { variantIndex: index }
+    },
+    [],
+  )
 
   /** Keeps at most one primary image across both the URL rows and the pending uploads. */
   const setPrimaryUrlRow = (index: number) => {
@@ -179,13 +205,35 @@ export default function ProductFormPage() {
     setPendingImages((prev) => prev.map((p) => ({ ...p, isPrimary: false })))
   }
 
+  const handleVariantRemove = (variantKey: string) => {
+    const images = (form.getFieldValue('images') as ImageValue[] | undefined) ?? []
+    form.setFieldValue(
+      'images',
+      images.map((img) => (img.variantKey === variantKey ? { ...img, variantKey: '' } : img)),
+    )
+    setPendingImages((prev) => prev.map((p) => (p.variantKey === variantKey ? { ...p, variantKey: '' } : p)))
+  }
+
   const handleSubmit = async (values: FormValues) => {
+    const variants =
+      values.type === 'VARIABLE'
+        ? (values.variants ?? []).map((v) => ({
+            ...(v.id ? { id: v.id } : {}),
+            name: v.name,
+            sku: v.sku,
+            price: v.price,
+            stockQuantity: v.stockQuantity,
+            attributes: Object.fromEntries((v.attributes ?? []).map((a) => [a.name, a.value])),
+          }))
+        : []
+
     const images = (values.images ?? []).map((img, index) => ({
       ...(img.id ? { id: img.id } : {}),
       url: img.url,
       altText: img.altText || undefined,
       sortOrder: index,
       isPrimary: !!img.isPrimary,
+      ...resolveVariantKey(img.variantKey, values.variants ?? []),
     }))
     // Exactly one image must be primary once there's at least one (across URL rows AND pending
     // uploads) — default to the first URL row only when no upload already claimed it either.
@@ -209,17 +257,7 @@ export default function ProductFormPage() {
       isFeatured: values.isFeatured,
       images,
       attributes: (values.attributes ?? []).map((a) => ({ ...(a.id ? { id: a.id } : {}), name: a.name, value: a.value })),
-      variants:
-        values.type === 'VARIABLE'
-          ? (values.variants ?? []).map((v) => ({
-              ...(v.id ? { id: v.id } : {}),
-              name: v.name,
-              sku: v.sku,
-              price: v.price,
-              stockQuantity: v.stockQuantity,
-              attributes: Object.fromEntries((v.attributes ?? []).map((a) => [a.name, a.value])),
-            }))
-          : [],
+      variants,
     }
 
     // Positional match to `imageSlots[i]` <-> `files[i]` — see ProductImageUpload in lib/api/products.ts.
@@ -227,7 +265,11 @@ export default function ProductFormPage() {
       pendingImages.length > 0
         ? {
             files: pendingImages.map((p) => p.file),
-            imageSlots: pendingImages.map((p) => ({ altText: p.altText || undefined, isPrimary: p.isPrimary })),
+            imageSlots: pendingImages.map((p) => ({
+              altText: p.altText || undefined,
+              isPrimary: p.isPrimary,
+              ...resolveVariantKey(p.variantKey, values.variants ?? []),
+            })),
           }
         : undefined
 
@@ -319,6 +361,7 @@ export default function ProductFormPage() {
                   <CardTitle>Images</CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-2.5">
+                  <p className="text-xs text-muted-foreground">Shared images appear for every variant. Use the picker on each row to assign an image to a specific variant instead.</p>
                   <Form.List name="images">
                     {(fields, { add, remove }) => (
                       <div className="flex flex-col gap-2.5">
@@ -329,7 +372,7 @@ export default function ProductFormPage() {
                             <Form.Item noStyle shouldUpdate>
                               {() => <ImagePreviewThumb key={form.getFieldValue(['images', field.name, 'url'])} url={form.getFieldValue(['images', field.name, 'url'])} />}
                             </Form.Item>
-                            <div className="grid flex-1 grid-cols-1 gap-x-2 sm:grid-cols-2">
+                            <div className={`grid flex-1 gap-x-2 ${type === 'VARIABLE' ? 'grid-cols-1 sm:grid-cols-[1fr_1fr_1fr]' : 'grid-cols-1 sm:grid-cols-2'}`}>
                               <Form.Item
                                 name={[field.name, 'url']}
                                 label="Image URL"
@@ -343,6 +386,15 @@ export default function ProductFormPage() {
                               <Form.Item name={[field.name, 'altText']} label="Alt text">
                                 <Input />
                               </Form.Item>
+                              {type === 'VARIABLE' && (
+                                <Form.Item name={[field.name, 'variantKey']} label="Variant">
+                                  <Select
+                                    placeholder="Shared"
+                                    options={variantOptions}
+                                    allowClear
+                                  />
+                                </Form.Item>
+                              )}
                             </div>
                             <div className="flex items-center gap-2 pt-7">
                               <Form.Item name={[field.name, 'isPrimary']} valuePropName="checked" noStyle>
@@ -363,7 +415,7 @@ export default function ProductFormPage() {
                         {fields.length === 0 && <p className="text-sm text-muted-foreground">No images added yet.</p>}
                         <AntButton
                           type="dashed"
-                          onClick={() => add({ url: '', altText: '', isPrimary: fields.length === 0 })}
+                          onClick={() => add({ url: '', altText: '', isPrimary: fields.length === 0, variantKey: '' })}
                           className="self-start"
                           icon={<Plus className="size-4" />}
                         >
@@ -377,13 +429,13 @@ export default function ProductFormPage() {
                     pending={pendingImages}
                     onChange={(next) => {
                       setPendingImages(next)
-                      // At most one primary image across both lists — a newly-checked upload wins.
                       if (next.some((p) => p.isPrimary)) {
                         const images = (form.getFieldValue('images') as ImageValue[] | undefined) ?? []
                         form.setFieldValue('images', images.map((img) => ({ ...img, isPrimary: false })))
                       }
                     }}
                     hasPrimaryElsewhere={((form.getFieldValue('images') as ImageValue[] | undefined) ?? []).some((img) => img.isPrimary)}
+                    variantOptions={type === 'VARIABLE' ? variantOptions : []}
                   />
                 </CardContent>
               </Card>
@@ -454,11 +506,11 @@ export default function ProductFormPage() {
                                 <Form.Item name={[field.name, 'stockQuantity']} label="Stock" rules={[{ type: 'number', min: 0, message: 'Cannot be negative' }]}>
                                   <InputNumber className="w-full" min={0} />
                                 </Form.Item>
-                                <div className="pt-7">
-                                  <Button type="button" variant="ghost" size="icon" onClick={() => remove(field.name)}>
-                                    <Trash2 className="size-4" />
-                                  </Button>
-                                </div>
+                                 <div className="pt-7">
+                                   <Button type="button" variant="ghost" size="icon" onClick={() => { handleVariantRemove((variantsField ?? [])[field.name]?.variantKey); remove(field.name) }}>
+                                     <Trash2 className="size-4" />
+                                   </Button>
+                                 </div>
                               </div>
 
                               <span className="text-xs font-medium text-muted-foreground">Attributes (e.g. storage, color)</span>
@@ -490,7 +542,7 @@ export default function ProductFormPage() {
                           <Form.ErrorList errors={errors} />
                           <AntButton
                             type="dashed"
-                            onClick={() => add({ name: '', sku: '', price: 0, stockQuantity: 0, attributes: [] })}
+                            onClick={() => add({ variantKey: `__new_${fields.length}`, name: '', sku: '', price: 0, stockQuantity: 0, attributes: [] })}
                             className="self-start"
                             icon={<Plus className="size-4" />}
                           >
