@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/use-toast'
 import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
-import { useProduct, useCreateProduct, useUpdateProduct, type ProductInput, type ProductStatus, type ProductType } from '@/lib/api/products'
+import { useProduct, useCreateProduct, useUpdateProduct, type OptionPresentation, type ProductInput, type ProductStatus, type ProductType } from '@/lib/api/products'
 import { useCategoryTree } from '@/lib/api/categories'
 import { useBrands } from '@/lib/api/brands'
 import { ImageUploadField, SHARED_VARIANT_KEY, type PendingImage } from '@/features/catalog/products/components/image-upload-field'
@@ -46,6 +46,20 @@ interface VariantAttributeValue {
   value: string
 }
 
+interface OptionValueValue {
+  id?: string
+  label: string
+  swatch?: string
+}
+
+/** A named axis of choice being authored. Position is this row's array index. */
+interface OptionValue {
+  id?: string
+  name: string
+  presentation: OptionPresentation
+  values: OptionValueValue[]
+}
+
 interface VariantValue {
   id?: string
   variantKey: string
@@ -54,6 +68,12 @@ interface VariantValue {
   price: number
   stockQuantity: number
   attributes: VariantAttributeValue[]
+  /**
+   * Which value this variant takes on each option, by index into that option's
+   * `values`. Written by the generator, and by `loadedVariants` when editing a
+   * product that already has options.
+   */
+  optionValueIndexes?: number[]
 }
 
 interface FormValues {
@@ -72,6 +92,7 @@ interface FormValues {
   isFeatured: boolean
   images: ImageValue[]
   attributes: AttributeValue[]
+  options: OptionValue[]
   variants: VariantValue[]
 }
 
@@ -91,6 +112,7 @@ const EMPTY_VALUES: FormValues = {
   isFeatured: false,
   images: [],
   attributes: [],
+  options: [],
   variants: [],
 }
 
@@ -150,6 +172,33 @@ function ImagePreviewThumb({ url }: { url?: string }) {
   )
 }
 
+/**
+ * Every combination of one value per option, as index tuples in option order.
+ *
+ * A cartesian product, which is what "generate the variants" means: 2 colours x
+ * 3 sizes is 6 rows. The merchant deletes the ones they do not stock — not
+ * every combination is a real product, and inventing rows they must then hunt
+ * down would be worse than making them add the few they want.
+ */
+function optionCombinations(options: OptionValue[]): number[][] {
+  const usable = options.filter((o) => o.name.trim() !== '' && o.values.length > 0)
+  if (usable.length === 0) return []
+
+  return usable.reduce<number[][]>(
+    (acc, option) => acc.flatMap((prefix) => option.values.map((_, i) => [...prefix, i])),
+    [[]],
+  )
+}
+
+/** The variant name a combination reads as — "Red / XL". */
+function combinationLabel(options: OptionValue[], combination: number[]): string {
+  const usable = options.filter((o) => o.name.trim() !== '' && o.values.length > 0)
+  return combination
+    .map((valueIndex, optionIndex) => usable[optionIndex]?.values[valueIndex]?.label ?? '')
+    .filter(Boolean)
+    .join(' / ')
+}
+
 /** One label/value line in the review summary. */
 function SummaryRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -206,6 +255,17 @@ export default function ProductFormPage() {
       form.setFieldsValue(EMPTY_VALUES)
       return
     }
+    const loadedOptions: OptionValue[] = (product.options ?? []).map((o) => ({
+      id: o.id,
+      name: o.name,
+      presentation: o.presentation,
+      values: o.values.map((val) => ({
+        id: val.id,
+        label: val.label,
+        swatch: val.swatch ?? undefined,
+      })),
+    }))
+
     const loadedVariants = (product.variants ?? []).map((v) => ({
       id: v.id,
       // A saved variant always has an id, so that IS its key — no local key is
@@ -216,6 +276,21 @@ export default function ProductFormPage() {
       price: v.price === undefined ? 0 : Number(v.price),
       stockQuantity: v.stockQuantity ?? 0,
       attributes: Object.entries(v.attributes ?? {}).map(([name, value]) => ({ name, value })),
+      /*
+       * Saved selections arrive as value ids; the form works in positions,
+       * because on create there are no ids yet and one representation is
+       * simpler than two. A variant whose value is missing from an option —
+       * only reachable if the data violates the invariant — yields -1, which
+       * the submit path drops rather than sending as a bad index.
+       */
+      optionValueIndexes:
+        loadedOptions.length > 0
+          ? loadedOptions.map((option) =>
+              option.values.findIndex((val) =>
+                (v.optionValues ?? []).some((ov) => ov.valueId === val.id),
+              ),
+            )
+          : undefined,
     }))
     const savedVariantKeys = new Set(loadedVariants.map((v) => v.variantKey))
     form.setFieldsValue({
@@ -245,11 +320,23 @@ export default function ProductFormPage() {
             : SHARED_VARIANT_KEY,
       })),
       attributes: (product.attributes ?? []).map((a) => ({ id: a.id, name: a.name, value: a.value })),
+      options: loadedOptions,
       variants: loadedVariants,
     })
   }, [product, form])
 
   const type = Form.useWatch('type', form)
+
+  /**
+   * Whether this product's variants are defined by options rather than by their
+   * names. Drives which fields the variant rows still own: with options, the
+   * name is generated and the loose attribute pairs are redundant.
+   */
+  const watchedOptions = Form.useWatch('options', form)
+  const hasOptions = (watchedOptions ?? []).some(
+    (o) => o?.name?.trim() && (o.values?.length ?? 0) > 0,
+  )
+
   /** Uploads filed under a specific variant, surfaced as context on the Images step. */
   const variantImageCount = pendingImages.filter(
     (p) => (p.variantKey ?? SHARED_VARIANT_KEY) !== SHARED_VARIANT_KEY,
@@ -359,6 +446,97 @@ export default function ProductFormPage() {
     )
   }
 
+  /**
+   * Removing an option invalidates every variant's selection — a selection is
+   * one value per option, so dropping an axis leaves each variant describing a
+   * product that no longer exists.
+   *
+   * Rather than silently rewriting them (which would guess at what the merchant
+   * meant) or silently orphaning them (which the backend would then reject),
+   * this asks first and clears the selections it is about to break. The variants
+   * keep their names, SKUs, prices and images.
+   */
+  const handleOptionRemove = (rowIndex: number, remove: (index: number) => void) => {
+    const options = (form.getFieldValue('options') as OptionValue[] | undefined) ?? []
+    const variants = (form.getFieldValue('variants') as VariantValue[] | undefined) ?? []
+    const affected = variants.filter((v) => (v.optionValueIndexes?.length ?? 0) > 0)
+
+    if (affected.length > 0 && options.length > 1) {
+      const ok = window.confirm(
+        `Removing this option clears the option selection on ${affected.length} ` +
+          `variant${affected.length === 1 ? '' : 's'}. You will need to regenerate or ` +
+          `reassign them. Continue?`,
+      )
+      if (!ok) return
+    }
+
+    remove(rowIndex)
+    if (affected.length > 0) {
+      form.setFieldValue(
+        'variants',
+        variants.map((v) => ({ ...v, optionValueIndexes: undefined })),
+      )
+    }
+  }
+
+  /**
+   * Builds one variant row per combination of option values.
+   *
+   * Existing rows are matched by their selection and kept whole — regenerating
+   * after adding one size must not discard the prices and SKUs already entered
+   * for the others. Rows whose combination no longer exists are dropped, and
+   * their variant images go with them via `handleVariantRemove`.
+   */
+  const handleGenerateVariants = () => {
+    const options = (form.getFieldValue('options') as OptionValue[] | undefined) ?? []
+    const combinations = optionCombinations(options)
+
+    if (combinations.length === 0) {
+      toast({
+        title: 'Nothing to generate',
+        description: 'Give each option a name and at least one value first.',
+      })
+      return
+    }
+
+    const existing = (form.getFieldValue('variants') as VariantValue[] | undefined) ?? []
+    const keyOf = (indexes: number[] | undefined) => (indexes ?? []).join(':')
+    const byCombination = new Map(existing.map((v) => [keyOf(v.optionValueIndexes), v]))
+
+    const baseSku = (form.getFieldValue('sku') as string | undefined) ?? ''
+    const basePrice = (form.getFieldValue('price') as number | undefined) ?? 0
+
+    const generated: VariantValue[] = combinations.map((combination) => {
+      const kept = byCombination.get(keyOf(combination))
+      const label = combinationLabel(options, combination)
+
+      if (kept) return { ...kept, name: label, optionValueIndexes: combination }
+
+      return {
+        variantKey: nextVariantKey(),
+        name: label,
+        sku: [baseSku, slugify(label)].filter(Boolean).join('-'),
+        price: basePrice,
+        stockQuantity: 0,
+        attributes: [],
+        optionValueIndexes: combination,
+      }
+    })
+
+    // Drop rows whose combination is gone, releasing their images first.
+    const survivingKeys = new Set(generated.map((v) => v.variantKey))
+    existing.forEach((v, index) => {
+      if (!survivingKeys.has(v.variantKey)) handleVariantRemove(index)
+    })
+
+    form.setFieldValue('variants', generated)
+
+    toast({
+      title: `${generated.length} variant${generated.length === 1 ? '' : 's'} ready`,
+      description: 'Delete any combination you do not stock, then set price, SKU and stock.',
+    })
+  }
+
   const goToStep = (index: number) => {
     setStepIndex(index)
     setVisitedSteps((prev) => new Set(prev).add(index))
@@ -410,7 +588,30 @@ export default function ProductFormPage() {
             price: v.price,
             stockQuantity: v.stockQuantity,
             attributes: Object.fromEntries((v.attributes ?? []).map((a) => [a.name, a.value])),
+            optionValueIndexes: v.optionValueIndexes,
           }))
+        : []
+
+    /*
+     * Options are only meaningful on a variable product, and only when the
+     * merchant actually authored some — a variable product with none keeps
+     * working through its variant names alone, which is how every product
+     * predating options behaves.
+     */
+    const options =
+      values.type === 'VARIABLE'
+        ? (values.options ?? [])
+            .filter((o) => o.name.trim() !== '' && o.values.length > 0)
+            .map((o) => ({
+              ...(o.id ? { id: o.id } : {}),
+              name: o.name.trim(),
+              presentation: o.presentation,
+              values: o.values.map((val) => ({
+                ...(val.id ? { id: val.id } : {}),
+                label: val.label.trim(),
+                ...(val.swatch ? { swatch: val.swatch } : {}),
+              })),
+            }))
         : []
 
     // `variantKey` is form-local bookkeeping — build the payload without it.
@@ -421,6 +622,16 @@ export default function ProductFormPage() {
       price: v.price,
       stockQuantity: v.stockQuantity,
       attributes: v.attributes,
+      // Sent only when options exist; the backend rejects a selection on a
+      // product that has none. A -1 (a value that vanished from its option)
+      // would be a bad index, so such a variant sends nothing and the backend
+      // reports the missing selection rather than writing a wrong one.
+      ...(options.length > 0 &&
+      v.optionValueIndexes &&
+      v.optionValueIndexes.length === options.length &&
+      v.optionValueIndexes.every((i) => i >= 0)
+        ? { optionValueIndexes: v.optionValueIndexes }
+        : {}),
     }))
 
     const images = (values.images ?? []).map((img, index) => ({
@@ -469,6 +680,7 @@ export default function ProductFormPage() {
       isFeatured: values.isFeatured,
       images,
       attributes: (values.attributes ?? []).map((a) => ({ ...(a.id ? { id: a.id } : {}), name: a.name, value: a.value })),
+      options,
       variants,
     }
 
@@ -731,12 +943,164 @@ export default function ProductFormPage() {
           </div>
 
           <div className={currentStep.key === 'variants' ? 'flex flex-col gap-4' : 'hidden'}>
+            {type === 'VARIABLE' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Options</CardTitle>
+                  <CardDescription>
+                    The choices a shopper makes — Colour, Size, Weight. Values appear in the
+                    order you list them, so put sizes in size order. Optional: leave this empty
+                    and the variant names below stand on their own.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Form.List name="options">
+                    {(optionFields, { add: addOption, remove: removeOption }) => (
+                      <div className="flex flex-col gap-2.5">
+                        {optionFields.map((optionField, optionPosition) => (
+                          <div
+                            key={optionField.key}
+                            className="flex flex-col gap-1 rounded-md border border-border p-2.5"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold text-muted-foreground">
+                                Option {optionPosition + 1}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleOptionRemove(optionField.name, removeOption)}
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-x-2 sm:grid-cols-[1fr_160px]">
+                              <Form.Item
+                                name={[optionField.name, 'name']}
+                                label="Option name"
+                                rules={[{ required: true, message: 'Option name is required' }]}
+                              >
+                                <Input placeholder="Colour" />
+                              </Form.Item>
+                              <Form.Item
+                                name={[optionField.name, 'presentation']}
+                                label="Shown as"
+                              >
+                                <Select
+                                  options={[
+                                    { value: 'LABEL', label: 'Text label' },
+                                    { value: 'SWATCH', label: 'Colour swatch' },
+                                  ]}
+                                />
+                              </Form.Item>
+                            </div>
+
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Values, in the order shoppers should see them
+                            </span>
+                            {/* The swatch input only appears for a SWATCH option, so a
+                                colour picker never shows up beside "XL". */}
+                            <Form.Item noStyle shouldUpdate>
+                              {() => {
+                                const presentation = form.getFieldValue([
+                                  'options',
+                                  optionField.name,
+                                  'presentation',
+                                ]) as OptionPresentation | undefined
+
+                                return (
+                                  <Form.List name={[optionField.name, 'values']}>
+                                    {(valueFields, { add: addValue, remove: removeValue }) => (
+                                      <div className="flex flex-col gap-1">
+                                        {valueFields.map((valueField) => (
+                                          <div
+                                            key={valueField.key}
+                                            className={
+                                              presentation === 'SWATCH'
+                                                ? 'grid grid-cols-[1fr_72px_32px] items-start gap-2'
+                                                : 'grid grid-cols-[1fr_32px] items-start gap-2'
+                                            }
+                                          >
+                                            <Form.Item
+                                              name={[valueField.name, 'label']}
+                                              rules={[{ required: true, message: 'Value is required' }]}
+                                            >
+                                              <Input placeholder="Red" />
+                                            </Form.Item>
+                                            {presentation === 'SWATCH' && (
+                                              <Form.Item name={[valueField.name, 'swatch']}>
+                                                <Input type="color" className="h-8 p-1" />
+                                              </Form.Item>
+                                            )}
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon"
+                                              onClick={() => removeValue(valueField.name)}
+                                            >
+                                              <Trash2 className="size-4" />
+                                            </Button>
+                                          </div>
+                                        ))}
+                                        <AntButton
+                                          size="small"
+                                          type="dashed"
+                                          onClick={() => addValue({ label: '', swatch: '#000000' })}
+                                          className="self-start"
+                                          icon={<Plus className="size-3.5" />}
+                                        >
+                                          Add value
+                                        </AntButton>
+                                      </div>
+                                    )}
+                                  </Form.List>
+                                )
+                              }}
+                            </Form.Item>
+                          </div>
+                        ))}
+
+                        {optionFields.length === 0 && (
+                          <p className="text-sm text-muted-foreground">
+                            No options yet. Without them, shoppers pick between the variant names
+                            below.
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <AntButton
+                            type="dashed"
+                            onClick={() =>
+                              addOption({ name: '', presentation: 'LABEL', values: [{ label: '' }] })
+                            }
+                            icon={<Plus className="size-4" />}
+                          >
+                            Add option
+                          </AntButton>
+                          {optionFields.length > 0 && (
+                            <AntButton
+                              onClick={handleGenerateVariants}
+                              icon={<Wand2 className="size-4" />}
+                            >
+                              Generate variants
+                            </AntButton>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </Form.List>
+                </CardContent>
+              </Card>
+            )}
+
             <Card>
               <CardHeader>
                 <CardTitle>Variants</CardTitle>
                 <CardDescription>
                   {type === 'VARIABLE'
-                    ? 'Add every sellable combination. Images can be assigned to these in the next step.'
+                    ? 'Every sellable combination. Generate them from your options above, then delete any you do not stock and set each price, SKU and stock.'
                     : 'Only variable products have variants.'}
                 </CardDescription>
               </CardHeader>
@@ -774,8 +1138,16 @@ export default function ProductFormPage() {
                               </Button>
                             </div>
                             <div className="grid grid-cols-1 gap-x-2 sm:grid-cols-[1fr_1fr_110px_110px] sm:items-start">
-                              <Form.Item name={[field.name, 'name']} label="Variant name" rules={[{ required: true, message: 'Variant name is required' }]}>
-                                <Input placeholder="128GB / Black" />
+                              {/* Editable only when nothing else defines it. Once
+                                  options exist, the name is their combination —
+                                  letting it drift would put one thing on the
+                                  storefront and another in the cart. */}
+                              <Form.Item
+                                name={[field.name, 'name']}
+                                label="Variant name"
+                                rules={[{ required: true, message: 'Variant name is required' }]}
+                              >
+                                <Input placeholder="128GB / Black" readOnly={hasOptions} />
                               </Form.Item>
                               <Form.Item name={[field.name, 'sku']} label="SKU" rules={[{ required: true, message: 'Variant SKU is required' }]}>
                                 <Input placeholder="sony-xyz-128gb-black" />
@@ -788,29 +1160,37 @@ export default function ProductFormPage() {
                               </Form.Item>
                             </div>
 
-                            <span className="text-xs font-medium text-muted-foreground">Attributes (e.g. storage, color)</span>
-                            <Form.List name={[field.name, 'attributes']}>
-                              {(attrFields, { add: addAttr, remove: removeAttr }) => (
-                                <div className="flex flex-col gap-1">
-                                  {attrFields.map((attrField) => (
-                                    <div key={attrField.key} className="grid grid-cols-[1fr_1fr_32px] items-start gap-2">
-                                      <Form.Item name={[attrField.name, 'name']} rules={[{ required: true, message: 'Name is required' }]}>
-                                        <Input placeholder="storage" />
-                                      </Form.Item>
-                                      <Form.Item name={[attrField.name, 'value']} rules={[{ required: true, message: 'Value is required' }]}>
-                                        <Input placeholder="128GB" />
-                                      </Form.Item>
-                                      <Button type="button" variant="ghost" size="icon" onClick={() => removeAttr(attrField.name)}>
-                                        <Trash2 className="size-4" />
-                                      </Button>
+                            {/* Superseded by options: the loose key/value pairs were
+                                the only way to say "this one is the red 128GB" before
+                                options existed. Still editable on a product with no
+                                options, so nothing already authored is lost. */}
+                            {!hasOptions && (
+                              <>
+                                <span className="text-xs font-medium text-muted-foreground">Attributes (e.g. storage, color)</span>
+                                <Form.List name={[field.name, 'attributes']}>
+                                  {(attrFields, { add: addAttr, remove: removeAttr }) => (
+                                    <div className="flex flex-col gap-1">
+                                      {attrFields.map((attrField) => (
+                                        <div key={attrField.key} className="grid grid-cols-[1fr_1fr_32px] items-start gap-2">
+                                          <Form.Item name={[attrField.name, 'name']} rules={[{ required: true, message: 'Name is required' }]}>
+                                            <Input placeholder="storage" />
+                                          </Form.Item>
+                                          <Form.Item name={[attrField.name, 'value']} rules={[{ required: true, message: 'Value is required' }]}>
+                                            <Input placeholder="128GB" />
+                                          </Form.Item>
+                                          <Button type="button" variant="ghost" size="icon" onClick={() => removeAttr(attrField.name)}>
+                                            <Trash2 className="size-4" />
+                                          </Button>
+                                        </div>
+                                      ))}
+                                      <AntButton size="small" type="dashed" onClick={() => addAttr({ name: '', value: '' })} className="self-start" icon={<Plus className="size-3.5" />}>
+                                        Add attribute
+                                      </AntButton>
                                     </div>
-                                  ))}
-                                  <AntButton size="small" type="dashed" onClick={() => addAttr({ name: '', value: '' })} className="self-start" icon={<Plus className="size-3.5" />}>
-                                    Add attribute
-                                  </AntButton>
-                                </div>
-                              )}
-                            </Form.List>
+                                  )}
+                                </Form.List>
+                              </>
+                            )}
 
                             {/* Images picked here are stamped with this variant's key on
                                 the way in, which is what removes the need for a variant

@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useNavigate } from 'react-router'
-import type { ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import { MoreHorizontal, Pencil, Plus, Trash2, Package, Eye } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,11 @@ export default function ProductsListPage() {
   const [status, setStatus] = React.useState('all')
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
+  // Held here rather than inside the table so it can travel to the server —
+  // the listing is paginated, so an in-table sort would only reorder this page.
+  const [sorting, setSorting] = React.useState<SortingState>([])
+
+  const sort = sorting[0]
 
   const { data, isLoading, isError, refetch } = useProducts({
     search,
@@ -38,6 +43,8 @@ export default function ProductsListPage() {
     categoryId: categoryId ?? undefined,
     brandId: brandId === 'all' ? undefined : brandId,
     status: status === 'all' ? undefined : (status as ProductStatus),
+    sortBy: sort?.id,
+    sortOrder: sort ? (sort.desc ? 'desc' : 'asc') : undefined,
   })
   const { data: categoryTree } = useCategoryTree()
   const { data: brandsData } = useBrands()
@@ -76,6 +83,16 @@ export default function ProductsListPage() {
       id: 'stock',
       header: 'Stock',
       cell: ({ row }) => <Badge variant={STOCK_VARIANT[row.original.stockStatus]}>{STOCK_LABEL[row.original.stockStatus]}</Badge>,
+    },
+    {
+      id: 'viewCount',
+      header: 'Views',
+      // Sorted on the server, not in the table: these rows are one page of many,
+      // so a client-side sort would answer "least viewed of these ten".
+      enableSorting: true,
+      // 0, never a dash: a product nobody has opened is a finding, not missing
+      // data, and the two must not look alike.
+      cell: ({ row }) => (row.original.viewCount ?? 0).toLocaleString('en-US'),
     },
     {
       id: 'status',
@@ -137,6 +154,12 @@ export default function ProductsListPage() {
       <DataTable
         columns={columns}
         data={data?.data ?? []}
+        sorting={sorting}
+        onSortingChange={(next) => {
+          setSorting(next)
+          // Page 3 of a name-ordered list is not page 3 of a view-ordered one.
+          resetPage()
+        }}
         isLoading={isLoading}
         isError={isError}
         onRetry={() => refetch()}

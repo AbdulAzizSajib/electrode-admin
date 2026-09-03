@@ -25,6 +25,14 @@ export interface ListParams {
   page?: number
   limit?: number
   search?: string
+  /**
+   * Server-side ordering. Necessary rather than convenient: these listings are
+   * paginated on the server, so sorting in the browser would only reorder the
+   * page already fetched — "show me the least-viewed products" would silently
+   * mean "of these ten".
+   */
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
 }
 
 export class ApiError extends Error {

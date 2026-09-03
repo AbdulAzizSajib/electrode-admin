@@ -21,6 +21,43 @@ export interface ProductImage {
   variantId?: string | null
 }
 
+/** How an option's values are drawn on the storefront. */
+export type OptionPresentation = 'SWATCH' | 'LABEL'
+
+export interface ProductOptionValue {
+  /** Present when this row came from the backend; omit for a newly-added row. */
+  id?: string
+  label: string
+  position: number
+  swatch?: string | null
+}
+
+/** A named axis of choice (Colour, Size, Weight) with its values in authored order. */
+export interface ProductOption {
+  id?: string
+  name: string
+  position: number
+  presentation: OptionPresentation
+  values: ProductOptionValue[]
+}
+
+export interface ProductOptionValueInput {
+  id?: string
+  label: string
+  swatch?: string
+}
+
+/**
+ * Request-side option. Position is taken from array order rather than sent
+ * explicitly, so two options cannot claim the same position.
+ */
+export interface ProductOptionInput {
+  id?: string
+  name: string
+  presentation: OptionPresentation
+  values: ProductOptionValueInput[]
+}
+
 export interface ProductVariant {
   /** Present when this row came from the backend; omit for a newly-added row. */
   id?: string
@@ -30,6 +67,8 @@ export interface ProductVariant {
   price?: string
   stockQuantity?: number
   attributes: Record<string, string>
+  /** Which option values define this variant. Empty for a product with no options. */
+  optionValues?: { valueId: string }[]
 }
 
 /** Request-side counterpart of `ProductVariant` — `price` is a plain number here, not the string a Decimal column reads back as. */
@@ -40,6 +79,11 @@ export interface ProductVariantInput {
   price: number
   stockQuantity: number
   attributes: Record<string, string>
+  /**
+   * One index per option, into that option's `values`. Positional because on
+   * create no value has an id yet. Omitted for a product with no options.
+   */
+  optionValueIndexes?: number[]
 }
 
 export interface ProductAttribute {
@@ -69,8 +113,16 @@ export interface Product {
   stockQuantity: number
   lowStockThreshold: number
   isFeatured: boolean
+  /**
+   * Lifetime product-page views, deduplicated per viewer. A lifetime total, not
+   * a live figure. Optional so a console running ahead of the backend still
+   * renders; the column shows 0 in that case.
+   */
+  viewCount?: number
   /** List rows (`GET /products/admin`) only include the primary image; detail includes all. */
   images: ProductImage[]
+  /** Present on detail responses (`GET /products/admin/:id`) only — list rows omit it. */
+  options?: ProductOption[]
   /** Present on detail responses (`GET /products/admin/:id`) only — list rows omit it. */
   variants?: ProductVariant[]
   /** Present on detail responses (`GET /products/admin/:id`) only — list rows omit it. */
@@ -118,6 +170,7 @@ export interface ProductInput {
   lowStockThreshold?: number
   isFeatured?: boolean
   images?: ProductImageInput[]
+  options?: ProductOptionInput[]
   variants?: ProductVariantInput[]
   attributes?: ProductAttribute[]
 }
@@ -181,6 +234,10 @@ async function listProducts(params: ProductListParams = {}): Promise<PaginatedRe
   if (params.status) query.set('status', params.status)
   if (params.type) query.set('type', params.type)
   if (params.isFeatured !== undefined) query.set('isFeatured', String(params.isFeatured))
+  if (params.sortBy) {
+    query.set('sortBy', params.sortBy)
+    query.set('sortOrder', params.sortOrder ?? 'desc')
+  }
 
   const res = await request<Product[]>(`/products/admin?${query}`)
   const rows = res.data.map((p) => ({ ...p, stockStatus: stockStatus(p) }))
