@@ -5,6 +5,10 @@ import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
 import type { Category } from '@/lib/api/categories'
 import type { Brand } from '@/lib/api/brands'
+import type { TaxRule } from '@/lib/api/tax-rules'
+import type { ShippingRule } from '@/lib/api/shipping-rules'
+import type { BundleDeal } from '@/lib/api/bundle-deals'
+import type { Collection } from '@/lib/api/collections'
 
 export type ProductType = 'SIMPLE' | 'VARIABLE'
 export type ProductStatus = 'DRAFT' | 'ACTIVE' | 'ARCHIVED'
@@ -21,41 +25,47 @@ export interface ProductImage {
   variantId?: string | null
 }
 
-/** How an option's values are drawn on the storefront. */
+/** How an attribute's values are drawn on the storefront. */
 export type OptionPresentation = 'SWATCH' | 'LABEL'
 
 export interface ProductOptionValue {
-  /** Present when this row came from the backend; omit for a newly-added row. */
-  id?: string
+  id: string
   label: string
   position: number
   swatch?: string | null
 }
 
-/** A named axis of choice (Colour, Size, Weight) with its values in authored order. */
+/**
+ * An option a product presents, as it comes back from the API.
+ *
+ * **Derived, not stored.** A product no longer owns its options — it sells
+ * values of shop-wide attributes, and the backend rebuilds this list from the
+ * attributes its variants' values belong to (`deriveProductOptions`). `id` is
+ * therefore the *attribute's* id, and `values` holds only the values this
+ * product actually sells, not every value the attribute defines.
+ */
 export interface ProductOption {
-  id?: string
+  id: string
   name: string
   position: number
   presentation: OptionPresentation
   values: ProductOptionValue[]
 }
 
-export interface ProductOptionValueInput {
-  id?: string
-  label: string
-  swatch?: string
-}
-
 /**
- * Request-side option. Position is taken from array order rather than sent
- * explicitly, so two options cannot claim the same position.
+ * Request-side option: which shop-wide attribute this product sells, and which
+ * of its values.
+ *
+ * The product does not define the attribute, so nothing here creates one — the
+ * backend checks that every value named really belongs to the attribute named.
+ * `valueIds` order is the order the values are presented in, and is also what
+ * `ProductVariantInput.optionValueIndexes` indexes into.
  */
 export interface ProductOptionInput {
-  id?: string
-  name: string
-  presentation: OptionPresentation
-  values: ProductOptionValueInput[]
+  attributeId: string
+  valueIds: string[]
+  /** For error messages only; the attribute's own name is authoritative. */
+  name?: string
 }
 
 export interface ProductVariant {
@@ -65,9 +75,11 @@ export interface ProductVariant {
   sku: string
   /** Decimal column — arrives as a string from the API (see design.md). */
   price?: string
+  compareAtPrice?: string | null
   stockQuantity?: number
   attributes: Record<string, string>
-  /** Which option values define this variant. Empty for a product with no options. */
+  image?: string | null
+  /** Which attribute values define this variant. Empty for a product with no options. */
   optionValues?: { valueId: string }[]
 }
 
@@ -77,11 +89,13 @@ export interface ProductVariantInput {
   name: string
   sku: string
   price: number
+  compareAtPrice?: number
   stockQuantity: number
   attributes: Record<string, string>
   /**
-   * One index per option, into that option's `values`. Positional because on
-   * create no value has an id yet. Omitted for a product with no options.
+   * One index per option, into that option's `valueIds`. Positional because on
+   * create no value selection has been persisted yet. Omitted for a product
+   * with no options.
    */
   optionValueIndexes?: number[]
 }
@@ -127,6 +141,38 @@ export interface Product {
   variants?: ProductVariant[]
   /** Present on detail responses (`GET /products/admin/:id`) only — list rows omit it. */
   attributes?: ProductAttribute[]
+
+  /*
+   * The named rules pricing this product's tax and delivery. Nullable in the
+   * schema because rows predate the columns, but the service treats a product
+   * without them as incomplete — one cannot be taxed, the other delivered.
+   */
+  taxRuleId: string | null
+  taxRule?: TaxRule | null
+  shippingRuleId: string | null
+  shippingRule?: ShippingRule | null
+  /** Optional: a product is perfectly sellable with no offer. */
+  bundleDealId: string | null
+  bundleDeal?: BundleDeal | null
+
+  /** What it is sold in — "1 kg", "500 ml", "pack of 12". */
+  unit: string | null
+  /** A short storefront label — "New", "Hot". Presentation only. */
+  badge: string | null
+  /**
+   * Tri-state. `null` means the merchant has not said, which the storefront
+   * shows as nothing at all — a different claim from "No".
+   */
+  isRefundable: boolean | null
+  hasWarranty: boolean | null
+
+  video: string | null
+  videoThumbnail: string | null
+
+  /** Join rows, as the detail response nests them. */
+  collections?: { collection: Collection }[]
+  tags?: { tag: { id: string; name: string } }[]
+
   createdAt: string
   updatedAt: string
 }
@@ -169,6 +215,26 @@ export interface ProductInput {
   stockQuantity?: number
   lowStockThreshold?: number
   isFeatured?: boolean
+
+  taxRuleId?: string
+  shippingRuleId?: string
+  /** `null` clears the offer; omitting the key leaves it as it was. */
+  bundleDealId?: string | null
+
+  unit?: string
+  badge?: string
+  /** `null` is "not said", which is not the same as `false`. */
+  isRefundable?: boolean | null
+  hasWarranty?: boolean | null
+
+  video?: string | null
+  videoThumbnail?: string | null
+
+  /** The full intended set of memberships — omitting the key leaves them alone. */
+  collectionIds?: string[]
+  /** Keyword names, created on demand. The full intended set. */
+  tags?: string[]
+
   images?: ProductImageInput[]
   options?: ProductOptionInput[]
   variants?: ProductVariantInput[]
@@ -194,7 +260,46 @@ export interface ProductListParams extends ListParams {
   isFeatured?: boolean
 }
 
-export interface ProductListRow extends Product {
+/**
+ * One row of `GET /products/admin`, which is a deliberately narrow projection
+ * rather than a whole `Product` — see `ADMIN_PRODUCT_LIST_SELECT` on the
+ * server. Spelled out here so the table cannot quietly start reading a field
+ * the response no longer carries: that would compile against `Product` and
+ * render `undefined` at runtime.
+ */
+export interface ProductListItem {
+  id: string
+  name: string
+  /** Supplier cost — the "purchase" column. Decimal, so a string. Null until the merchant records one. */
+  costPrice: string | null
+  /** Decimal column — arrives as a string from the API (see design.md). */
+  price: string
+  /** Decimal column — arrives as a string from the API (see design.md). */
+  compareAtPrice: string | null
+  stockQuantity: number
+  lowStockThreshold: number
+  createdAt: string
+  /**
+   * The category the product is assigned to, plus its parent when it has one.
+   *
+   * A sub-category is not a separate model — the hierarchy lives on
+   * `Category.parentId` — so this one relation answers both columns: with a
+   * parent, `parent` is the category and this is the sub-category; without
+   * one, this is the category and there is no sub-category.
+   */
+  category: { id: string; name: string; parent: { id: string; name: string } | null } | null
+  brand: { id: string; name: string } | null
+  taxRule: { id: string; name: string } | null
+  /** At most one — the primary image, or the first authored one if none is marked primary. */
+  images: { url: string }[]
+}
+
+export interface ProductListRow extends ProductListItem {
+  stockStatus: StockStatus
+}
+
+/** A detail response (`GET /products/admin/:id`), which does return the whole product. */
+export interface ProductDetailRow extends Product {
   stockStatus: StockStatus
 }
 
@@ -239,7 +344,7 @@ async function listProducts(params: ProductListParams = {}): Promise<PaginatedRe
     query.set('sortOrder', params.sortOrder ?? 'desc')
   }
 
-  const res = await request<Product[]>(`/products/admin?${query}`)
+  const res = await request<ProductListItem[]>(`/products/admin?${query}`)
   const rows = res.data.map((p) => ({ ...p, stockStatus: stockStatus(p) }))
   return {
     data: rows,
@@ -247,7 +352,7 @@ async function listProducts(params: ProductListParams = {}): Promise<PaginatedRe
   }
 }
 
-async function getProduct(id: string): Promise<ProductListRow> {
+async function getProduct(id: string): Promise<ProductDetailRow> {
   const res = await request<Product>(`/products/admin/${id}`)
   return { ...res.data, stockStatus: stockStatus(res.data) }
 }

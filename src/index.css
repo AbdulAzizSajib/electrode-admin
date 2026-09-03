@@ -8,7 +8,18 @@
  * so `p-4`/`gap-4`/etc. read as "compact" everywhere by default.
  */
 @theme {
-  --font-sans: 'Space Grotesk', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+  --font-sans: 'Roboto', 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  /*
+   * Type scale, nudged one step up from Tailwind's defaults (+1px each) so the
+   * dense admin UI stays readable. Line-height tokens are left at Tailwind's
+   * defaults — they're unitless ratios, so they scale with these values.
+   */
+  --text-xs: 0.8125rem; /* 13px */
+  --text-sm: 0.9375rem; /* 15px */
+  --text-base: 1.0625rem; /* 17px */
+  --text-lg: 1.1875rem; /* 19px */
+  --text-xl: 1.3125rem; /* 21px */
 
   /* Compact spacing scale (overrides Tailwind's default 0.25rem step). */
   --spacing: 0.22rem;
@@ -69,7 +80,7 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
-    font-size: 13.5px;
+    font-size: 15px;
     line-height: 1.45;
     -webkit-font-smoothing: antialiased;
   }

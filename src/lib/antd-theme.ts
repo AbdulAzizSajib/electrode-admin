@@ -12,6 +12,7 @@ export const antdTheme: ThemeConfig = {
     colorSuccess: '#067647',
     colorWarning: '#b54708',
     borderRadius: 6,
-    fontFamily: "'Space Grotesk', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif",
+    fontFamily: "'Roboto', 'Segoe UI', system-ui, -apple-system, sans-serif",
+    fontSize: 15,
   },
 }

@@ -13,7 +13,24 @@ const ProductsListPage = lazy(() => import('@/features/catalog/products/products
 const ProductFormPage = lazy(() => import('@/features/catalog/products/product-form-page'))
 const ProductDetailPage = lazy(() => import('@/features/catalog/products/product-detail-page'))
 const CategoriesPage = lazy(() => import('@/features/catalog/categories/categories-page'))
+const SubCategoriesPage = lazy(() => import('@/features/catalog/sub-categories/sub-categories-page'))
 const BrandsPage = lazy(() => import('@/features/catalog/brands/brands-page'))
+const AttributesPage = lazy(() => import('@/features/catalog/attributes/attributes-page'))
+const AttributeFormPage = lazy(() => import('@/features/catalog/attributes/attribute-form-page'))
+const TaxRulesPage = lazy(() => import('@/features/catalog/tax-rules/tax-rules-page'))
+const TaxRuleFormPage = lazy(() => import('@/features/catalog/tax-rules/tax-rule-form-page'))
+const ShippingRulesPage = lazy(() => import('@/features/catalog/shipping-rules/shipping-rules-page'))
+const ShippingRuleFormPage = lazy(
+  () => import('@/features/catalog/shipping-rules/shipping-rule-form-page'),
+)
+const CollectionsPage = lazy(() => import('@/features/catalog/collections/collections-page'))
+const CollectionFormPage = lazy(
+  () => import('@/features/catalog/collections/collection-form-page'),
+)
+const BundleDealsPage = lazy(() => import('@/features/catalog/bundle-deals/bundle-deals-page'))
+const BundleDealFormPage = lazy(
+  () => import('@/features/catalog/bundle-deals/bundle-deal-form-page'),
+)
 
 const WarehousesPage = lazy(() => import('@/features/inventory/warehouses/warehouses-page'))
 const StockPage = lazy(() => import('@/features/inventory/stock/stock-page'))
@@ -36,7 +53,7 @@ const ReturnDetailPage = lazy(() => import('@/features/sales/returns/return-deta
 const RefundsPage = lazy(() => import('@/features/sales/refunds/refunds-page'))
 const ShippingMethodsPage = lazy(() => import('@/features/sales/shipping-methods/shipping-methods-page'))
 
-const CouponsPage = lazy(() => import('@/features/marketing/coupons/coupons-page'))
+const VouchersPage = lazy(() => import('@/features/marketing/vouchers/vouchers-page'))
 const CampaignsListPage = lazy(() => import('@/features/marketing/campaigns/campaigns-list-page'))
 const CampaignDetailPage = lazy(() => import('@/features/marketing/campaigns/campaign-detail-page'))
 const BannersPage = lazy(() => import('@/features/marketing/banners/banners-page'))
@@ -77,7 +94,27 @@ export function AppRouter() {
           <Route path="/catalog/products/:productId" element={<ProductDetailPage />} />
           <Route path="/catalog/products/:productId/edit" element={<ProductFormPage />} />
           <Route path="/catalog/categories" element={<CategoriesPage />} />
+          <Route path="/catalog/sub-categories" element={<SubCategoriesPage />} />
           <Route path="/catalog/brands" element={<BrandsPage />} />
+
+          {/* Each of these pairs a list with one form route serving both create
+              and edit — the shared form page navigates from `/new` to `/:id`
+              after the first save, so the two must be the same component. */}
+          <Route path="/catalog/attributes" element={<AttributesPage />} />
+          <Route path="/catalog/attributes/new" element={<AttributeFormPage />} />
+          <Route path="/catalog/attributes/:attributeId" element={<AttributeFormPage />} />
+          <Route path="/catalog/tax-rules" element={<TaxRulesPage />} />
+          <Route path="/catalog/tax-rules/new" element={<TaxRuleFormPage />} />
+          <Route path="/catalog/tax-rules/:taxRuleId" element={<TaxRuleFormPage />} />
+          <Route path="/catalog/shipping-rules" element={<ShippingRulesPage />} />
+          <Route path="/catalog/shipping-rules/new" element={<ShippingRuleFormPage />} />
+          <Route path="/catalog/shipping-rules/:shippingRuleId" element={<ShippingRuleFormPage />} />
+          <Route path="/catalog/collections" element={<CollectionsPage />} />
+          <Route path="/catalog/collections/new" element={<CollectionFormPage />} />
+          <Route path="/catalog/collections/:collectionId" element={<CollectionFormPage />} />
+          <Route path="/catalog/bundle-deals" element={<BundleDealsPage />} />
+          <Route path="/catalog/bundle-deals/new" element={<BundleDealFormPage />} />
+          <Route path="/catalog/bundle-deals/:bundleDealId" element={<BundleDealFormPage />} />
 
           <Route path="/inventory/warehouses" element={<WarehousesPage />} />
           <Route path="/inventory/stock" element={<StockPage />} />
@@ -95,7 +132,13 @@ export function AppRouter() {
           <Route path="/sales/refunds" element={<RefundsPage />} />
           <Route path="/sales/shipping-methods" element={<ShippingMethodsPage />} />
 
-          <Route path="/marketing/coupons" element={<CouponsPage />} />
+          <Route path="/marketing/vouchers" element={<VouchersPage />} />
+          {/* Coupons were renamed Vouchers — the record is unchanged, so an
+              existing bookmark should land on it rather than on Not Found. */}
+          <Route
+            path="/marketing/coupons"
+            element={<Navigate to="/marketing/vouchers" replace />}
+          />
           <Route path="/marketing/campaigns" element={<CampaignsListPage />} />
           <Route path="/marketing/campaigns/:campaignId" element={<CampaignDetailPage />} />
           <Route path="/marketing/banners" element={<BannersPage />} />

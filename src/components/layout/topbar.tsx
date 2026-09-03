@@ -67,7 +67,7 @@ export function Topbar() {
             {unreadCount > 0 && (
               <Badge
                 variant="destructive"
-                className="absolute -right-0.5 -top-0.5 h-4 min-w-4 justify-center rounded-full p-0 text-[10px]"
+                className="absolute -right-0.5 -top-0.5 h-4 min-w-4 justify-center rounded-full p-0 text-[11px]"
               >
                 {unreadCount > 9 ? '9+' : unreadCount}
               </Badge>

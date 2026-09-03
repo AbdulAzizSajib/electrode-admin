@@ -60,6 +60,12 @@ export function formatDateTime(value: string | Date) {
   })
 }
 
+/** Clock time only — for rows that already show the date on a line of its own. */
+export function formatTime(value: string | Date) {
+  const date = typeof value === 'string' ? new Date(value) : value
+  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
 export function formatRelativeTime(value: string | Date) {
   const date = typeof value === 'string' ? new Date(value) : value
   const diffMs = date.getTime() - Date.now()

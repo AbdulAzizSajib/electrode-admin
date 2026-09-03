@@ -106,7 +106,7 @@ export default function ProductDetailPage() {
                     </Badge>
                   )}
                   {product.type === 'VARIABLE' && (
-                    <Badge variant="outline" className="absolute -bottom-1.5 -left-1.5 text-[10px]">
+                    <Badge variant="outline" className="absolute -bottom-1.5 -left-1.5 text-[11px]">
                       {img.variantId ? variantNameById[img.variantId] ?? 'Variant' : 'Shared'}
                     </Badge>
                   )}

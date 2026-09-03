@@ -1,3 +1,17 @@
+/**
+ * Vouchers — what this panel now calls the discount codes the backend still
+ * models as `Coupon`.
+ *
+ * The rename is deliberately skin-deep: route, page title and every string a
+ * merchant reads. The API module, its types and the database are untouched,
+ * because nothing about the record changed — only what it is called. Renaming
+ * the model too would mean a migration, a storefront change and a broken
+ * `appliedCoupon` cookie, all to no one's benefit.
+ *
+ * See align-admin-catalog-with-reference — "Coupons are renamed Vouchers in the
+ * admin. Our `Coupon` already carries every field the reference voucher has;
+ * this is a label and route change, not a new model."
+ */
 import * as React from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
@@ -119,7 +133,7 @@ function toCouponPayload(v: OutputValues): CouponInput {
   if (v.usageLimit !== undefined) input.usageLimit = v.usageLimit
   if (v.perCustomerLimit !== undefined) input.perCustomerLimit = v.perCustomerLimit
   // Date inputs give "YYYY-MM-DD"; the backend validates full ISO datetimes. The expiry is pushed
-  // to end-of-day so a coupon does not silently die at midnight on the date the admin picked.
+  // to end-of-day so a voucher does not silently die at midnight on the date the admin picked.
   if (v.startsAt) input.startsAt = new Date(`${v.startsAt}T00:00:00.000Z`).toISOString()
   if (v.expiresAt) input.expiresAt = new Date(`${v.expiresAt}T23:59:59.999Z`).toISOString()
   return input
@@ -132,7 +146,7 @@ function formatDiscount(c: Coupon): string {
   return c.value
 }
 
-export default function CouponsPage() {
+export default function VouchersPage() {
   const [search, setSearch] = React.useState('')
   const [sheetOpen, setSheetOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<Coupon | null>(null)
@@ -156,17 +170,17 @@ export default function CouponsPage() {
     values: editing ? toFormValues(editing) : EMPTY_VALUES,
   })
 
-  const couponType = form.watch('type')
+  const voucherType = form.watch('type')
 
   const onSubmit = async (values: OutputValues) => {
     try {
       const input = toCouponPayload(values)
       if (editing) {
         await updateMutation.mutateAsync({ id: editing.id, input })
-        toast({ title: 'Coupon updated' })
+        toast({ title: 'Voucher updated' })
       } else {
         await createMutation.mutateAsync(input)
-        toast({ title: 'Coupon created' })
+        toast({ title: 'Voucher created' })
       }
       setSheetOpen(false)
     } catch (err) {
@@ -211,9 +225,9 @@ export default function CouponsPage() {
                 confirmDialog.confirm(async () => {
                   try {
                     await deleteMutation.mutateAsync(row.original.id)
-                    toast({ title: 'Coupon deleted' })
+                    toast({ title: 'Voucher deleted' })
                   } catch (err) {
-                    toast({ title: 'Could not delete coupon', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
+                    toast({ title: 'Could not delete voucher', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
                   }
                 })
               }
@@ -229,11 +243,11 @@ export default function CouponsPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        title="Coupons"
+        title="Vouchers"
         description="Discount codes customers can apply at checkout."
         actions={
           <Button size="sm" onClick={() => { setEditing(null); setSheetOpen(true) }}>
-            <Plus /> New coupon
+            <Plus /> New voucher
           </Button>
         }
       />
@@ -247,7 +261,7 @@ export default function CouponsPage() {
         searchValue={search}
         onSearchChange={(v) => { setSearch(v); setPage(1) }}
         searchPlaceholder="Search by code…"
-        emptyState={{ icon: Ticket, title: 'No coupons yet' }}
+        emptyState={{ icon: Ticket, title: 'No vouchers yet' }}
         toolbar={
           <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as 'all' | CouponStatus); setPage(1) }}>
             <SelectTrigger className="h-8 w-36"><SelectValue placeholder="Status" /></SelectTrigger>
@@ -266,7 +280,7 @@ export default function CouponsPage() {
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent>
-          <SheetHeader><SheetTitle>{editing ? 'Edit coupon' : 'New coupon'}</SheetTitle></SheetHeader>
+          <SheetHeader><SheetTitle>{editing ? 'Edit voucher' : 'New voucher'}</SheetTitle></SheetHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-1 flex-col gap-3.5 overflow-y-auto">
               <FormField control={form.control} name="code" render={({ field }) => (
@@ -290,7 +304,7 @@ export default function CouponsPage() {
                 )} />
                 <FormField control={form.control} name="value" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{couponType === 'PERCENTAGE' ? 'Percent off' : 'Value'}</FormLabel>
+                    <FormLabel>{voucherType === 'PERCENTAGE' ? 'Percent off' : 'Value'}</FormLabel>
                     <FormControl><Input type="number" step="0.01" min="0" {...field} value={field.value === undefined ? '' : String(field.value)} /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -353,7 +367,7 @@ export default function CouponsPage() {
               )} />
               <SheetFooter>
                 <Button type="button" variant="outline" onClick={() => setSheetOpen(false)}>Cancel</Button>
-                <Button type="submit" loading={form.formState.isSubmitting}>{editing ? 'Save changes' : 'Create coupon'}</Button>
+                <Button type="submit" loading={form.formState.isSubmitting}>{editing ? 'Save changes' : 'Create voucher'}</Button>
               </SheetFooter>
             </form>
           </Form>
@@ -363,7 +377,7 @@ export default function CouponsPage() {
       <ConfirmDialog
         open={confirmDialog.open}
         onOpenChange={confirmDialog.setOpen}
-        title="Delete this coupon?"
+        title="Delete this voucher?"
         description="This cannot be undone."
         confirmLabel="Delete"
         loading={confirmDialog.pending}

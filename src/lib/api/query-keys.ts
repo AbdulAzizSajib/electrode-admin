@@ -9,6 +9,15 @@ export const queryKeys = {
   brands: { all: ['brands'] as const, list: (p?: object) => ['brands', 'list', p] as const, detail: (id: string) => ['brands', 'detail', id] as const },
   products: { all: ['products'] as const, list: (p?: object) => ['products', 'list', p] as const, detail: (id: string) => ['products', 'detail', id] as const },
 
+  attributes: { all: ['attributes'] as const, list: (p?: object) => ['attributes', 'list', p] as const, detail: (id: string) => ['attributes', 'detail', id] as const },
+  taxRules: { all: ['tax-rules'] as const, list: (p?: object) => ['tax-rules', 'list', p] as const, detail: (id: string) => ['tax-rules', 'detail', id] as const },
+  shippingRules: { all: ['shipping-rules'] as const, list: (p?: object) => ['shipping-rules', 'list', p] as const, detail: (id: string) => ['shipping-rules', 'detail', id] as const },
+  collections: { all: ['collections'] as const, list: (p?: object) => ['collections', 'list', p] as const, detail: (id: string) => ['collections', 'detail', id] as const },
+  bundleDeals: { all: ['bundle-deals'] as const, list: (p?: object) => ['bundle-deals', 'list', p] as const, detail: (id: string) => ['bundle-deals', 'detail', id] as const },
+  // `search` is keyed by term rather than by a params object: the autocomplete
+  // asks per keystroke and each term is its own cacheable answer.
+  tags: { all: ['tags'] as const, list: (p?: object) => ['tags', 'list', p] as const, search: (term: string) => ['tags', 'search', term] as const },
+
   warehouses: { all: ['warehouses'] as const, list: (p?: object) => ['warehouses', 'list', p] as const, detail: (id: string) => ['warehouses', 'detail', id] as const },
   stock: { all: ['stock'] as const, list: (p?: object) => ['stock', 'list', p] as const },
   stockMovements: { all: ['stock-movements'] as const, list: (p?: object) => ['stock-movements', 'list', p] as const },

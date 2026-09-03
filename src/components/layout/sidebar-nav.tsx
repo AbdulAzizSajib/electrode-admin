@@ -45,7 +45,7 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
   })
 
   return (
-    <nav className="flex flex-col gap-2 px-2 py-2 border">
+    <nav className="flex flex-col gap-2 px-2 py-2">
       {NAV_SECTIONS.filter((section) => isNavNodeVisible(section.roles, role)).map((section) => {
         const Icon = section.icon
 
@@ -97,13 +97,15 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
                 <DropdownMenuSeparator />
                 {items.map((item) => {
                   const active = pathname.startsWith(item.path)
+                  const ItemIcon = item.icon
                   return (
                     <DropdownMenuItem
                       key={item.path}
                       asChild
                       className={cn(active && 'bg-muted font-medium text-primary')}
                     >
-                      <NavLink to={item.path} onClick={onNavigate}>
+                      <NavLink to={item.path} onClick={onNavigate} className="gap-2">
+                        <ItemIcon className="size-4 shrink-0" />
                         {item.label}
                       </NavLink>
                     </DropdownMenuItem>
@@ -133,18 +135,20 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
               <div id={listId} className="ml-4 flex flex-col gap-0.5 border-l border-sidebar-border pl-3 pt-0.5">
                 {items.map((item) => {
                   const active = pathname.startsWith(item.path)
+                  const ItemIcon = item.icon
                   return (
                     <NavLink
                       key={item.path}
                       to={item.path}
                       onClick={onNavigate}
                       className={cn(
-                        'rounded-md px-2.5 py-1.5 text-base text-sidebar-foreground transition-colors hover:bg-sidebar-active hover:text-white',
+                        'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-base text-sidebar-foreground transition-colors hover:bg-sidebar-active hover:text-white',
                         focusRing,
                         active && 'bg-sidebar-active font-medium text-white',
                       )}
                     >
-                      {item.label}
+                      <ItemIcon className="size-4 shrink-0" />
+                      <span>{item.label}</span>
                     </NavLink>
                   )
                 })}

@@ -152,7 +152,7 @@ export function ImageUploadField({
                   </button>
                 </div>
                 {entry.isPrimary && showPrimary && (
-                  <span className="absolute bottom-1 left-1 rounded-sm bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
+                  <span className="absolute bottom-1 left-1 rounded-sm bg-primary px-1.5 py-0.5 text-[11px] font-medium text-primary-foreground">
                     Primary
                   </span>
                 )}

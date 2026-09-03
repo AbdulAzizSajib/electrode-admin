@@ -14,13 +14,30 @@ import { useProducts, useDeleteProduct, type ProductListRow, type ProductStatus 
 import { useCategoryTree } from '@/lib/api/categories'
 import { useBrands } from '@/lib/api/brands'
 import { CategoryFilter } from '@/features/catalog/products/category-filter'
-import { formatCurrency } from '@/lib/utils/format'
+import { formatCurrency, formatDate, formatTime } from '@/lib/utils/format'
 
 const STOCK_VARIANT = { in_stock: 'success', low_stock: 'warning', out_of_stock: 'destructive' } as const
 const STOCK_LABEL = { in_stock: 'In stock', low_stock: 'Low stock', out_of_stock: 'Out of stock' } as const
 
-const STATUS_VARIANT = { DRAFT: 'secondary', ACTIVE: 'success', ARCHIVED: 'outline' } as const
-const STATUS_LABEL = { DRAFT: 'Draft', ACTIVE: 'Active', ARCHIVED: 'Archived' } as const
+/**
+ * Splits the two prices a row shows.
+ *
+ * `compareAtPrice` is the struck-through "was" figure and `price` is what the
+ * customer actually pays, so a product carrying both is on offer: the list
+ * price is the higher one and the offer is the lower. A product with no
+ * `compareAtPrice` is simply not on offer — its `price` IS the selling price,
+ * and the offer column stays empty rather than repeating it.
+ */
+function prices(row: ProductListRow) {
+  const onOffer = row.compareAtPrice !== null
+  return {
+    selling: Number(onOffer ? row.compareAtPrice : row.price),
+    offered: onOffer ? Number(row.price) : null,
+  }
+}
+
+/** An em dash, so an absent figure reads as "not recorded" rather than as zero. */
+const EMPTY = <span className="text-muted-foreground">—</span>
 
 export default function ProductsListPage() {
   const navigate = useNavigate()
@@ -59,45 +76,86 @@ export default function ProductsListPage() {
       header: 'Product',
       cell: ({ row }) => (
         <div className="flex items-center gap-2.5">
-        {/* fff */}
           <img
             src={row.original.images[0]?.url}
             alt=""
             className="size-8 shrink-0 rounded-md border border-border bg-muted object-cover"
           />
-          <div className="flex flex-col">
-            <span className="font-medium text-foreground">{row.original.name}</span>
-            <span className="text-xs text-muted-foreground">{row.original.sku ?? '—'}</span>
-          </div>
+          <span className="font-medium text-foreground">{row.original.name}</span>
         </div>
       ),
     },
-    { id: 'brand', header: 'Brand', cell: ({ row }) => row.original.brand?.name ?? '—' },
     {
       id: 'category',
       header: 'Category',
-      cell: ({ row }) => row.original.category?.name ?? '—',
+      // With a parent, the parent IS the category and the assigned record is
+      // the sub-category below; without one, the assigned record is itself the
+      // category. See `ProductListItem.category`.
+      cell: ({ row }) => {
+        const c = row.original.category
+        if (!c) return EMPTY
+        return c.parent?.name ?? c.name
+      },
     },
-    { accessorKey: 'price', header: 'Price', cell: ({ row }) => formatCurrency(Number(row.original.price)) },
+    {
+      id: 'subCategory',
+      header: 'Sub category',
+      cell: ({ row }) => {
+        const c = row.original.category
+        return c?.parent ? c.name : EMPTY
+      },
+    },
+    { id: 'brand', header: 'Brand', cell: ({ row }) => row.original.brand?.name ?? EMPTY },
+    { id: 'taxRule', header: 'Tax rule', cell: ({ row }) => row.original.taxRule?.name ?? EMPTY },
+    {
+      id: 'costPrice',
+      header: 'Purchase',
+      cell: ({ row }) =>
+        row.original.costPrice === null ? EMPTY : formatCurrency(Number(row.original.costPrice)),
+    },
+    {
+      id: 'sellingPrice',
+      header: 'Selling',
+      cell: ({ row }) => formatCurrency(prices(row.original).selling),
+    },
+    {
+      id: 'offeredPrice',
+      header: 'Offered',
+      cell: ({ row }) => {
+        const { offered } = prices(row.original)
+        return offered === null ? EMPTY : (
+          <span className="font-medium text-success">{formatCurrency(offered)}</span>
+        )
+      },
+    },
     {
       id: 'stock',
       header: 'Stock',
-      cell: ({ row }) => <Badge variant={STOCK_VARIANT[row.original.stockStatus]}>{STOCK_LABEL[row.original.stockStatus]}</Badge>,
+      // The count is the answer; the badge is the alert on top of it, which is
+      // what `lowStockThreshold` is fetched for.
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2">
+          <span className="tabular-nums">{row.original.stockQuantity}</span>
+          {row.original.stockStatus !== 'in_stock' && (
+            <Badge variant={STOCK_VARIANT[row.original.stockStatus]}>
+              {STOCK_LABEL[row.original.stockStatus]}
+            </Badge>
+          )}
+        </div>
+      ),
     },
     {
-      id: 'viewCount',
-      header: 'Views',
-      // Sorted on the server, not in the table: these rows are one page of many,
-      // so a client-side sort would answer "least viewed of these ten".
+      id: 'createdAt',
+      header: 'Created',
+      // Server-side, like every sort here: these rows are one page of many, so
+      // an in-table sort would only reorder the ten on screen.
       enableSorting: true,
-      // 0, never a dash: a product nobody has opened is a finding, not missing
-      // data, and the two must not look alike.
-      cell: ({ row }) => (row.original.viewCount ?? 0).toLocaleString('en-US'),
-    },
-    {
-      id: 'status',
-      header: 'Status',
-      cell: ({ row }) => <Badge variant={STATUS_VARIANT[row.original.status]}>{STATUS_LABEL[row.original.status]}</Badge>,
+      cell: ({ row }) => (
+        <div className="flex flex-col">
+          <span>{formatDate(row.original.createdAt)}</span>
+          <span className="text-xs text-muted-foreground">{formatTime(row.original.createdAt)}</span>
+        </div>
+      ),
     },
     {
       id: 'actions',

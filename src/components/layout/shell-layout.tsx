@@ -27,7 +27,7 @@ export function ShellLayout() {
         <aside
           className={cn(
             'hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-150 lg:flex',
-            sidebarCollapsed ? 'w-16' : 'w-60',
+            sidebarCollapsed ? 'w-16' : 'w-76',
           )}
         >
           <div className="flex h-14 shrink-0 items-center gap-2 border-b border-sidebar-border px-3">
@@ -42,7 +42,7 @@ export function ShellLayout() {
         </aside>
 
         <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-          <SheetContent side="left" className="w-64 max-w-[80vw] bg-sidebar p-0">
+          <SheetContent side="left" className="w-76 max-w-[80vw] bg-sidebar p-0">
             <div className="flex h-12 shrink-0 items-center gap-2 border-b border-sidebar-border px-3">
               <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
                 E
