@@ -1,5 +1,8 @@
 import path from 'node:path'
-import { defineConfig } from 'vite'
+// From `vitest/config`, not `vite`: the `test` block below is vitest's, and
+// vite's own `defineConfig` does not type it — which made `tsc -b` (and so
+// `pnpm build`) fail while `vitest run` was perfectly happy.
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 

@@ -47,6 +47,11 @@ async function listWarehouses(params: WarehouseListParams = {}): Promise<Paginat
   }
 }
 
+async function getWarehouse(id: string): Promise<Warehouse> {
+  const res = await request<Warehouse>(`/warehouses/${id}`)
+  return res.data
+}
+
 async function createWarehouse(input: WarehouseInput): Promise<Warehouse> {
   const res = await request<Warehouse>('/warehouses', { method: 'POST', body: JSON.stringify(input) })
   return res.data
@@ -63,6 +68,15 @@ async function deleteWarehouse(id: string): Promise<void> {
 
 export function useWarehouses(params: WarehouseListParams = {}) {
   return useQuery({ queryKey: queryKeys.warehouses.list(params), queryFn: () => listWarehouses(params) })
+}
+
+/** Reads one warehouse by id — what the edit page needs when it is opened by URL. */
+export function useWarehouse(id: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.warehouses.detail(id ?? ''),
+    queryFn: () => getWarehouse(id!),
+    enabled: Boolean(id),
+  })
 }
 
 export function useCreateWarehouse() {

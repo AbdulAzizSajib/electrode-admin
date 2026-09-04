@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { Navigate, Route, Routes } from 'react-router'
+import { Navigate, Route, Routes, useParams } from 'react-router'
 import { ShellLayout } from '@/components/layout/shell-layout'
 import { AuthLayout } from '@/components/layout/auth-layout'
 import { AuthGuard, GuestGuard, RoleGuard } from '@/routes/guards'
@@ -13,8 +13,11 @@ const ProductsListPage = lazy(() => import('@/features/catalog/products/products
 const ProductFormPage = lazy(() => import('@/features/catalog/products/product-form-page'))
 const ProductDetailPage = lazy(() => import('@/features/catalog/products/product-detail-page'))
 const CategoriesPage = lazy(() => import('@/features/catalog/categories/categories-page'))
+const CategoryFormPage = lazy(() => import('@/features/catalog/categories/category-form-page'))
 const SubCategoriesPage = lazy(() => import('@/features/catalog/sub-categories/sub-categories-page'))
 const BrandsPage = lazy(() => import('@/features/catalog/brands/brands-page'))
+const BrandFormPage = lazy(() => import('@/features/catalog/brands/brand-form-page'))
+const BrandBulkCreatePage = lazy(() => import('@/features/catalog/brands/brand-bulk-create-page'))
 const AttributesPage = lazy(() => import('@/features/catalog/attributes/attributes-page'))
 const AttributeFormPage = lazy(() => import('@/features/catalog/attributes/attribute-form-page'))
 const TaxRulesPage = lazy(() => import('@/features/catalog/tax-rules/tax-rules-page'))
@@ -33,9 +36,11 @@ const BundleDealFormPage = lazy(
 )
 
 const WarehousesPage = lazy(() => import('@/features/inventory/warehouses/warehouses-page'))
+const WarehouseFormPage = lazy(() => import('@/features/inventory/warehouses/warehouse-form-page'))
 const StockPage = lazy(() => import('@/features/inventory/stock/stock-page'))
 const StockMovementsPage = lazy(() => import('@/features/inventory/stock-movements/stock-movements-page'))
 const SuppliersPage = lazy(() => import('@/features/inventory/suppliers/suppliers-page'))
+const SupplierFormPage = lazy(() => import('@/features/inventory/suppliers/supplier-form-page'))
 const PurchaseOrdersListPage = lazy(
   () => import('@/features/inventory/purchase-orders/purchase-orders-list-page'),
 )
@@ -51,12 +56,23 @@ const OrderDetailPage = lazy(() => import('@/features/sales/orders/order-detail-
 const ReturnsPage = lazy(() => import('@/features/sales/returns/returns-page'))
 const ReturnDetailPage = lazy(() => import('@/features/sales/returns/return-detail-page'))
 const RefundsPage = lazy(() => import('@/features/sales/refunds/refunds-page'))
-const ShippingMethodsPage = lazy(() => import('@/features/sales/shipping-methods/shipping-methods-page'))
 
 const VouchersPage = lazy(() => import('@/features/marketing/vouchers/vouchers-page'))
+const VoucherFormPage = lazy(() => import('@/features/marketing/vouchers/voucher-form-page'))
 const CampaignsListPage = lazy(() => import('@/features/marketing/campaigns/campaigns-list-page'))
+const CampaignFormPage = lazy(() => import('@/features/marketing/campaigns/campaign-form-page'))
 const CampaignDetailPage = lazy(() => import('@/features/marketing/campaigns/campaign-detail-page'))
-const BannersPage = lazy(() => import('@/features/marketing/banners/banners-page'))
+const BannersPage = lazy(() => import('@/features/ui/banners/banners-page'))
+const BannerFormPage = lazy(() => import('@/features/ui/banners/banner-form-page'))
+const PagesListPage = lazy(() => import('@/features/ui/pages/pages-list-page'))
+const PageFormPage = lazy(() => import('@/features/ui/pages/page-form-page'))
+const HomeSliderPage = lazy(() => import('@/features/ui/home-slider/home-slider-page'))
+const HeaderLinksPage = lazy(() => import('@/features/ui/header-links/header-links-page'))
+const FooterLinksPage = lazy(() => import('@/features/ui/footer-links/footer-links-page'))
+const CheckoutSettingsPage = lazy(
+  () => import('@/features/ui/checkout-settings/checkout-settings-page'),
+)
+const SiteSettingsPage = lazy(() => import('@/features/ui/site-settings/site-settings-page'))
 
 const CustomersListPage = lazy(() => import('@/features/customers/customers/customers-list-page'))
 const CustomerDetailPage = lazy(() => import('@/features/customers/customers/customer-detail-page'))
@@ -69,9 +85,24 @@ const NotificationsPage = lazy(() => import('@/features/support/notifications/no
 const StoreSettingsPage = lazy(() => import('@/features/settings/store-settings/store-settings-page'))
 const RolesPermissionsPage = lazy(() => import('@/features/settings/roles-permissions/roles-permissions-page'))
 const StaffUsersPage = lazy(() => import('@/features/customers/staff-users/staff-users-page'))
+const StaffUserFormPage = lazy(
+  () => import('@/features/customers/staff-users/staff-user-form-page'),
+)
+const RoleFormPage = lazy(() => import('@/features/settings/roles-permissions/role-form-page'))
 const AuditLogsPage = lazy(() => import('@/features/settings/audit-logs/audit-logs-page'))
 
 const NotFoundPage = lazy(() => import('@/routes/not-found-page'))
+
+/**
+ * `<Navigate to="/ui/banners/:bannerId">` would navigate to the literal string
+ * ":bannerId" — the target is not a pattern. So the id is read off the current
+ * match and substituted, which is what keeps a bookmarked edit link pointing at
+ * the same banner after the move out of Marketing.
+ */
+function RedirectToUiBanner() {
+  const { bannerId } = useParams()
+  return <Navigate to={`/ui/banners/${bannerId}`} replace />
+}
 
 export function AppRouter() {
   return (
@@ -94,8 +125,19 @@ export function AppRouter() {
           <Route path="/catalog/products/:productId" element={<ProductDetailPage />} />
           <Route path="/catalog/products/:productId/edit" element={<ProductFormPage />} />
           <Route path="/catalog/categories" element={<CategoriesPage />} />
+          <Route path="/catalog/categories/new" element={<CategoryFormPage />} />
+          <Route path="/catalog/categories/:categoryId" element={<CategoryFormPage />} />
+          {/* The same form, mounted under the sub-categories path so Cancel and
+              save-and-return land on the list the merchant came from. */}
           <Route path="/catalog/sub-categories" element={<SubCategoriesPage />} />
+          <Route path="/catalog/sub-categories/new" element={<CategoryFormPage />} />
+          <Route path="/catalog/sub-categories/:categoryId" element={<CategoryFormPage />} />
           <Route path="/catalog/brands" element={<BrandsPage />} />
+          {/* `/bulk` and `/new` are static, so they win over `/:brandId` regardless
+              of order; declared first so reading the file matches that. */}
+          <Route path="/catalog/brands/bulk" element={<BrandBulkCreatePage />} />
+          <Route path="/catalog/brands/new" element={<BrandFormPage />} />
+          <Route path="/catalog/brands/:brandId" element={<BrandFormPage />} />
 
           {/* Each of these pairs a list with one form route serving both create
               and edit — the shared form page navigates from `/new` to `/:id`
@@ -117,9 +159,16 @@ export function AppRouter() {
           <Route path="/catalog/bundle-deals/:bundleDealId" element={<BundleDealFormPage />} />
 
           <Route path="/inventory/warehouses" element={<WarehousesPage />} />
+          <Route path="/inventory/warehouses/new" element={<WarehouseFormPage />} />
+          <Route path="/inventory/warehouses/:warehouseId" element={<WarehouseFormPage />} />
           <Route path="/inventory/stock" element={<StockPage />} />
           <Route path="/inventory/stock-movements" element={<StockMovementsPage />} />
+          {/* Create and edit share one component — the shared form page navigates
+              from `/new` to `/:id` after the first save, so a split would remount
+              the form mid-edit. */}
           <Route path="/inventory/suppliers" element={<SuppliersPage />} />
+          <Route path="/inventory/suppliers/new" element={<SupplierFormPage />} />
+          <Route path="/inventory/suppliers/:supplierId" element={<SupplierFormPage />} />
           <Route path="/inventory/purchase-orders" element={<PurchaseOrdersListPage />} />
           <Route path="/inventory/purchase-orders/new" element={<PurchaseOrderFormPage />} />
           <Route path="/inventory/purchase-orders/:poId" element={<PurchaseOrderDetailPage />} />
@@ -130,9 +179,9 @@ export function AppRouter() {
           <Route path="/sales/returns" element={<ReturnsPage />} />
           <Route path="/sales/returns/:returnId" element={<ReturnDetailPage />} />
           <Route path="/sales/refunds" element={<RefundsPage />} />
-          <Route path="/sales/shipping-methods" element={<ShippingMethodsPage />} />
-
           <Route path="/marketing/vouchers" element={<VouchersPage />} />
+          <Route path="/marketing/vouchers/new" element={<VoucherFormPage />} />
+          <Route path="/marketing/vouchers/:voucherId" element={<VoucherFormPage />} />
           {/* Coupons were renamed Vouchers — the record is unchanged, so an
               existing bookmark should land on it rather than on Not Found. */}
           <Route
@@ -140,8 +189,39 @@ export function AppRouter() {
             element={<Navigate to="/marketing/vouchers" replace />}
           />
           <Route path="/marketing/campaigns" element={<CampaignsListPage />} />
+          {/* No edit route: a campaign is edited in place on its detail page,
+              which is where its products are attached. */}
+          <Route path="/marketing/campaigns/new" element={<CampaignFormPage />} />
           <Route path="/marketing/campaigns/:campaignId" element={<CampaignDetailPage />} />
-          <Route path="/marketing/banners" element={<BannersPage />} />
+          {/* Banners moved under UI. An existing bookmark — or the reference
+              panel's muscle memory — should land on the record, not on Not
+              Found. Same treatment coupons got when they became vouchers. */}
+          <Route path="/marketing/banners" element={<Navigate to="/ui/banners" replace />} />
+          <Route
+            path="/marketing/banners/new"
+            element={<Navigate to="/ui/banners/new" replace />}
+          />
+          <Route
+            path="/marketing/banners/:bannerId"
+            element={<RedirectToUiBanner />}
+          />
+
+          {/* Storefront chrome. Guarded as a block: every surface here rewrites
+              what a shopper sees on every page, so none of it should be
+              reachable by URL to a non-admin staff account. */}
+          <Route element={<RoleGuard roles={['OWNER', 'ADMIN']} />}>
+            <Route path="/ui/pages" element={<PagesListPage />} />
+            <Route path="/ui/pages/new" element={<PageFormPage />} />
+            <Route path="/ui/pages/:pageId" element={<PageFormPage />} />
+            <Route path="/ui/home-slider" element={<HomeSliderPage />} />
+            <Route path="/ui/banners" element={<BannersPage />} />
+            <Route path="/ui/banners/new" element={<BannerFormPage />} />
+            <Route path="/ui/banners/:bannerId" element={<BannerFormPage />} />
+            <Route path="/ui/header-links" element={<HeaderLinksPage />} />
+            <Route path="/ui/footer-links" element={<FooterLinksPage />} />
+            <Route path="/ui/checkout-settings" element={<CheckoutSettingsPage />} />
+            <Route path="/ui/site-settings" element={<SiteSettingsPage />} />
+          </Route>
 
           <Route path="/customers/customers" element={<CustomersListPage />} />
           <Route path="/customers/customers/:customerId" element={<CustomerDetailPage />} />
@@ -151,13 +231,20 @@ export function AppRouter() {
           <Route path="/support/tickets/:ticketId" element={<SupportTicketDetailPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
 
+          {/* The authoring pages sit inside the same guard as the list they were
+              extracted from. Left outside, `/settings/staff/:userId` would be
+              reachable by URL to anyone signed in — the dialog it replaced
+              inherited the check by being rendered inside the guarded page. */}
           <Route element={<RoleGuard roles={['OWNER', 'ADMIN']} />}>
             <Route path="/settings/store" element={<StoreSettingsPage />} />
             <Route path="/settings/staff" element={<StaffUsersPage />} />
+            <Route path="/settings/staff/:userId" element={<StaffUserFormPage />} />
             <Route path="/settings/audit-logs" element={<AuditLogsPage />} />
           </Route>
           <Route element={<RoleGuard roles={['OWNER']} />}>
             <Route path="/settings/roles" element={<RolesPermissionsPage />} />
+            <Route path="/settings/roles/new" element={<RoleFormPage />} />
+            <Route path="/settings/roles/:roleId" element={<RoleFormPage />} />
           </Route>
 
           <Route path="*" element={<NotFoundPage />} />

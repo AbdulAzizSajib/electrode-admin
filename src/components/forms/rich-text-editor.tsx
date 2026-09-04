@@ -2,10 +2,12 @@ import * as React from 'react'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
+import Image from '@tiptap/extension-image'
 import {
   Bold,
   Heading2,
   Heading3,
+  Image as ImageIcon,
   Italic,
   Link as LinkIcon,
   List,
@@ -44,6 +46,15 @@ export interface RichTextEditorProps {
   disabled?: boolean
   /** Minimum height of the writing area, in Tailwind units. */
   minHeight?: string
+  /**
+   * Adds an image button. Opt-in rather than always-on because the storefront's
+   * sanitiser is the other half of this switch: `<img>` had to be added to its
+   * allow-list before an inserted image would survive rendering. Product
+   * descriptions never needed images and are deliberately left as they were —
+   * see add-admin-ui-cms-section design.md, "Rich text keeps the existing
+   * sanitise-on-render policy".
+   */
+  allowImages?: boolean
 }
 
 /** An empty document round-trips as this; storing it would be storing nothing. */
@@ -85,7 +96,17 @@ function ToolbarButton({
   )
 }
 
-function Toolbar({ editor }: { editor: Editor }) {
+function Toolbar({ editor, allowImages }: { editor: Editor; allowImages?: boolean }) {
+  const insertImage = () => {
+    const src = window.prompt('Image address', 'https://')
+    if (src === null || src.trim() === '') return
+    // `alt` is asked for separately rather than left empty: an image with no
+    // alternative text is invisible to a screen reader, and a policy page is
+    // exactly the kind of content that has to be readable.
+    const alt = window.prompt('Describe this image (for screen readers)', '') ?? ''
+    editor.chain().focus().setImage({ src: src.trim(), alt }).run()
+  }
+
   const setLink = () => {
     const previous = editor.getAttributes('link').href as string | undefined
     const href = window.prompt('Link address', previous ?? 'https://')
@@ -169,6 +190,11 @@ function Toolbar({ editor }: { editor: Editor }) {
       <ToolbarButton label="Add link" active={editor.isActive('link')} onClick={setLink}>
         <LinkIcon className="size-3.5" />
       </ToolbarButton>
+      {allowImages && (
+        <ToolbarButton label="Insert image" onClick={insertImage}>
+          <ImageIcon className="size-3.5" />
+        </ToolbarButton>
+      )}
       <ToolbarButton
         label="Remove link"
         disabled={!editor.isActive('link')}
@@ -203,6 +229,7 @@ export function RichTextEditor({
   placeholder,
   disabled,
   minHeight = 'min-h-40',
+  allowImages,
 }: RichTextEditorProps) {
   const editor = useEditor({
     extensions: [
@@ -214,6 +241,9 @@ export function RichTextEditor({
         protocols: ['http', 'https', 'mailto'],
         HTMLAttributes: { rel: 'noopener noreferrer' },
       }),
+      // Only when asked for — see `allowImages`. `inline: false` keeps an image
+      // a block node, which is what the storefront's prose styles expect.
+      ...(allowImages ? [Image.configure({ inline: false, allowBase64: false })] : []),
     ],
     content: value ?? '',
     editable: !disabled,
@@ -232,6 +262,7 @@ export function RichTextEditor({
           '[&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5',
           '[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground',
           '[&_a]:text-primary [&_a]:underline',
+          '[&_img]:my-2 [&_img]:max-w-full [&_img]:rounded',
           minHeight,
         ),
       },
@@ -266,7 +297,7 @@ export function RichTextEditor({
 
   return (
     <div className="rounded-md border border-border bg-background focus-within:border-primary">
-      <Toolbar editor={editor} />
+      <Toolbar editor={editor} allowImages={allowImages} />
       <div className="relative">
         {isEmpty && placeholder && (
           <p className="pointer-events-none absolute px-3 py-2 text-sm text-muted-foreground">

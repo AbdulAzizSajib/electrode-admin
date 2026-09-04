@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { useNavigate } from 'react-router'
 import type { ColumnDef } from '@tanstack/react-table'
 import { FolderTree } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -11,10 +12,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ResourceListPage, type ResourceListParams } from '@/components/crud/resource-list-page'
-import {
-  CategoryCreateModal,
-  CategoryEditModal,
-} from '@/features/catalog/categories/category-form-modal'
 import {
   useCategories,
   useCategoryTree,
@@ -31,14 +28,15 @@ export const SUB_CATEGORIES_PATH = '/catalog/sub-categories'
  * was missing is a surface: reaching a sub-category meant opening its parent
  * and editing a field. This page is that surface and nothing more.
  *
- * It reuses the category modals rather than growing its own: a sub-category is
- * a category, and two forms for one record is how the two drift apart.
+ * It reuses the category form page rather than growing its own: a sub-category
+ * is a category, and two forms for one record is how the two drift apart. The
+ * form is reached under this page's own path so that leaving it returns here
+ * rather than to the category tree.
  */
 export default function SubCategoriesPage() {
+  const navigate = useNavigate()
   const { data: tree = [] } = useCategoryTree()
   const [parentId, setParentId] = React.useState<string | null>(null)
-  const [createOpen, setCreateOpen] = React.useState(false)
-  const [editing, setEditing] = React.useState<Category | null>(null)
   const deleteMutation = useDeleteCategory()
 
   // Default to the first parent that actually has children, so the page opens
@@ -104,8 +102,14 @@ export default function SubCategoriesPage() {
       useList={useList}
       getRowId={(row) => row.id}
       getRowLabel={(row) => row.name}
-      onCreate={effectiveParentId ? () => setCreateOpen(true) : undefined}
-      onEdit={(row) => setEditing(row)}
+      // The parent currently being browsed rides in the URL, so the create page
+      // opens under it and keeps it across a reload.
+      onCreate={
+        effectiveParentId
+          ? () => navigate(`${SUB_CATEGORIES_PATH}/new?parentId=${effectiveParentId}`)
+          : undefined
+      }
+      onEdit={(row) => navigate(`${SUB_CATEGORIES_PATH}/${row.id}`)}
       remove={{
         mode: 'simple',
         remove: ({ id }) => deleteMutation.mutateAsync(id),
@@ -132,21 +136,6 @@ export default function SubCategoriesPage() {
           </Select>
         </div>
       }
-    >
-      <CategoryCreateModal
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        categoryTree={tree}
-        defaultParentId={effectiveParentId ?? undefined}
-      />
-      <CategoryEditModal
-        open={Boolean(editing)}
-        onOpenChange={(open) => {
-          if (!open) setEditing(null)
-        }}
-        category={editing}
-        categoryTree={tree}
-      />
-    </ResourceListPage>
+    />
   )
 }

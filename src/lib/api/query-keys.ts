@@ -29,14 +29,22 @@ export const queryKeys = {
   shipments: { byOrder: (orderId: string) => ['shipments', 'by-order', orderId] as const },
   returns: { all: ['returns'] as const, list: (p?: object) => ['returns', 'list', p] as const, detail: (id: string) => ['returns', 'detail', id] as const },
   refunds: { all: ['refunds'] as const, list: (p?: object) => ['refunds', 'list', p] as const, detail: (id: string) => ['refunds', 'detail', id] as const },
-  shippingMethods: { all: ['shipping-methods'] as const, list: (p?: object) => ['shipping-methods', 'list', p] as const },
 
   coupons: { all: ['coupons'] as const, list: (p?: object) => ['coupons', 'list', p] as const, detail: (id: string) => ['coupons', 'detail', id] as const },
   campaigns: { all: ['campaigns'] as const, list: (p?: object) => ['campaigns', 'list', p] as const, detail: (id: string) => ['campaigns', 'detail', id] as const },
   banners: { all: ['banners'] as const, list: (p?: object) => ['banners', 'list', p] as const, detail: (id: string) => ['banners', 'detail', id] as const },
+  pages: {
+    all: ['pages'] as const,
+    list: (p?: object) => ['pages', 'list', p] as const,
+    detail: (id: string) => ['pages', 'detail', id] as const,
+    // Under `pages` so a page mutation's blanket invalidation refreshes the
+    // published list the link pickers read.
+    published: ['pages', 'published'] as const,
+    reservedSlugs: ['pages', 'reserved-slugs'] as const,
+  },
 
   customers: { all: ['customers'] as const, list: (p?: object) => ['customers', 'list', p] as const, detail: (id: string) => ['customers', 'detail', id] as const },
-  staffUsers: { all: ['staff-users'] as const, list: (p?: object) => ['staff-users', 'list', p] as const },
+  staffUsers: { all: ['staff-users'] as const, list: (p?: object) => ['staff-users', 'list', p] as const, detail: (id: string) => ['staff-users', 'detail', id] as const },
   reviews: { all: ['reviews'] as const, list: (p?: object) => ['reviews', 'list', p] as const },
 
   supportTickets: { all: ['support-tickets'] as const, list: (p?: object) => ['support-tickets', 'list', p] as const, detail: (id: string) => ['support-tickets', 'detail', id] as const, messages: (id: string) => ['support-tickets', 'messages', id] as const },

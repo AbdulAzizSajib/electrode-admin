@@ -9,6 +9,29 @@
 import { useMutation } from '@tanstack/react-query'
 import { request } from '@/lib/api/request'
 
+export interface UploadedImage {
+  url: string
+}
+
+/**
+ * A single image, for a field whose record is not written as multipart.
+ *
+ * The store settings singleton is patched as JSON, so a logo cannot ride along
+ * with it the way a category's image rides along with the category — the file
+ * goes up first and the returned URL is what the PATCH carries.
+ */
+async function uploadImage(file: File): Promise<UploadedImage> {
+  const form = new FormData()
+  form.append('file', file)
+
+  const res = await request<UploadedImage>('/uploads/image', { method: 'POST', body: form })
+  return res.data
+}
+
+export function useUploadImage() {
+  return useMutation({ mutationFn: uploadImage })
+}
+
 export interface UploadedVideo {
   url: string
   /** Always present — the backend derives a frame when no poster is supplied. */

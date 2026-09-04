@@ -21,7 +21,6 @@ import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
 import { useOrder, useUpdateOrderStatus, type OrderStatus } from '@/lib/api/orders'
 import { usePaymentsByOrder, useRecordPayment, type PaymentMethod, type PaymentStatus } from '@/lib/api/payments'
 import { useShipmentByOrder, useUpsertShipment, type ShipmentStatus } from '@/lib/api/shipments'
-import { useShippingMethods } from '@/lib/api/shipping-methods'
 import { formatCurrency, formatDateTime } from '@/lib/utils/format'
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
@@ -59,7 +58,6 @@ const shipmentSchema = z.object({
   carrier: z.string().optional(),
   trackingNumber: z.string().optional(),
   status: z.enum(['PENDING', 'PROCESSING', 'SHIPPED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED', 'RETURNED']),
-  shippingMethodId: z.string().optional(),
 })
 type ShipmentValues = z.infer<typeof shipmentSchema>
 
@@ -75,7 +73,6 @@ export default function OrderDetailPage() {
   const { data: order, isLoading } = useOrder(orderId)
   const { data: payments } = usePaymentsByOrder(orderId)
   const { data: shipment } = useShipmentByOrder(orderId)
-  const { data: shippingMethodsData } = useShippingMethods()
   const updateStatus = useUpdateOrderStatus()
   const recordPayment = useRecordPayment()
   const upsertShipment = useUpsertShipment()
@@ -101,7 +98,6 @@ export default function OrderDetailPage() {
       carrier: shipment?.carrier ?? '',
       trackingNumber: shipment?.trackingNumber ?? '',
       status: shipment?.status ?? 'PENDING',
-      shippingMethodId: shipment?.shippingMethodId ?? '',
     },
   })
 
@@ -151,7 +147,6 @@ export default function OrderDetailPage() {
           carrier: values.carrier || undefined,
           trackingNumber: values.trackingNumber || undefined,
           status: values.status,
-          shippingMethodId: values.shippingMethodId || undefined,
         },
         hasExisting: !!shipment,
       })
@@ -275,7 +270,6 @@ export default function OrderDetailPage() {
                   <Row label="Carrier" value={shipment.carrier ?? '—'} />
                   <Row label="Tracking #" value={shipment.trackingNumber ?? '—'} />
                   <Row label="Status" value={shipment.status.replace(/_/g, ' ')} />
-                  {shipment.shippingMethod && <Row label="Method" value={shipment.shippingMethod.name} />}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No shipment created yet.</p>
@@ -414,18 +408,6 @@ export default function OrderDetailPage() {
           <DialogHeader><DialogTitle>{shipment ? 'Update shipment' : 'Create shipment'}</DialogTitle></DialogHeader>
           <Form {...shipmentForm}>
             <form onSubmit={shipmentForm.handleSubmit(submitShipment)} className="flex flex-col gap-3.5">
-              <FormField control={shipmentForm.control} name="shippingMethodId" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Shipping method (optional)</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="None" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      {shippingMethodsData?.data.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )} />
               <FormField control={shipmentForm.control} name="carrier" render={({ field }) => (
                 <FormItem><FormLabel>Carrier</FormLabel><FormControl><Input placeholder="e.g. UPS" {...field} /></FormControl><FormMessage /></FormItem>
               )} />

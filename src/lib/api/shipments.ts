@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/lib/api/client'
 import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
-import type { ShippingMethod } from '@/lib/api/shipping-methods'
 
 export type ShipmentStatus =
   | 'PENDING'
@@ -18,8 +17,6 @@ export type ShipmentStatus =
 export interface Shipment {
   id: string
   orderId: string
-  shippingMethodId: string | null
-  shippingMethod: ShippingMethod | null
   trackingNumber: string | null
   carrier: string | null
   status: ShipmentStatus
@@ -30,7 +27,6 @@ export interface Shipment {
 }
 
 export interface ShipmentInput {
-  shippingMethodId?: string
   trackingNumber?: string
   carrier?: string
   status?: ShipmentStatus

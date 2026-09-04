@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { useNavigate } from 'react-router'
 import type { ColumnDef } from '@tanstack/react-table'
 import { MoreHorizontal, Pencil, Plus, Trash2, Tag, ListPlus } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
@@ -10,17 +11,15 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
 import { useBrands, useDeleteBrand, type Brand } from '@/lib/api/brands'
-import { BrandCreateModal, BrandEditModal, BrandBulkCreateModal } from '@/features/catalog/brands/brand-form-modal'
 import { formatDate, initials } from '@/lib/utils/format'
 
+export const BRANDS_PATH = '/catalog/brands'
+
 export default function BrandsPage() {
+  const navigate = useNavigate()
   const [search, setSearch] = React.useState('')
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
-  const [createOpen, setCreateOpen] = React.useState(false)
-  const [bulkOpen, setBulkOpen] = React.useState(false)
-  const [editOpen, setEditOpen] = React.useState(false)
-  const [editing, setEditing] = React.useState<Brand | null>(null)
 
   const { data, isLoading, isError, refetch } = useBrands({ search, page, limit: pageSize })
   const deleteMutation = useDeleteBrand()
@@ -59,12 +58,7 @@ export default function BrandsPage() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={() => {
-                setEditing(row.original)
-                setEditOpen(true)
-              }}
-            >
+            <DropdownMenuItem onClick={() => navigate(`${BRANDS_PATH}/${row.original.id}`)}>
               <Pencil /> Edit
             </DropdownMenuItem>
             <DropdownMenuItem
@@ -95,10 +89,10 @@ export default function BrandsPage() {
         description="Manage the brands carried in your store."
         actions={
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
+            <Button size="sm" variant="outline" onClick={() => navigate(`${BRANDS_PATH}/bulk`)}>
               <ListPlus /> Bulk add
             </Button>
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Button size="sm" onClick={() => navigate(`${BRANDS_PATH}/new`)}>
               <Plus /> New brand
             </Button>
           </div>
@@ -127,10 +121,6 @@ export default function BrandsPage() {
           setPage(1)
         }}
       />
-
-      <BrandCreateModal open={createOpen} onOpenChange={setCreateOpen} />
-      <BrandBulkCreateModal open={bulkOpen} onOpenChange={setBulkOpen} />
-      <BrandEditModal open={editOpen} onOpenChange={setEditOpen} brand={editing} />
 
       <ConfirmDialog
         open={confirmDialog.open}

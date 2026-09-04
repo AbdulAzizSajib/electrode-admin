@@ -1,23 +1,20 @@
 import * as React from 'react'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { useForm } from 'react-hook-form'
-import { z } from 'zod'
+import { useNavigate } from 'react-router'
 import type { ColumnDef } from '@tanstack/react-table'
 import { MoreHorizontal, Pencil, UserCog } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { DataTable } from '@/components/ui/data-table'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { toast } from '@/components/ui/use-toast'
 import { useSessionStore } from '@/lib/store/session-store'
-import { useStaffUsers, useUpdateStaffUser, type StaffUserPatch, type StaffUserRow } from '@/lib/api/staff-users'
+import { useStaffUsers, type StaffUserRow } from '@/lib/api/staff-users'
 import { useRoles } from '@/lib/api/roles'
 import { USER_STATUSES, type UserStatus } from '@/lib/api/users'
 import { formatDate, formatDateTime } from '@/lib/utils/format'
+
+export const STAFF_USERS_PATH = '/settings/staff'
 
 const STATUS_VARIANT: Record<UserStatus, 'success' | 'secondary' | 'destructive'> = {
   ACTIVE: 'success',
@@ -25,15 +22,9 @@ const STATUS_VARIANT: Record<UserStatus, 'success' | 'secondary' | 'destructive'
   SUSPENDED: 'destructive',
 }
 
-const schema = z.object({
-  roleId: z.string().min(1, 'Role is required'),
-  status: z.enum(USER_STATUSES),
-})
-type Values = z.infer<typeof schema>
-
 export default function StaffUsersPage() {
+  const navigate = useNavigate()
   const [search, setSearch] = React.useState('')
-  const [editing, setEditing] = React.useState<StaffUserRow | null>(null)
   const [roleFilter, setRoleFilter] = React.useState('all')
   const [statusFilter, setStatusFilter] = React.useState<'all' | UserStatus>('all')
   const [page, setPage] = React.useState(1)
@@ -55,32 +46,8 @@ export default function StaffUsersPage() {
   // `/roles` is OWNER-only, so a non-OWNER skips the request entirely rather than firing one that
   // would come back 403; their role picker is disabled anyway.
   const { data: rolesData } = useRoles({}, { enabled: canChangeRole })
-  const updateMutation = useUpdateStaffUser()
 
   const roles = rolesData?.data ?? []
-
-  const form = useForm<Values>({
-    resolver: zodResolver(schema),
-    values: { roleId: editing?.roleId ?? '', status: editing?.status ?? 'ACTIVE' },
-  })
-
-  const onSubmit = async (values: Values) => {
-    if (!editing) return
-    const patch: StaffUserPatch = { status: values.status }
-    // Only send roleId when it actually changed — an unchanged value would still trip the
-    // backend's OWNER-only check for an ADMIN editing someone's status.
-    if (canChangeRole && values.roleId !== editing.roleId) {
-      patch.roleId = values.roleId
-    }
-
-    try {
-      await updateMutation.mutateAsync({ id: editing.id, patch })
-      toast({ title: 'User updated' })
-      setEditing(null)
-    } catch (err) {
-      toast({ title: 'Something went wrong', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
-    }
-  }
 
   const columns: ColumnDef<StaffUserRow>[] = [
     {
@@ -117,7 +84,7 @@ export default function StaffUsersPage() {
             <Button variant="ghost" size="icon" className="size-7"><MoreHorizontal className="size-4" /></Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setEditing(row.original)}>
+            <DropdownMenuItem onClick={() => navigate(`${STAFF_USERS_PATH}/${row.original.id}`)}>
               <Pencil /> Edit role &amp; status
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -166,45 +133,6 @@ export default function StaffUsersPage() {
         onPageChange={setPage}
         onPageSizeChange={(size) => { setPageSize(size); setPage(1) }}
       />
-
-      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Edit {editing?.name}</DialogTitle></DialogHeader>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3.5">
-              <FormField control={form.control} name="roleId" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Role</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange} disabled={!canChangeRole}>
-                    <FormControl><SelectTrigger><SelectValue placeholder={editing?.role.name} /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      {roles.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  {!canChangeRole && <FormDescription>Only an owner can change a user's role.</FormDescription>}
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="status" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Status</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      {USER_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
-                <Button type="submit" loading={form.formState.isSubmitting}>Save changes</Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

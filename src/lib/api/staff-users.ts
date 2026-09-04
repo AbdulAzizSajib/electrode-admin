@@ -43,6 +43,11 @@ async function listStaffUsers(params: StaffUserListParams = {}): Promise<Paginat
   }
 }
 
+async function getStaffUser(id: string): Promise<StaffUserRow> {
+  const res = await request<StaffUserRow>(`/users/${id}`)
+  return res.data
+}
+
 async function updateStaffUser(id: string, patch: StaffUserPatch): Promise<StaffUserRow> {
   const res = await request<StaffUserRow>(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
   return res.data
@@ -50,6 +55,15 @@ async function updateStaffUser(id: string, patch: StaffUserPatch): Promise<Staff
 
 export function useStaffUsers(params: StaffUserListParams = {}) {
   return useQuery({ queryKey: queryKeys.staffUsers.list(params), queryFn: () => listStaffUsers(params) })
+}
+
+/** Reads one staff user by id — what the edit page needs when it is opened by URL. */
+export function useStaffUser(id: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.staffUsers.detail(id ?? ''),
+    queryFn: () => getStaffUser(id!),
+    enabled: Boolean(id),
+  })
 }
 
 export function useUpdateStaffUser() {

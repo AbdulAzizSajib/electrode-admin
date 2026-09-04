@@ -1,19 +1,21 @@
 import * as React from 'react'
 import { useNavigate } from 'react-router'
-import { Alert, Form, type FormInstance } from 'antd'
-import { ArrowLeft, Loader2 } from 'lucide-react'
-import { PageHeader } from '@/components/ui/page-header'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Form, type FormInstance } from 'antd'
+import { ResourceFormLayout } from '@/components/crud/resource-form-layout'
 import { toast } from '@/components/ui/use-toast'
 
 /**
- * The form half of the shared CRUD scaffolding.
+ * The form half of the shared CRUD scaffolding, for the antd-based pages.
  *
- * Owns everything the nine catalogue forms would otherwise each reinvent:
- * loading the record, blocking until it arrives, submitting, deciding where the
+ * Owns everything the catalogue forms would otherwise each reinvent: loading
+ * the record, blocking until it arrives, submitting, deciding where the
  * merchant lands afterwards, and putting the failure somewhere they will
  * actually read it. A page supplies its fields and its two callbacks.
+ *
+ * The page around the form — header, buttons, error slot, load states — lives
+ * in `ResourceFormLayout`, shared with `ResourceFormPageRHF` so the panel's two
+ * form stacks present one authoring page. What remains here is the antd `Form`
+ * binding and the save semantics.
  *
  * Error placement is the part most worth centralising. A rejected save must
  * leave everything the merchant typed on the page — antd's `Form` holds the
@@ -87,15 +89,22 @@ export function ResourceFormPage<TValues extends object, TRecord>({
   // Fill the form once the record arrives. Keyed on the record itself so
   // switching between two records re-syncs, and so a save that returns fresh
   // server values (a generated slug, say) is reflected back.
+  //
+  // The `recordId` branch is the same hazard in the other direction: `/:id` and
+  // `/new` are one component by design, so going straight from an edit URL to
+  // the create URL leaves this mounted with the edited record still in the
+  // fields. `resetFields` restores `initialValues`, which is `emptyValues`.
   React.useEffect(() => {
     if (record) {
       form.resetFields()
       form.setFieldsValue(toValues(record))
+    } else if (!recordId) {
+      form.resetFields()
     }
     // `toValues` is defined inline by every caller and would re-run this on
     // every render if depended on; the record is what actually changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [record, form])
+  }, [record, recordId, form])
 
   const handleFinish = async (values: TValues) => {
     setSaving(true)
@@ -129,76 +138,32 @@ export function ResourceFormPage<TValues extends object, TRecord>({
     form.submit()
   }
 
-  if (isEdit && isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20 text-muted-foreground">
-        <Loader2 className="size-5 animate-spin" />
-      </div>
-    )
-  }
-
-  if (isEdit && loadError) {
-    return (
-      <div className="flex flex-col gap-4">
-        <PageHeader title={`Edit ${noun.toLowerCase()}`} />
-        <Alert
-          type="error"
-          showIcon
-          message={`Could not load this ${noun.toLowerCase()}`}
-          description={loadError instanceof Error ? loadError.message : undefined}
-        />
-        <div>
-          <Button variant="outline" onClick={() => navigate(listPath)}>
-            <ArrowLeft /> Back to list
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="flex flex-col gap-4">
-      <PageHeader
-        title={title ?? `${isEdit ? 'Edit' : 'New'} ${noun.toLowerCase()}`}
-        description={description}
-        actions={
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={() => navigate(listPath)} disabled={saving}>
-              Cancel
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => submit(false)} loading={saving}>
-              Save and continue editing
-            </Button>
-            <Button size="sm" onClick={() => submit(true)} loading={saving}>
-              Save and return
-            </Button>
-          </div>
+    <ResourceFormLayout
+      noun={noun}
+      listPath={listPath}
+      isEdit={isEdit}
+      saving={saving}
+      error={error}
+      onDismissError={() => setError(null)}
+      onSubmit={submit}
+      isLoading={isLoading}
+      loadError={loadError}
+      title={title}
+      description={description}
+      footer={footer}
+    >
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={emptyValues}
+        onFinish={handleFinish}
+        onFinishFailed={() =>
+          setError('Some fields need attention. The problems are marked below.')
         }
-      />
-
-      <Card>
-        <CardContent className="pt-6">
-          {/* Above the fields, so the reason a save was rejected is the first
-              thing in view when the page stops scrolling. */}
-          {error && (
-            <Alert type="error" showIcon message={error} className="mb-4" closable onClose={() => setError(null)} />
-          )}
-
-          <Form
-            form={form}
-            layout="vertical"
-            initialValues={emptyValues}
-            onFinish={handleFinish}
-            onFinishFailed={() =>
-              setError('Some fields need attention. The problems are marked below.')
-            }
-          >
-            {children(form)}
-          </Form>
-        </CardContent>
-      </Card>
-
-      {footer}
-    </div>
+      >
+        {children(form)}
+      </Form>
+    </ResourceFormLayout>
   )
 }

@@ -51,6 +51,11 @@ async function listSuppliers(params: SupplierListParams = {}): Promise<Paginated
   }
 }
 
+async function getSupplier(id: string): Promise<Supplier> {
+  const res = await request<Supplier>(`/suppliers/${id}`)
+  return res.data
+}
+
 async function createSupplier(input: SupplierInput): Promise<Supplier> {
   const res = await request<Supplier>('/suppliers', { method: 'POST', body: JSON.stringify(input) })
   return res.data
@@ -67,6 +72,15 @@ async function deleteSupplier(id: string): Promise<void> {
 
 export function useSuppliers(params: SupplierListParams = {}) {
   return useQuery({ queryKey: queryKeys.suppliers.list(params), queryFn: () => listSuppliers(params) })
+}
+
+/** Reads one supplier by id — what the edit page needs when it is opened by URL. */
+export function useSupplier(id: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.suppliers.detail(id ?? ''),
+    queryFn: () => getSupplier(id!),
+    enabled: Boolean(id),
+  })
 }
 
 export function useCreateSupplier() {

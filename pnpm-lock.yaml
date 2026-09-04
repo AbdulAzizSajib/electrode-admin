@@ -56,6 +56,9 @@ importers:
       '@tanstack/react-table':
         specifier: ^8.21.3
         version: 8.21.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@tiptap/extension-image':
+        specifier: 3.31.1
+        version: 3.31.1(@tiptap/core@3.31.1(@tiptap/pm@3.31.1))
       '@tiptap/extension-link':
         specifier: 3.31.1
         version: 3.31.1(@tiptap/core@3.31.1(@tiptap/pm@3.31.1))(@tiptap/pm@3.31.1)
@@ -1538,6 +1541,11 @@ packages:
     peerDependencies:
       '@tiptap/core': 3.31.1
       '@tiptap/pm': 3.31.1
+
+  '@tiptap/extension-image@3.31.1':
+    resolution: {integrity: sha512-p0dWZVEKUoAghy7RUqN97rBgARUN+dWeYXfOwAQS1tAxnOBW2DXE/+3/S1sWoHxi3+8KYR0vX+025A4DJ9NQ+w==}
+    peerDependencies:
+      '@tiptap/core': 3.31.1
 
   '@tiptap/extension-italic@3.31.1':
     resolution: {integrity: sha512-5RT48b/5Fwkd4L2vzNXFqpXytK8/TypvxY9UNRP5X8OhnyPrHeTy61mgHoUyCfC9zxo4v82oou5rDyh5L5L4TA==}
@@ -4224,6 +4232,10 @@ snapshots:
     dependencies:
       '@tiptap/core': 3.31.1(@tiptap/pm@3.31.1)
       '@tiptap/pm': 3.31.1
+
+  '@tiptap/extension-image@3.31.1(@tiptap/core@3.31.1(@tiptap/pm@3.31.1))':
+    dependencies:
+      '@tiptap/core': 3.31.1(@tiptap/pm@3.31.1)
 
   '@tiptap/extension-italic@3.31.1(@tiptap/core@3.31.1(@tiptap/pm@3.31.1))':
     dependencies:

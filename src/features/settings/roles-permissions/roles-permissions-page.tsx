@@ -1,41 +1,38 @@
 import * as React from 'react'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { useForm } from 'react-hook-form'
-import { z } from 'zod'
-import { Plus, ShieldCheck, Trash2 } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router'
+import { Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
 import { toast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils/cn'
 import { usePermissions } from '@/lib/api/permissions'
-import { useCreateRole, useDeleteRole, useGrantPermission, useRevokePermission, useRoles } from '@/lib/api/roles'
+import { useDeleteRole, useGrantPermission, useRevokePermission, useRoles } from '@/lib/api/roles'
 
-const schema = z.object({
-  name: z.string().trim().min(1, 'Name is required'),
-  description: z.string().trim(),
-})
-type Values = z.infer<typeof schema>
+export const ROLES_PATH = '/settings/roles'
 
 export default function RolesPermissionsPage() {
+  const navigate = useNavigate()
   const { data: rolesData, isLoading, error } = useRoles()
   const { data: permissionsData } = usePermissions()
-  const createMutation = useCreateRole()
   const deleteMutation = useDeleteRole()
   const grantMutation = useGrantPermission()
   const revokeMutation = useRevokePermission()
   const confirmDialog = useConfirmDialog()
 
-  const [selectedId, setSelectedId] = React.useState<string | null>(null)
-  const [sheetOpen, setSheetOpen] = React.useState(false)
+  /**
+   * Which role is selected lives in the URL, not in state: leaving to edit a
+   * role and coming back should return to that role rather than to whichever one
+   * sorts first, and a link to a specific role's permissions should open on it.
+   */
+  const [searchParams, setSearchParams] = useSearchParams()
+  const selectedId = searchParams.get('role')
+  const selectRole = (id: string | null) =>
+    setSearchParams(id ? { role: id } : {}, { replace: true })
 
   const roles = rolesData?.data ?? []
   const permissions = permissionsData?.data ?? []
@@ -46,23 +43,6 @@ export default function RolesPermissionsPage() {
     () => new Set(selected?.permissions.map((rp) => rp.permissionId) ?? []),
     [selected],
   )
-
-  const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { name: '', description: '' } })
-
-  const onSubmit = async (values: Values) => {
-    try {
-      const created = await createMutation.mutateAsync({
-        name: values.name,
-        ...(values.description ? { description: values.description } : {}),
-      })
-      toast({ title: 'Role created' })
-      setSheetOpen(false)
-      form.reset()
-      setSelectedId(created.id)
-    } catch (err) {
-      toast({ title: 'Something went wrong', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
-    }
-  }
 
   /**
    * Grant and revoke are distinct endpoints, and each returns the refreshed role — so the checkbox
@@ -113,7 +93,7 @@ export default function RolesPermissionsPage() {
         title="Roles & Permissions"
         description="Define what each role can access."
         actions={
-          <Button size="sm" onClick={() => setSheetOpen(true)}>
+          <Button size="sm" onClick={() => navigate(`${ROLES_PATH}/new`)}>
             <Plus /> New role
           </Button>
         }
@@ -126,7 +106,7 @@ export default function RolesPermissionsPage() {
             {roles.map((role) => (
               <button
                 key={role.id}
-                onClick={() => setSelectedId(role.id)}
+                onClick={() => selectRole(role.id)}
                 className={cn(
                   'flex flex-col gap-0.5 rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted',
                   selected?.id === role.id && 'bg-muted',
@@ -153,23 +133,32 @@ export default function RolesPermissionsPage() {
                     {selected.description ?? 'No description'}
                   </p>
                 </div>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() =>
-                    confirmDialog.confirm(async () => {
-                      try {
-                        await deleteMutation.mutateAsync(selected.id)
-                        toast({ title: 'Role deleted' })
-                        setSelectedId(null)
-                      } catch (err) {
-                        toast({ title: 'Could not delete role', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
-                      }
-                    })
-                  }
-                >
-                  <Trash2 /> Delete role
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate(`${ROLES_PATH}/${selected.id}`)}
+                  >
+                    <Pencil /> Edit
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() =>
+                      confirmDialog.confirm(async () => {
+                        try {
+                          await deleteMutation.mutateAsync(selected.id)
+                          toast({ title: 'Role deleted' })
+                          selectRole(null)
+                        } catch (err) {
+                          toast({ title: 'Could not delete role', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
+                        }
+                      })
+                    }
+                  >
+                    <Trash2 /> Delete role
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {permissions.length === 0 ? (
@@ -199,26 +188,6 @@ export default function RolesPermissionsPage() {
           )}
         </Card>
       </div>
-
-      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent>
-          <SheetHeader><SheetTitle>New role</SheetTitle></SheetHeader>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-1 flex-col gap-3.5 overflow-y-auto">
-              <FormField control={form.control} name="name" render={({ field }) => (
-                <FormItem><FormLabel>Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={form.control} name="description" render={({ field }) => (
-                <FormItem><FormLabel>Description</FormLabel><FormControl><Textarea rows={3} {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <SheetFooter>
-                <Button type="button" variant="outline" onClick={() => setSheetOpen(false)}>Cancel</Button>
-                <Button type="submit" loading={form.formState.isSubmitting}>Create role</Button>
-              </SheetFooter>
-            </form>
-          </Form>
-        </SheetContent>
-      </Sheet>
 
       <ConfirmDialog
         open={confirmDialog.open}

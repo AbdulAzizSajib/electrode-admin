@@ -25,7 +25,6 @@ import {
   ReceiptText,
   Undo2,
   Banknote,
-  Truck,
   Target,
   Image as ImageIcon,
   Contact,
@@ -35,6 +34,12 @@ import {
   ShieldCheck,
   UserCog,
   ScrollText,
+  Palette,
+  FileText,
+  GalleryHorizontal,
+  PanelTop,
+  PanelBottom,
+  Globe,
   type LucideIcon,
 } from 'lucide-react'
 import type { AdminRole } from '@/lib/store/session-store'
@@ -104,17 +109,36 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Orders', path: '/sales/orders', icon: ReceiptText },
       { label: 'Returns', path: '/sales/returns', icon: Undo2 },
       { label: 'Refunds', path: '/sales/refunds', icon: Banknote },
-      { label: 'Shipping Methods', path: '/sales/shipping-methods', icon: Truck },
     ],
   },
   {
     label: 'Marketing',
     icon: Megaphone,
     // Vouchers moved up into Catalog to match the reference's Product menu;
-    // they are not listed twice.
+    // they are not listed twice. Banners moved out to UI below — a banner is
+    // storefront chrome a merchant arranges, not a campaign they run.
+    items: [{ label: 'Campaigns', path: '/marketing/campaigns', icon: Target }],
+  },
+  {
+    /*
+     * Everything the shopper sees but a developer used to control: content
+     * pages, the homepage hero, the remaining banner placements, and the header
+     * and footer chrome. Grouped by WHERE it lands on the storefront rather
+     * than by which endpoint it happens to write to — Pages hits /pages, the
+     * two banner surfaces hit /banners, and both link editors patch /settings,
+     * but a merchant arranging their site does not care which.
+     */
+    label: 'UI',
+    icon: Palette,
+    roles: ['OWNER', 'ADMIN'],
     items: [
-      { label: 'Campaigns', path: '/marketing/campaigns', icon: Target },
-      { label: 'Banners', path: '/marketing/banners', icon: ImageIcon },
+      { label: 'Pages', path: '/ui/pages', icon: FileText },
+      { label: 'Home Slider', path: '/ui/home-slider', icon: GalleryHorizontal },
+      { label: 'Banners', path: '/ui/banners', icon: ImageIcon },
+      { label: 'Header Links', path: '/ui/header-links', icon: PanelTop },
+      { label: 'Footer Links', path: '/ui/footer-links', icon: PanelBottom },
+      { label: 'Checkout Setting', path: '/ui/checkout-settings', icon: ShoppingCart },
+      { label: 'Site Setting', path: '/ui/site-settings', icon: Globe },
     ],
   },
   {

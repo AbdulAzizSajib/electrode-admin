@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { useNavigate } from 'react-router'
 import type { ColumnDef } from '@tanstack/react-table'
 import { MoreHorizontal, Pencil, Plus, Trash2, FolderTree, CornerDownRight } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
@@ -12,21 +13,19 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/use-toast'
 import { useCategories, useCategoryTree, useDeleteCategory, type Category } from '@/lib/api/categories'
-import { CategoryCreateModal, CategoryEditModal } from '@/features/catalog/categories/category-form-modal'
 import { CategoryTreeNode } from '@/features/catalog/categories/category-tree-node'
 import { formatDate } from '@/lib/utils/format'
+
+export const CATEGORIES_PATH = '/catalog/categories'
 
 type CategoriesView = 'list' | 'tree'
 
 export default function CategoriesPage() {
+  const navigate = useNavigate()
   const [view, setView] = React.useState<CategoriesView>('list')
   const [search, setSearch] = React.useState('')
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
-  const [createOpen, setCreateOpen] = React.useState(false)
-  const [editOpen, setEditOpen] = React.useState(false)
-  const [editing, setEditing] = React.useState<Category | null>(null)
-  const [defaultParentId, setDefaultParentId] = React.useState<string | null>(null)
 
   const { data, isLoading, isError, refetch } = useCategories({ search })
   const treeQuery = useCategoryTree()
@@ -108,12 +107,7 @@ export default function CategoriesPage() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={() => {
-                setEditing(row.original)
-                setEditOpen(true)
-              }}
-            >
+            <DropdownMenuItem onClick={() => navigate(`${CATEGORIES_PATH}/${row.original.id}`)}>
               <Pencil /> Edit
             </DropdownMenuItem>
             <DropdownMenuItem variant="destructive" onClick={() => handleDelete(row.original)}>
@@ -131,13 +125,7 @@ export default function CategoriesPage() {
         title="Categories"
         description="Organize your catalog into browsable categories."
         actions={
-          <Button
-            size="sm"
-            onClick={() => {
-              setDefaultParentId(null)
-              setCreateOpen(true)
-            }}
-          >
+          <Button size="sm" onClick={() => navigate(`${CATEGORIES_PATH}/new`)}>
             <Plus /> New category
           </Button>
         }
@@ -198,22 +186,15 @@ export default function CategoriesPage() {
               key={root.id}
               category={root}
               depth={0}
-              onEdit={(cat) => {
-                setEditing(cat)
-                setEditOpen(true)
-              }}
-              onAddChild={(parent) => {
-                setDefaultParentId(parent.id)
-                setCreateOpen(true)
-              }}
+              onEdit={(cat) => navigate(`${CATEGORIES_PATH}/${cat.id}`)}
+              // The chosen parent rides in the URL, so reloading the create page
+              // or sharing the link still opens under the same parent.
+              onAddChild={(parent) => navigate(`${CATEGORIES_PATH}/new?parentId=${parent.id}`)}
               onDelete={handleDelete}
             />
           ))}
         </div>
       )}
-
-      <CategoryCreateModal open={createOpen} onOpenChange={setCreateOpen} categoryTree={treeQuery.data ?? []} defaultParentId={defaultParentId} />
-      <CategoryEditModal open={editOpen} onOpenChange={setEditOpen} category={editing} categoryTree={treeQuery.data ?? []} />
 
       <ConfirmDialog
         open={confirmDialog.open}

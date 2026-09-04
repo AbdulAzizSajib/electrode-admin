@@ -1,71 +1,27 @@
 import * as React from 'react'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { useForm } from 'react-hook-form'
-import { z } from 'zod'
+import { useNavigate } from 'react-router'
 import type { ColumnDef } from '@tanstack/react-table'
 import { MoreHorizontal, Pencil, Plus, Trash2, Truck } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import { DataTable } from '@/components/ui/data-table'
-import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Switch } from '@/components/ui/switch'
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
-import { useSuppliers, useCreateSupplier, useUpdateSupplier, useDeleteSupplier, type Supplier } from '@/lib/api/suppliers'
+import { useSuppliers, useDeleteSupplier, type Supplier } from '@/lib/api/suppliers'
 
-const schema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  companyName: z.string().optional(),
-  email: z.string().min(1, 'Email is required').email('Enter a valid email'),
-  phone: z.string().min(1, 'Phone is required'),
-  address: z.string().min(1, 'Address is required'),
-  isActive: z.boolean(),
-})
-type Values = z.infer<typeof schema>
+export const SUPPLIERS_PATH = '/inventory/suppliers'
 
 export default function SuppliersPage() {
+  const navigate = useNavigate()
   const [search, setSearch] = React.useState('')
-  const [sheetOpen, setSheetOpen] = React.useState(false)
-  const [editing, setEditing] = React.useState<Supplier | null>(null)
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
 
   const { data, isLoading, isError, refetch } = useSuppliers({ search })
-  const createMutation = useCreateSupplier()
-  const updateMutation = useUpdateSupplier()
   const deleteMutation = useDeleteSupplier()
   const confirmDialog = useConfirmDialog()
-
-  const form = useForm<Values>({
-    resolver: zodResolver(schema),
-    values: {
-      name: editing?.name ?? '',
-      companyName: editing?.companyName ?? '',
-      email: editing?.email ?? '',
-      phone: editing?.phone ?? '',
-      address: editing?.address ?? '',
-      isActive: editing?.isActive ?? true,
-    },
-  })
-
-  const onSubmit = async (values: Values) => {
-    try {
-      if (editing) {
-        await updateMutation.mutateAsync({ id: editing.id, input: values })
-        toast({ title: 'Supplier updated' })
-      } else {
-        await createMutation.mutateAsync(values)
-        toast({ title: 'Supplier created' })
-      }
-      setSheetOpen(false)
-    } catch (err) {
-      toast({ title: 'Something went wrong', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
-    }
-  }
 
   const all = React.useMemo(() => data?.data ?? [], [data])
   const filteredPage = React.useMemo(() => all.slice((page - 1) * pageSize, page * pageSize), [all, page, pageSize])
@@ -87,7 +43,7 @@ export default function SuppliersPage() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => { setEditing(row.original); setSheetOpen(true) }}>
+            <DropdownMenuItem onClick={() => navigate(`${SUPPLIERS_PATH}/${row.original.id}`)}>
               <Pencil /> Edit
             </DropdownMenuItem>
             <DropdownMenuItem
@@ -117,7 +73,7 @@ export default function SuppliersPage() {
         title="Suppliers"
         description="Vendors you purchase inventory from."
         actions={
-          <Button size="sm" onClick={() => { setEditing(null); setSheetOpen(true) }}>
+          <Button size="sm" onClick={() => navigate(`${SUPPLIERS_PATH}/new`)}>
             <Plus /> New supplier
           </Button>
         }
@@ -139,43 +95,6 @@ export default function SuppliersPage() {
         onPageChange={setPage}
         onPageSizeChange={(size) => { setPageSize(size); setPage(1) }}
       />
-
-      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent>
-          <SheetHeader>
-            <SheetTitle>{editing ? 'Edit supplier' : 'New supplier'}</SheetTitle>
-          </SheetHeader>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-1 flex-col gap-3.5 overflow-y-auto">
-              <FormField control={form.control} name="name" render={({ field }) => (
-                <FormItem><FormLabel>Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={form.control} name="companyName" render={({ field }) => (
-                <FormItem><FormLabel>Company name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={form.control} name="email" render={({ field }) => (
-                <FormItem><FormLabel>Email</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={form.control} name="phone" render={({ field }) => (
-                <FormItem><FormLabel>Phone</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={form.control} name="address" render={({ field }) => (
-                <FormItem><FormLabel>Address</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={form.control} name="isActive" render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between gap-2">
-                  <FormLabel className="text-sm font-normal text-foreground">Active</FormLabel>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                </FormItem>
-              )} />
-              <SheetFooter>
-                <Button type="button" variant="outline" onClick={() => setSheetOpen(false)}>Cancel</Button>
-                <Button type="submit" loading={form.formState.isSubmitting}>{editing ? 'Save changes' : 'Create supplier'}</Button>
-              </SheetFooter>
-            </form>
-          </Form>
-        </SheetContent>
-      </Sheet>
 
       <ConfirmDialog
         open={confirmDialog.open}
