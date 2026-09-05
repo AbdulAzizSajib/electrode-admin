@@ -19,6 +19,7 @@ import {
   formatRatio,
   formatSize,
   readImageDimensions,
+  renderedSize,
   MOBILE_ARTWORK,
   type DimensionWarning,
   type HeroSlot,
@@ -49,6 +50,13 @@ interface SlotEditorDialogProps {
   slot: HeroSlot
   /** The banner being edited, or null when filling an empty slot. */
   banner: Banner | null
+  /**
+   * The store's configured content width, for the "renders at" figure. The
+   * recommended upload size does not depend on it — the slot's shape is fixed —
+   * but what the visitor actually sees does, and that is the number a merchant
+   * is comparing their artwork against.
+   */
+  contentWidth: number | 'full'
   open: boolean
   onOpenChange: (open: boolean) => void
   /** Applied to a newly created banner so it lands in the position the merchant clicked. */
@@ -60,6 +68,7 @@ type LinkMode = 'url' | 'product'
 export function SlotEditorDialog({
   slot,
   banner,
+  contentWidth,
   open,
   onOpenChange,
   nextSortOrder = 0,
@@ -161,7 +170,8 @@ export function SlotEditorDialog({
               {' · '}
               {formatRatio(slot.recommended)}
               {' · renders at '}
-              {formatSize(slot.rendered)}
+              {formatSize(renderedSize(slot.placement, contentWidth))}
+              {contentWidth === 'full' ? ' on a 1920px screen' : ` at your ${contentWidth}px content width`}
             </p>
             <SingleImageField
               value={imageFile}

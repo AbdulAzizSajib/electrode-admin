@@ -25,10 +25,15 @@ const STATUS_VARIANT: Record<PurchaseOrderStatus, 'secondary' | 'info' | 'warnin
   CANCELLED: 'destructive',
 }
 
+/** Computed server-side from SupplierPayment rows — never stored, so it cannot drift from the payments it describes. */
+const SETTLEMENT_LABEL = { UNPAID: 'Unpaid', PARTIALLY_PAID: 'Part paid', SETTLED: 'Settled' } as const
+const SETTLEMENT_VARIANT = { UNPAID: 'destructive', PARTIALLY_PAID: 'warning', SETTLED: 'success' } as const
+
 export default function PurchaseOrdersListPage() {
   const navigate = useNavigate()
   const [search, setSearch] = React.useState('')
   const [status, setStatus] = React.useState('all')
+  const [owingOnly, setOwingOnly] = React.useState(false)
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
 
@@ -37,6 +42,7 @@ export default function PurchaseOrdersListPage() {
     page,
     limit: pageSize,
     status: status === 'all' ? undefined : (status as PurchaseOrderStatus),
+    hasBalance: owingOnly || undefined,
   })
 
   const columns: ColumnDef<PurchaseOrder>[] = [
@@ -44,6 +50,24 @@ export default function PurchaseOrdersListPage() {
     { id: 'supplier', header: 'Supplier', cell: ({ row }) => row.original.supplier.name },
     { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={STATUS_VARIANT[row.original.status]}>{STATUS_LABEL[row.original.status]}</Badge> },
     { id: 'total', header: 'Total', cell: ({ row }) => formatCurrency(Number(row.original.totalAmount)) },
+    {
+      id: 'settlement',
+      header: 'Payment',
+      // On the list so unsettled purchases are findable without opening each
+      // one (`inventory/supplier-payments`).
+      cell: ({ row }) => (
+        <span className="flex items-center gap-1.5">
+          <Badge variant={SETTLEMENT_VARIANT[row.original.settlementState]}>
+            {SETTLEMENT_LABEL[row.original.settlementState]}
+          </Badge>
+          {row.original.balanceDue > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {formatCurrency(row.original.balanceDue)} due
+            </span>
+          )}
+        </span>
+      ),
+    },
     { accessorKey: 'createdAt', header: 'Created', cell: ({ row }) => formatDate(row.original.createdAt) },
   ]
 
@@ -71,17 +95,27 @@ export default function PurchaseOrdersListPage() {
         onRowClick={(row) => navigate(`/inventory/purchase-orders/${row.id}`)}
         emptyState={{ icon: ClipboardList, title: 'No purchase orders yet' }}
         toolbar={
-          <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1) }}>
-            <SelectTrigger className="h-8 w-44">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              {Object.entries(STATUS_LABEL).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1) }}>
+              <SelectTrigger className="h-8 w-44">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                {Object.entries(STATUS_LABEL).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              variant={owingOnly ? 'default' : 'outline'}
+              className="h-8"
+              onClick={() => { setOwingOnly((current) => !current); setPage(1) }}
+            >
+              Owing only
+            </Button>
+          </div>
         }
         page={page}
         pageSize={pageSize}

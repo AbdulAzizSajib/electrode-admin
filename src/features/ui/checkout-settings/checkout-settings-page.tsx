@@ -23,6 +23,7 @@ import {
   useSettingsDraft,
   useUnsavedChangesGuard,
 } from '@/features/ui/components/settings-editor-utils'
+import { formatCurrency } from '@/lib/utils/format'
 import {
   useStoreSettings,
   useUpdateStoreSettings,
@@ -50,7 +51,8 @@ import {
  */
 
 const TITLE = 'Checkout settings'
-const DESCRIPTION = "Controls what the website's checkout page asks customers for."
+const DESCRIPTION =
+  "Controls what the website's checkout page asks customers for, and what an order has to be worth to earn free delivery."
 
 /** Explains each locked row, shown beside its padlock. */
 const LOCK_REASON: Partial<Record<CheckoutFieldKey, string>> = {
@@ -66,20 +68,68 @@ const LOCK_REASON: Partial<Record<CheckoutFieldKey, string>> = {
 const CITY_WARNING =
   'Delivery is priced by region using the city. Without it, orders fall back to your country-level rule, then to your catch-all rule — and if you have neither, deliveries will be refused.'
 
+/**
+ * What this page edits, as one value.
+ *
+ * `freeShippingThreshold` is a scalar column, not part of the `checkoutConfig` blob — it is a typed
+ * decimal the order-pricing path reads directly, and burying it in a JSON column that Postgres does
+ * not constrain, purely to keep one screen's fields in one column, would be the wrong trade. But it
+ * IS edited here, so it has to ride in the same draft: the unsaved-changes guard tracks the draft,
+ * and a threshold outside it would be silently discarded on navigation.
+ *
+ * `thresholdText` is the raw input string rather than a number, so "" (no offer) stays
+ * distinguishable from "0" (every order free) while the merchant is typing.
+ */
+interface CheckoutDraft {
+  config: CheckoutConfig
+  thresholdText: string
+}
+
+/** `null` -> "" — a cleared threshold and an untouched one look the same in an input. */
+const thresholdToText = (value: number | null | undefined) =>
+  value === null || value === undefined ? '' : String(value)
+
+/**
+ * Back the other way, preserving the distinction the column cares about.
+ *
+ * Blank means `null`, which the backend now accepts as "withdraw the offer" — this is the half of
+ * the fix that makes a threshold clearable at all. Before, a blank field was simply omitted from the
+ * payload, and under a partial upsert an omitted key means "leave unchanged".
+ */
+const textToThreshold = (text: string): number | null => {
+  const trimmed = text.trim()
+  if (trimmed === '') return null
+  const n = Number(trimmed)
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
 export default function CheckoutSettingsPage() {
   const { data, isLoading, error } = useStoreSettings()
   const updateMutation = useUpdateStoreSettings()
 
-  const draft = useSettingsDraft<CheckoutConfig>(
+  const draft = useSettingsDraft<CheckoutDraft>(
     // An unconfigured store seeds from the same defaults the backend falls back
     // to, so the form shows what checkout is actually doing rather than blanks.
-    data && (data.checkoutConfig ?? DEFAULT_CHECKOUT_CONFIG),
-    DEFAULT_CHECKOUT_CONFIG,
+    data && {
+      config: data.checkoutConfig ?? DEFAULT_CHECKOUT_CONFIG,
+      thresholdText: thresholdToText(data.freeShippingThreshold),
+    },
+    { config: DEFAULT_CHECKOUT_CONFIG, thresholdText: '' },
   )
   const blocker = useUnsavedChangesGuard(draft.isDirty)
 
-  const config = draft.value
-  const setConfig = (patch: Partial<CheckoutConfig>) => draft.set({ ...config, ...patch })
+  const config = draft.value.config
+  const thresholdText = draft.value.thresholdText
+  const setConfig = (patch: Partial<CheckoutConfig>) =>
+    draft.set({ ...draft.value, config: { ...config, ...patch } })
+  const setThresholdText = (text: string) => draft.set({ ...draft.value, thresholdText: text })
+
+  /* Shown beneath the field so the merchant reads the threshold in their own currency. */
+  const thresholdPreview = (() => {
+    const value = textToThreshold(thresholdText)
+    if (value === null) return null
+    return formatCurrency(value)
+  })()
 
   const isLocked = (key: CheckoutFieldKey) => LOCKED_CHECKOUT_FIELDS.includes(key)
 
@@ -104,8 +154,18 @@ export default function CheckoutSettingsPage() {
 
   const save = async () => {
     try {
-      await updateMutation.mutateAsync({ checkoutConfig: config })
-      draft.markSaved(config)
+      /*
+       * Two keys and only two. `PATCH /settings` is a partial upsert, so this page and the other
+       * settings editors stay independent — Header Links sends `mainNav`, Site Setting sends the
+       * branding scalars and `theme`, Store Settings sends the currency fields and contact details.
+       * The threshold is now exclusively this page's; Store Settings no longer sends it, which is
+       * what keeps the two from disagreeing.
+       */
+      await updateMutation.mutateAsync({
+        checkoutConfig: config,
+        freeShippingThreshold: textToThreshold(thresholdText),
+      })
+      draft.markSaved(draft.value)
       toast({ title: 'Checkout settings saved' })
     } catch (err) {
       toast({
@@ -249,6 +309,33 @@ export default function CheckoutSettingsPage() {
             </span>
           </div>
         </div>
+      </Card>
+
+      <Card className="flex flex-col gap-2 p-4">
+        <Label htmlFor="free-shipping-threshold">Free shipping over</Label>
+        <Input
+          id="free-shipping-threshold"
+          type="number"
+          step="0.01"
+          min="0"
+          value={thresholdText}
+          placeholder="Leave blank for no free shipping offer"
+          onChange={(e) => setThresholdText(e.target.value)}
+        />
+        <span className="text-xs text-muted-foreground">
+          {/* Three states, and a merchant has to be able to tell them apart. The
+              old Store Settings field could only express two: it dropped a blank
+              value from the payload, which a partial upsert reads as "leave
+              unchanged" — so an offer, once set, could never be withdrawn. */}
+          {thresholdText.trim() === '' ? (
+            <>Blank — no free shipping by order value. Delivery is charged on every order.</>
+          ) : thresholdPreview === formatCurrency(0) ? (
+            <>Every order gets free delivery, whatever it is worth.</>
+          ) : (
+            <>Orders of {thresholdPreview} or more get free delivery.</>
+          )}{' '}
+          Collection in person is never free — that price is what the pickup location charges for it.
+        </span>
       </Card>
 
       <Card className="flex flex-col gap-2 p-4">

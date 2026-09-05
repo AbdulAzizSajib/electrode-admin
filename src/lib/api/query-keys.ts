@@ -23,6 +23,7 @@ export const queryKeys = {
   stockMovements: { all: ['stock-movements'] as const, list: (p?: object) => ['stock-movements', 'list', p] as const },
   suppliers: { all: ['suppliers'] as const, list: (p?: object) => ['suppliers', 'list', p] as const, detail: (id: string) => ['suppliers', 'detail', id] as const },
   purchaseOrders: { all: ['purchase-orders'] as const, list: (p?: object) => ['purchase-orders', 'list', p] as const, detail: (id: string) => ['purchase-orders', 'detail', id] as const },
+  supplierPayments: { all: ['supplier-payments'] as const, byPurchaseOrder: (purchaseOrderId: string) => ['supplier-payments', 'by-purchase-order', purchaseOrderId] as const },
 
   orders: { all: ['orders'] as const, list: (p?: object) => ['orders', 'list', p] as const, detail: (id: string) => ['orders', 'detail', id] as const },
   payments: { byOrder: (orderId: string) => ['payments', 'by-order', orderId] as const },
@@ -41,6 +42,31 @@ export const queryKeys = {
     // published list the link pickers read.
     published: ['pages', 'published'] as const,
     reservedSlugs: ['pages', 'reserved-slugs'] as const,
+  },
+
+  // The two homepage sections a merchant owns. Beside `pages` rather than under
+  // it: all three are storefront content, and none nests inside another.
+  blogPosts: {
+    all: ['blog-posts'] as const,
+    list: (p?: object) => ['blog-posts', 'list', p] as const,
+    detail: (id: string) => ['blog-posts', 'detail', id] as const,
+  },
+  testimonials: {
+    all: ['testimonials'] as const,
+    list: (p?: object) => ['testimonials', 'list', p] as const,
+    detail: (id: string) => ['testimonials', 'detail', id] as const,
+  },
+
+  /**
+   * `published` is its own key rather than a filtered `list`: it feeds the
+   * active-page selector, which must not be invalidated or refetched by the
+   * paging and searching the list page does.
+   */
+  landingPages: {
+    all: ['landing-pages'] as const,
+    list: (p?: object) => ['landing-pages', 'list', p] as const,
+    detail: (id: string) => ['landing-pages', 'detail', id] as const,
+    published: ['landing-pages', 'published'] as const,
   },
 
   customers: { all: ['customers'] as const, list: (p?: object) => ['customers', 'list', p] as const, detail: (id: string) => ['customers', 'detail', id] as const },
@@ -62,5 +88,20 @@ export const queryKeys = {
     orderStatusBreakdown: (range: string) => ['dashboard', 'order-status-breakdown', range] as const,
     paymentBreakdown: (range: string) => ['dashboard', 'payment-breakdown', range] as const,
     returnsRefunds: (range: string) => ['dashboard', 'returns-refunds', range] as const,
+  },
+
+  /**
+   * One `all` covering every report, so a mutation anywhere that moves money
+   * or stock can invalidate the lot without listing five keys. Each report is
+   * keyed by its own params object because two filter sets are two different
+   * answers, not two views of one.
+   */
+  reports: {
+    all: ['reports'] as const,
+    stock: (p?: object) => ['reports', 'stock', p] as const,
+    stockHistory: (p?: object) => ['reports', 'stock-history', p] as const,
+    sales: (p?: object) => ['reports', 'sales', p] as const,
+    purchases: (p?: object) => ['reports', 'purchases', p] as const,
+    payments: (p?: object) => ['reports', 'payments', p] as const,
   },
 }

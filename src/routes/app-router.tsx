@@ -57,6 +57,14 @@ const ReturnsPage = lazy(() => import('@/features/sales/returns/returns-page'))
 const ReturnDetailPage = lazy(() => import('@/features/sales/returns/return-detail-page'))
 const RefundsPage = lazy(() => import('@/features/sales/refunds/refunds-page'))
 
+const StockReportPage = lazy(() => import('@/features/reports/stock/stock-report-page'))
+const SalesReportPage = lazy(() => import('@/features/reports/sales/sales-report-page'))
+const PurchasesReportPage = lazy(() => import('@/features/reports/purchases/purchases-report-page'))
+const StockHistoryReportPage = lazy(
+  () => import('@/features/reports/stock-history/stock-history-report-page'),
+)
+const PaymentHistoryPage = lazy(() => import('@/features/reports/payments/payment-history-page'))
+
 const VouchersPage = lazy(() => import('@/features/marketing/vouchers/vouchers-page'))
 const VoucherFormPage = lazy(() => import('@/features/marketing/vouchers/voucher-form-page'))
 const CampaignsListPage = lazy(() => import('@/features/marketing/campaigns/campaigns-list-page'))
@@ -66,6 +74,20 @@ const BannersPage = lazy(() => import('@/features/ui/banners/banners-page'))
 const BannerFormPage = lazy(() => import('@/features/ui/banners/banner-form-page'))
 const PagesListPage = lazy(() => import('@/features/ui/pages/pages-list-page'))
 const PageFormPage = lazy(() => import('@/features/ui/pages/page-form-page'))
+const BlogListPage = lazy(() => import('@/features/ui/blog/blog-list-page'))
+const BlogFormPage = lazy(() => import('@/features/ui/blog/blog-form-page'))
+const TestimonialsListPage = lazy(
+  () => import('@/features/ui/testimonials/testimonials-list-page'),
+)
+const TestimonialFormPage = lazy(
+  () => import('@/features/ui/testimonials/testimonial-form-page'),
+)
+const LandingPagesListPage = lazy(
+  () => import('@/features/ui/landing-pages/landing-pages-page'),
+)
+const LandingPageFormPage = lazy(
+  () => import('@/features/ui/landing-pages/landing-page-form-page'),
+)
 const HomeSliderPage = lazy(() => import('@/features/ui/home-slider/home-slider-page'))
 const HeaderLinksPage = lazy(() => import('@/features/ui/header-links/header-links-page'))
 const FooterLinksPage = lazy(() => import('@/features/ui/footer-links/footer-links-page'))
@@ -179,6 +201,12 @@ export function AppRouter() {
           <Route path="/sales/returns" element={<ReturnsPage />} />
           <Route path="/sales/returns/:returnId" element={<ReturnDetailPage />} />
           <Route path="/sales/refunds" element={<RefundsPage />} />
+
+          <Route path="/reports/stock" element={<StockReportPage />} />
+          <Route path="/reports/sales" element={<SalesReportPage />} />
+          <Route path="/reports/purchases" element={<PurchasesReportPage />} />
+          <Route path="/reports/stock-history" element={<StockHistoryReportPage />} />
+          <Route path="/reports/payments" element={<PaymentHistoryPage />} />
           <Route path="/marketing/vouchers" element={<VouchersPage />} />
           <Route path="/marketing/vouchers/new" element={<VoucherFormPage />} />
           <Route path="/marketing/vouchers/:voucherId" element={<VoucherFormPage />} />
@@ -213,6 +241,15 @@ export function AppRouter() {
             <Route path="/ui/pages" element={<PagesListPage />} />
             <Route path="/ui/pages/new" element={<PageFormPage />} />
             <Route path="/ui/pages/:pageId" element={<PageFormPage />} />
+            <Route path="/ui/blog" element={<BlogListPage />} />
+            <Route path="/ui/blog/new" element={<BlogFormPage />} />
+            <Route path="/ui/blog/:postId" element={<BlogFormPage />} />
+            <Route path="/ui/testimonials" element={<TestimonialsListPage />} />
+            <Route path="/ui/testimonials/new" element={<TestimonialFormPage />} />
+            <Route path="/ui/testimonials/:testimonialId" element={<TestimonialFormPage />} />
+            <Route path="/ui/landing-pages" element={<LandingPagesListPage />} />
+            <Route path="/ui/landing-pages/new" element={<LandingPageFormPage />} />
+            <Route path="/ui/landing-pages/:landingPageId" element={<LandingPageFormPage />} />
             <Route path="/ui/home-slider" element={<HomeSliderPage />} />
             <Route path="/ui/banners" element={<BannersPage />} />
             <Route path="/ui/banners/new" element={<BannerFormPage />} />

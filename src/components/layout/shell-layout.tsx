@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react'
 import { SidebarNav } from '@/components/layout/sidebar-nav'
 import { Topbar } from '@/components/layout/topbar'
 import { BreadcrumbLabelProvider } from '@/components/layout/breadcrumb-context'
+import { useCurrencyFormatSync } from '@/components/providers/currency-format-provider'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { useUiStore } from '@/lib/store/ui-store'
 import { cn } from '@/lib/utils/cn'
@@ -20,6 +21,13 @@ export function ShellLayout() {
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed)
   const mobileNavOpen = useUiStore((s) => s.mobileNavOpen)
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen)
+
+  /*
+   * Applied here rather than higher up because `/settings` is an authenticated read — this layout
+   * is the first thing that renders behind the auth guard. See the hook for why the key is needed
+   * at all: `formatCurrency` reads module state, which nothing re-renders on its own.
+   */
+  const currencyKey = useCurrencyFormatSync()
 
   return (
     <BreadcrumbLabelProvider>
@@ -57,7 +65,10 @@ export function ShellLayout() {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar />
-          <main className="flex-1 overflow-y-auto p-4">
+          {/* Keyed on the currency format so the routed page re-renders its
+              amounts the moment the merchant's settings arrive — at most once
+              per session, before anything has been typed. */}
+          <main key={currencyKey} className="flex-1 overflow-y-auto p-4">
             <Suspense fallback={<RouteFallback />}>
               <Outlet />
             </Suspense>

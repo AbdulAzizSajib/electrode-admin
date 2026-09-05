@@ -81,6 +81,24 @@ export interface Order {
   totalAmount: string
   couponCode: string | null
   notes: string | null
+  /**
+   * The campaign that produced this order, when it came from a landing page.
+   * Null for every order placed through the normal checkout.
+   *
+   * Two fields because they answer different questions and fail differently.
+   * `landingPage` is the still-existing page, present only on detail responses,
+   * and is what makes the order linkable back to its campaign.
+   * `landingPageTitle` was captured AT PLACEMENT and survives the page being
+   * deleted or renamed — which is what keeps a finished campaign's orders
+   * readable.
+   *
+   * Which delivery area the shopper chose is not here: it is on
+   * `shippingAddress.state`.
+   */
+  landingPageId: string | null
+  landingPageTitle: string | null
+  /** Only present on detail responses (`GET /orders/:id`). */
+  landingPage?: { id: string; title: string; slug: string } | null
   shippingAddress: OrderShippingAddress | null
   /** Only present on detail responses (`GET /orders/:id`) — list rows omit these. */
   payments?: Payment[]

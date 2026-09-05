@@ -8,30 +8,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useStockMovements, type StockMovement, type StockMovementType } from '@/lib/api/stock-movements'
 import { useWarehouses } from '@/lib/api/warehouses'
 import { formatDateTime } from '@/lib/utils/format'
-
-const TYPE_LABEL: Record<StockMovementType, string> = {
-  PURCHASE: 'Purchase',
-  SALE: 'Sale',
-  RETURN: 'Return',
-  REFUND: 'Refund',
-  ADJUSTMENT: 'Adjustment',
-  DAMAGE: 'Damage',
-  LOSS: 'Loss',
-  TRANSFER_IN: 'Transfer in',
-  TRANSFER_OUT: 'Transfer out',
-}
-
-const TYPE_VARIANT: Record<StockMovementType, 'success' | 'warning' | 'info' | 'secondary' | 'destructive'> = {
-  PURCHASE: 'success',
-  SALE: 'secondary',
-  RETURN: 'info',
-  REFUND: 'info',
-  ADJUSTMENT: 'warning',
-  DAMAGE: 'destructive',
-  LOSS: 'destructive',
-  TRANSFER_IN: 'success',
-  TRANSFER_OUT: 'warning',
-}
+// Moved out of this file when Report → Stock history became a second reader of
+// StockMovement. Two private copies would drift, and a merchant seeing
+// "Transfer in" here and "TRANSFER_IN" there has no way to know they match.
+import {
+  STOCK_MOVEMENT_TYPE_LABEL as TYPE_LABEL,
+  STOCK_MOVEMENT_TYPE_VARIANT as TYPE_VARIANT,
+} from '@/lib/utils/stock-movement-labels'
 
 export default function StockMovementsPage() {
   const [warehouseId, setWarehouseId] = React.useState('all')

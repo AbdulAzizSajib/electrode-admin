@@ -23,6 +23,7 @@ import {
   type PurchaseOrderStatus,
 } from '@/lib/api/purchase-orders'
 import { formatCurrency, formatDateTime } from '@/lib/utils/format'
+import { SupplierPaymentsCard } from '@/features/inventory/purchase-orders/components/supplier-payments-card'
 
 const STATUS_LABEL: Record<PurchaseOrderStatus, string> = {
   DRAFT: 'Draft',
@@ -208,6 +209,13 @@ export default function PurchaseOrderDetailPage() {
           <span className="font-semibold text-foreground">Total: {formatCurrency(Number(po.totalAmount))}</span>
         </div>
       </Card>
+
+      <SupplierPaymentsCard
+        purchaseOrderId={po.id}
+        purchaseNumber={po.purchaseNumber}
+        supplierName={po.supplier.companyName || po.supplier.name}
+        status={po.status}
+      />
 
       {po.notes && (
         <Card>

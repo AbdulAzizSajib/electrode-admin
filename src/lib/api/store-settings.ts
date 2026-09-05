@@ -70,6 +70,31 @@ export interface Newsletter {
   buttonLabel?: string
 }
 
+/* ------------------------------------------------------------------ *
+ * Currency presentation
+ * ------------------------------------------------------------------ */
+
+/** Which side of the amount the symbol sits on. Mirrors the backend's `CurrencyPosition` enum. */
+export const CURRENCY_POSITIONS = ['BEFORE', 'AFTER'] as const
+export type CurrencyPosition = (typeof CURRENCY_POSITIONS)[number]
+
+/**
+ * What the storefront ROOT serves. Governs `/` and nothing else — every other
+ * route stays live in both modes, which is what makes the toggle reversible
+ * with no other consequence.
+ */
+export const SITE_MODES = ['WEBSITE', 'LANDING_PAGE'] as const
+export type SiteMode = (typeof SITE_MODES)[number]
+
+/**
+ * Mirrors the backend's `MIN_CURRENCY_DECIMALS` / `MAX_CURRENCY_DECIMALS`.
+ *
+ * 0 covers currencies with no minor unit, 3 those with a thousandth unit, 4 is headroom. Repeated
+ * here so the field can bound itself rather than surfacing a 400 the merchant has to decode — the
+ * same arrangement as `SETTINGS_LIMITS` below.
+ */
+export const CURRENCY_DECIMALS_LIMITS = { min: 0, max: 4, default: 2 } as const
+
 /** Mirrors the backend's `.max(...)` caps. A save past one of these is rejected there. */
 export const SETTINGS_LIMITS = {
   mainNavItems: 20,
@@ -124,6 +149,34 @@ export interface CheckoutField {
   required: boolean
 }
 
+/** Whether an option is delivered to the shopper or collected by them. */
+export type DeliveryKind = 'DELIVERY' | 'PICKUP'
+
+/**
+ * One delivery choice offered at checkout.
+ *
+ * No country, no region, nothing matched against an address — the shopper picks
+ * this from a list. `key` is generated once when the option is added and never
+ * rewritten, so renaming an option does not re-bucket the orders placed under
+ * it; `label` is what the shopper reads and what the order captures.
+ */
+export interface DeliveryOption {
+  key: string
+  label: string
+  kind: DeliveryKind
+  price: number
+  days: number
+}
+
+export interface DeliverySettings {
+  /** Off, pickup options are not offered even when some are configured. */
+  offersPickup: boolean
+  options: DeliveryOption[]
+}
+
+/** Mirrors the backend's bound, so the form can stop adding before the API refuses. */
+export const MAX_DELIVERY_OPTIONS = 20
+
 export interface CheckoutConfig {
   fields: Record<CheckoutFieldKey, CheckoutField>
   /** Governs the coupon box on the cart page AND the checkout page together. */
@@ -132,17 +185,45 @@ export interface CheckoutConfig {
   allowGuestCheckout: boolean
   /** Rendered above the storefront's Place Order button. Empty renders nothing. */
   notice: string
+  delivery: DeliverySettings
 }
 
 /* ------------------------------------------------------------------ *
  * Theme
  * ------------------------------------------------------------------ */
 
-/** The full-width sentinel — `maxWidth` is either this or a pixel count. */
+/** The full-width sentinel — `maxWidth` is either this or one of the widths below. */
 export const FULL_WIDTH = 'full' as const
 
-/** Mirrors the backend's bounds, so the form can say no before the API does. */
-export const SITE_WIDTH_LIMITS = { min: 960, max: 2560, default: 1384 } as const
+/**
+ * The content widths a merchant may choose. Mirrors the backend's
+ * `SITE_CONTENT_WIDTHS`, which rejects anything else.
+ *
+ * It is a closed set rather than the free pixel field this used to be because
+ * the homepage hero is proportioned from it — see `hero-slots.ts`. Every hero
+ * slot keeps its aspect ratio at each of these, so a merchant switching width
+ * never has to re-cut their banners.
+ */
+export const SITE_CONTENT_WIDTHS = [
+  { value: 1140, label: 'Narrow', hint: 'Tighter pages, closer to a blog' },
+  { value: 1280, label: 'Compact', hint: 'Comfortable on a laptop screen' },
+  { value: 1440, label: 'Standard', hint: 'The default' },
+  { value: 1600, label: 'Wide', hint: 'More products per row on a large screen' },
+] as const
+
+export const DEFAULT_SITE_CONTENT_WIDTH = 1440
+
+/**
+ * The nearest offered width to a stored one. A store saved before the set
+ * closed carries a width that is not in it — 1384 was the old default — and the
+ * select has to show it as something, so it shows what the storefront will
+ * actually render it at.
+ */
+export function nearestContentWidth(width: number): number {
+  return SITE_CONTENT_WIDTHS.reduce((best, option) =>
+    Math.abs(option.value - width) < Math.abs(best.value - width) ? option : best,
+  ).value
+}
 
 /** The six colour tokens, with the labels and help text the form shows. */
 export const THEME_COLOR_FIELDS = [
@@ -189,8 +270,9 @@ export interface StoreSettings {
   storeName: string
   currency: string
   currencySymbol: string
-  /** Percent, 0–100 — not a fraction. */
-  defaultTaxRatePercent: number
+  currencyPosition: CurrencyPosition
+  /** Presentation only — see `CURRENCY_DECIMALS_LIMITS`. */
+  currencyDecimals: number
   /** Null means free shipping by order value is not offered at all, which is distinct from a 0 threshold. */
   freeShippingThreshold: number | null
   contactEmail: string | null
@@ -224,6 +306,16 @@ export interface StoreSettings {
    */
   checkoutConfig: CheckoutConfig | null
   theme: Theme | null
+  /**
+   * The website ↔ single-landing-page toggle, and the page it points at.
+   *
+   * Only meaningful together. The backend refuses to enter `LANDING_PAGE`
+   * unless `activeLandingPageId` resolves to a PUBLISHED landing page, and
+   * refuses to clear the selection while the mode is on — both checked
+   * transactionally, so this pair is never stored in an unservable state.
+   */
+  siteMode: SiteMode
+  activeLandingPageId: string | null
   updatedAt: string
 }
 
@@ -239,8 +331,16 @@ export interface StoreSettingsInput {
   storeName?: string
   currency?: string
   currencySymbol?: string
-  defaultTaxRatePercent?: number
-  freeShippingThreshold?: number
+  currencyPosition?: CurrencyPosition
+  currencyDecimals?: number
+  /**
+   * The one `null`-accepting field here, and deliberately so. Everything else on this interface
+   * expresses "clear this" by omitting the key, but this column has THREE states, not two: a
+   * threshold, no offer at all (`null`), and an offer on every order (`0`). Under a partial upsert
+   * an omitted key means "leave unchanged" — which is why a merchant who set a threshold could
+   * previously never unset it.
+   */
+  freeShippingThreshold?: number | null
   contactEmail?: string
   contactPhone?: string
   address?: string
@@ -270,6 +370,18 @@ export interface StoreSettingsInput {
   checkoutConfig?: CheckoutConfig
   /** `font` goes up as pasted text; the backend parses it. See `ThemeInput`. */
   theme?: ThemeInput
+
+  /**
+   * The site-mode pair, sent only by the Landing Pages screen — which is the
+   * one place both halves of the decision are visible at once.
+   *
+   * `activeLandingPageId` accepts `null` for the same reason
+   * `freeShippingThreshold` above does: an omitted key means "leave unchanged"
+   * under a partial upsert, so without null a merchant who selected a page
+   * could never deselect it.
+   */
+  siteMode?: SiteMode
+  activeLandingPageId?: string | null
 }
 
 /**
@@ -299,7 +411,7 @@ export const DEFAULT_THEME: Theme = {
   brandDark: '#133f9e',
   accent: '#f5b301',
   sale: '#e02020',
-  maxWidth: SITE_WIDTH_LIMITS.default,
+  maxWidth: DEFAULT_SITE_CONTENT_WIDTH,
   font: {
     family: 'Outfit',
     url: 'https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap',

@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { Link } from 'react-router'
 import { Loader2, TriangleAlert } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Button } from '@/components/ui/button'
@@ -20,9 +21,11 @@ import { useUploadImage } from '@/lib/api/uploads'
 import {
   useStoreSettings,
   useUpdateStoreSettings,
+  nearestContentWidth,
+  DEFAULT_SITE_CONTENT_WIDTH,
   DEFAULT_THEME,
   FULL_WIDTH,
-  SITE_WIDTH_LIMITS,
+  SITE_CONTENT_WIDTHS,
   THEME_COLOR_FIELDS,
   type StoreSettingsInput,
   type Theme,
@@ -129,7 +132,12 @@ export default function SiteSettingsPage() {
   }
 
   const isFullWidth = value.theme.maxWidth === FULL_WIDTH
-  const widthPx = typeof value.theme.maxWidth === 'number' ? value.theme.maxWidth : SITE_WIDTH_LIMITS.default
+  const storedWidth =
+    typeof value.theme.maxWidth === 'number' ? value.theme.maxWidth : DEFAULT_SITE_CONTENT_WIDTH
+  /* A width saved before the set closed has no option of its own, so the picker
+     shows the one the storefront actually renders it at. */
+  const selectedWidth = nearestContentWidth(storedWidth)
+  const isLegacyWidth = !isFullWidth && selectedWidth !== storedWidth
 
   const bodyContrast = contrastRatio(value.theme.background, value.theme.foreground)
   const brandContrast = contrastRatio(value.theme.background, value.theme.brand)
@@ -200,6 +208,26 @@ export default function SiteSettingsPage() {
         Storefront pages are cached briefly, so changes here appear on the site within a few
         minutes.
       </p>
+
+      {/*
+        Read-only, and deliberately so. The toggle and the "which page" selector
+        are ONE decision, and both live on the Landing Pages screen — splitting
+        them across two screens is how a merchant ends up with the toggle on and
+        the wrong page live. This line exists so the setting is still findable
+        by someone who came looking for it here.
+      */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+        <span className="text-muted-foreground">Your home page currently shows</span>
+        <strong className="text-foreground">
+          {data?.siteMode === 'LANDING_PAGE' ? 'a single landing page' : 'the full website'}
+        </strong>
+        <Link
+          to="/ui/landing-pages"
+          className="font-medium text-primary underline-offset-4 hover:underline"
+        >
+          Change this on Landing Pages
+        </Link>
+      </div>
 
       <EditorSection
         title="Logos"
@@ -349,35 +377,39 @@ export default function SiteSettingsPage() {
         title="Content width"
         description="How wide the site's content runs. Applies to the header, footer and every page."
       >
-        <div className="flex flex-wrap items-center gap-3">
-          <Input
-            type="number"
-            className="w-36"
-            min={SITE_WIDTH_LIMITS.min}
-            max={SITE_WIDTH_LIMITS.max}
-            step={4}
-            disabled={isFullWidth}
-            value={widthPx}
-            onChange={(e) => setTheme({ maxWidth: Number(e.target.value) })}
-            aria-label="Content width in pixels"
-          />
-          <span className="text-sm text-muted-foreground">px</span>
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={isFullWidth}
-              onChange={(e) =>
-                setTheme({ maxWidth: e.target.checked ? FULL_WIDTH : SITE_WIDTH_LIMITS.default })
-              }
+        {/*
+          Fixed options, not a pixel field. The homepage hero is laid out from
+          this value, and at an arbitrary width its slider took a shape no
+          artwork had been cut for — the banner ended up sitting inside empty
+          bands. Each option below keeps every hero slot's ratio and only scales
+          it, so switching width never means re-uploading a banner.
+        */}
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {SITE_CONTENT_WIDTHS.map((option) => (
+            <WidthOption
+              key={option.value}
+              label={option.label}
+              detail={`${option.value} px`}
+              hint={option.hint}
+              selected={!isFullWidth && selectedWidth === option.value}
+              onSelect={() => setTheme({ maxWidth: option.value })}
             />
-            Full width
-          </label>
+          ))}
+          <WidthOption
+            label="Full width"
+            detail="100%"
+            hint="Spans the screen, keeping the normal side padding"
+            selected={isFullWidth}
+            onSelect={() => setTheme({ maxWidth: FULL_WIDTH })}
+          />
         </div>
-        <p className="text-xs text-muted-foreground">
-          Between {SITE_WIDTH_LIMITS.min} and {SITE_WIDTH_LIMITS.max}px. The default is{' '}
-          {SITE_WIDTH_LIMITS.default}px. Full width lets content span the screen, keeping the
-          normal side padding.
-        </p>
+        {isLegacyWidth && (
+          <p className="text-xs text-warning">
+            This store was saved at {value.theme.maxWidth}px, which is no longer offered. The
+            storefront renders it at the nearest option, {selectedWidth}px — saving here makes that
+            official.
+          </p>
+        )}
       </EditorSection>
 
       <EditorActions
@@ -446,6 +478,48 @@ function ColorField({
       </div>
       <span className="text-xs text-muted-foreground">{hint}</span>
     </div>
+  )
+}
+
+/**
+ * One content-width choice.
+ *
+ * A row of radio-like cards rather than a `<select>`: there are five of them,
+ * the difference between two is a number a merchant has no feel for, and the
+ * hint is what makes the choice legible. Rendered as buttons with
+ * `aria-pressed`, which is how the rest of the panel expresses a chosen-one-of.
+ */
+function WidthOption({
+  label,
+  detail,
+  hint,
+  selected,
+  onSelect,
+}: {
+  label: string
+  detail: string
+  hint: string
+  selected: boolean
+  onSelect: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={
+        'flex flex-col items-start gap-0.5 rounded-md border p-3 text-left transition-colors ' +
+        (selected
+          ? 'border-primary bg-primary/5 ring-1 ring-primary'
+          : 'border-border hover:border-primary/50 hover:bg-muted/40')
+      }
+    >
+      <span className="flex w-full items-baseline justify-between gap-2">
+        <span className="text-sm font-medium text-foreground">{label}</span>
+        <span className="font-mono text-xs text-muted-foreground">{detail}</span>
+      </span>
+      <span className="text-xs text-muted-foreground">{hint}</span>
+    </button>
   )
 }
 

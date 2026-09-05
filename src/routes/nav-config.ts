@@ -1,5 +1,7 @@
 import {
   LayoutDashboard,
+  Newspaper,
+  MessageSquareQuote,
   Package,
   Warehouse,
   ShoppingCart,
@@ -35,11 +37,18 @@ import {
   UserCog,
   ScrollText,
   Palette,
+  Rocket,
   FileText,
   GalleryHorizontal,
   PanelTop,
   PanelBottom,
   Globe,
+  BarChart3,
+  PackageSearch,
+  TrendingUp,
+  ShoppingBasket,
+  History,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react'
 import type { AdminRole } from '@/lib/store/session-store'
@@ -112,6 +121,27 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    /*
+     * Placed after Sales because a report is what you read once the selling,
+     * buying and stock movement it describes have happened — the same
+     * build-order logic Catalog's ordering follows.
+     *
+     * Stock report leads: it is the only one that answers a question about
+     * right now rather than about a period, and it is the one a merchant opens
+     * most. Stock history sits below the two money reports rather than beside
+     * Stock report, because it reads as a period report, not a position.
+     */
+    label: 'Report',
+    icon: BarChart3,
+    items: [
+      { label: 'Stock report', path: '/reports/stock', icon: PackageSearch },
+      { label: 'Sales report', path: '/reports/sales', icon: TrendingUp },
+      { label: 'Purchases report', path: '/reports/purchases', icon: ShoppingBasket },
+      { label: 'Stock history', path: '/reports/stock-history', icon: History },
+      { label: 'Payment history', path: '/reports/payments', icon: Wallet },
+    ],
+  },
+  {
     label: 'Marketing',
     icon: Megaphone,
     // Vouchers moved up into Catalog to match the reference's Product menu;
@@ -132,7 +162,16 @@ export const NAV_SECTIONS: NavSection[] = [
     icon: Palette,
     roles: ['OWNER', 'ADMIN'],
     items: [
+      /*
+       * Leads the section. A landing page is the only entry here that can take
+       * an order on its own, and it is the one a merchant opens while an ad is
+       * already running — which is not a moment to go hunting past six other
+       * content screens.
+       */
+      { label: 'Landing Pages', path: '/ui/landing-pages', icon: Rocket },
       { label: 'Pages', path: '/ui/pages', icon: FileText },
+      { label: 'Blog', path: '/ui/blog', icon: Newspaper },
+      { label: 'Testimonials', path: '/ui/testimonials', icon: MessageSquareQuote },
       { label: 'Home Slider', path: '/ui/home-slider', icon: GalleryHorizontal },
       { label: 'Banners', path: '/ui/banners', icon: ImageIcon },
       { label: 'Header Links', path: '/ui/header-links', icon: PanelTop },

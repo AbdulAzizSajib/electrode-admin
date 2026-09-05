@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -286,6 +286,40 @@ export default function OrderDetailPage() {
               <span className="text-muted-foreground">{order.customer.email ?? '—'}</span>
             </CardContent>
           </Card>
+
+          {/*
+            Only for orders a campaign produced. Absent — not "—" — on a normal
+            checkout order: a blank card on every order in the shop would be
+            noise, and this one exists to answer "which ad brought this in".
+
+            The captured title, not the relation, is what gets rendered: it
+            survives the page being deleted or renamed, which is exactly when a
+            merchant is looking back at what a finished campaign earned. The
+            relation is used only to link to a page that still exists.
+          */}
+          {order.landingPageTitle && (
+            <Card>
+              <CardHeader><CardTitle>Campaign</CardTitle></CardHeader>
+              <CardContent className="flex flex-col gap-1 text-sm">
+                <span className="font-medium text-foreground">{order.landingPageTitle}</span>
+                {order.landingPage ? (
+                  <Link
+                    to={`/ui/landing-pages/${order.landingPage.id}`}
+                    className="text-primary underline-offset-4 hover:underline"
+                  >
+                    /lp/{order.landingPage.slug}
+                  </Link>
+                ) : (
+                  <span className="text-muted-foreground">This landing page has been deleted.</span>
+                )}
+                {order.shippingAddress?.state && (
+                  <span className="text-muted-foreground">
+                    Delivery area: {order.shippingAddress.state}
+                  </span>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader><CardTitle>Shipping address</CardTitle></CardHeader>

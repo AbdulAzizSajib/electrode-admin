@@ -30,6 +30,7 @@ import {
   formatRatio,
   formatSize,
   getHeroSlot,
+  renderedSize,
   type HeroSlot,
 } from '@/features/ui/home-slider/hero-slots'
 import {
@@ -39,6 +40,12 @@ import {
   type Banner,
   type BannerPlacement,
 } from '@/lib/api/banners'
+import {
+  useStoreSettings,
+  nearestContentWidth,
+  DEFAULT_SITE_CONTENT_WIDTH,
+  FULL_WIDTH,
+} from '@/lib/api/store-settings'
 import { formatDateTime } from '@/lib/utils/format'
 import { cn } from '@/lib/utils/cn'
 
@@ -59,6 +66,22 @@ export default function HomeSliderPage() {
   const updateMutation = useUpdateBanner()
   const deleteMutation = useDeleteBanner()
   const confirmDialog = useConfirmDialog()
+
+  /*
+   * The store's content width, for the "renders at" figures only — the shapes
+   * on this page do not depend on it. That is the point of the proportional
+   * hero: a slot keeps its ratio at every width, so this page can be drawn
+   * before the settings request lands and the recommended sizes it prints stay
+   * correct whatever comes back.
+   */
+  const { data: settings } = useStoreSettings()
+  const storedWidth = settings?.theme?.maxWidth
+  const contentWidth: number | 'full' =
+    storedWidth === FULL_WIDTH
+      ? FULL_WIDTH
+      : nearestContentWidth(
+          typeof storedWidth === 'number' ? storedWidth : DEFAULT_SITE_CONTENT_WIDTH,
+        )
 
   const [editing, setEditing] = React.useState<{ slot: HeroSlot; banner: Banner | null } | null>(null)
 
@@ -200,6 +223,7 @@ export default function HomeSliderPage() {
           <SlotSection
             slot={sliderSlot}
             count={slides.length}
+            contentWidth={contentWidth}
             onAdd={() => setEditing({ slot: sliderSlot, banner: null })}
           >
             {slides.length === 0 ? (
@@ -230,6 +254,7 @@ export default function HomeSliderPage() {
           <SlotSection
             slot={sideSlot}
             count={sideTiles.length}
+            contentWidth={contentWidth}
             onAdd={
               sideTiles.length < (sideSlot.capacity ?? Infinity)
                 ? () => setEditing({ slot: sideSlot, banner: null })
@@ -261,6 +286,7 @@ export default function HomeSliderPage() {
           <SlotSection
             slot={promoSlot}
             count={promoTile ? 1 : 0}
+            contentWidth={contentWidth}
             onAdd={promoTile ? undefined : () => setEditing({ slot: promoSlot, banner: null })}
             atCapacityNote="The layout has one promo position. Edit or remove it to change what is shown."
           >
@@ -289,6 +315,7 @@ export default function HomeSliderPage() {
           key={`${editing.slot.placement}-${editing.banner?.id ?? 'new'}`}
           slot={editing.slot}
           banner={editing.banner}
+          contentWidth={contentWidth}
           open
           onOpenChange={(open) => !open && setEditing(null)}
           nextSortOrder={(bySlot.get(editing.slot.placement) ?? []).length}
@@ -312,12 +339,14 @@ export default function HomeSliderPage() {
 function SlotSection({
   slot,
   count,
+  contentWidth,
   onAdd,
   atCapacityNote,
   children,
 }: {
   slot: HeroSlot
   count: number
+  contentWidth: number | 'full'
   /** Undefined means the slot is full — the add action is not offered. */
   onAdd?: () => void
   atCapacityNote?: string
@@ -336,11 +365,14 @@ function SlotSection({
             )}
           </span>
           {/* The spec's exact requirement: the pixel size, beside the control
-              that uploads it, before the merchant picks a file. */}
+              that uploads it, before the merchant picks a file. The ratio holds
+              at every content width; only the "renders at" figure moves. */}
           <span className="text-xs text-muted-foreground">
             Upload <span className="font-medium text-foreground">{formatSize(slot.recommended)}</span>
             {' · '}
             {formatRatio(slot.recommended)}
+            {' · shows at '}
+            {formatSize(renderedSize(slot.placement, contentWidth))}
           </span>
         </div>
         {onAdd ? (

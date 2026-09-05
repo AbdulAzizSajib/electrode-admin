@@ -4,6 +4,7 @@ import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
 import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
 import type { Supplier } from '@/lib/api/suppliers'
+import type { SettlementState } from '@/lib/api/supplier-payments'
 
 export type PurchaseOrderStatus = 'DRAFT' | 'ORDERED' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED'
 
@@ -45,6 +46,15 @@ export interface PurchaseOrder {
   receivedAt: string | null
   createdAt: string
   updatedAt: string
+  /**
+   * Settlement figures, computed server-side from SupplierPayment rows on
+   * every read — they are numbers, not Decimal strings, because the server
+   * rounds them rather than passing a column through. Never stored, so they
+   * cannot drift from the payments they describe.
+   */
+  amountPaid: number
+  balanceDue: number
+  settlementState: SettlementState
 }
 
 export interface PurchaseOrderCreateInput {
@@ -73,6 +83,8 @@ export interface PurchaseOrderReceiveInput {
 export interface PurchaseOrderListParams extends ListParams {
   status?: PurchaseOrderStatus
   supplierId?: string
+  /** Narrows to purchase orders that still owe money. Not a plain column filter — the server compares the total against the sum of its payments. */
+  hasBalance?: boolean
 }
 
 async function listPurchaseOrders(params: PurchaseOrderListParams = {}): Promise<PaginatedResponse<PurchaseOrder>> {
@@ -84,6 +96,7 @@ async function listPurchaseOrders(params: PurchaseOrderListParams = {}): Promise
   if (params.search) query.set('searchTerm', params.search)
   if (params.status) query.set('status', params.status)
   if (params.supplierId) query.set('supplierId', params.supplierId)
+  if (params.hasBalance) query.set('hasBalance', 'true')
 
   const res = await request<PurchaseOrder[]>(`/purchase-orders?${query}`)
   return {
