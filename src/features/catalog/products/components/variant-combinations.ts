@@ -32,8 +32,8 @@ export interface CombinationRow {
   valueIds: string[]
   name: string
   sku: string
-  price: number
-  compareAtPrice?: number
+  offerPrice: number
+  sellingPrice?: number
   stockQuantity: number
 }
 
@@ -43,8 +43,8 @@ export interface ExistingVariant {
   variantKey: string
   name: string
   sku: string
-  price: number
-  compareAtPrice?: number
+  offerPrice: number
+  sellingPrice?: number
   stockQuantity: number
   /** Empty for a legacy variant authored before options existed. */
   valueIds: string[]
@@ -116,19 +116,19 @@ export interface RebuildResult {
  *     the Q86 product, and it is a migration-era nicety rather than a permanent
  *     rule: after the first authoring every variant has a real selection.
  *
- * A matched row keeps its **database id**, SKU, price, compare-at price and
+ * A matched row keeps its **database id**, SKU, offer price, regular price and
  * stock — the id being the important part, since it is what makes the backend
  * update the row rather than delete and recreate it, and so what preserves its
  * images and its links from past orders. The reference panel preserves only
  * price and quantity, which is why its variants lose their identity.
  *
- * A genuinely new combination starts at the product's price with **no stock**:
+ * A genuinely new combination starts at the product's offer price with **no stock**:
  * stock is never invented for something never counted.
  */
 export function rebuildCombinations(
   attributes: SelectedAttribute[],
   existing: ExistingVariant[],
-  defaults: { price: number; skuPrefix: string; nextKey: () => string },
+  defaults: { offerPrice: number; skuPrefix: string; nextKey: () => string },
 ): RebuildResult {
   const usable = attributes.filter((attribute) => attribute.valueIds.length > 0);
   const combinations = combinationsOf(usable);
@@ -163,8 +163,8 @@ export function rebuildCombinations(
         // thing on the storefront and another in the cart.
         name,
         sku: matched.sku,
-        price: matched.price,
-        compareAtPrice: matched.compareAtPrice,
+        offerPrice: matched.offerPrice,
+        sellingPrice: matched.sellingPrice,
         stockQuantity: matched.stockQuantity,
       };
     }
@@ -174,7 +174,7 @@ export function rebuildCombinations(
       valueIds,
       name,
       sku: [defaults.skuPrefix, slugPart(name)].filter(Boolean).join('-'),
-      price: defaults.price,
+      offerPrice: defaults.offerPrice,
       stockQuantity: 0,
     };
   });

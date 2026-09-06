@@ -22,7 +22,6 @@ import { useCategoryTree } from '@/lib/api/categories'
 import { useBrands } from '@/lib/api/brands'
 import { useAllAttributes } from '@/lib/api/attributes'
 import { useAllTaxRules } from '@/lib/api/tax-rules'
-import { useAllShippingRules } from '@/lib/api/shipping-rules'
 import { useAllCollections } from '@/lib/api/collections'
 import { useAllBundleDeals } from '@/lib/api/bundle-deals'
 import {
@@ -63,6 +62,17 @@ import { slugify } from '@/lib/utils/slug'
 let variantKeySeq = 0
 const nextVariantKey = () => `__new_${(variantKeySeq += 1)}`
 
+/**
+ * What antd rejects a failed `validateFields()` with, and hands `onFinishFailed`.
+ *
+ * Declared here rather than imported: the type lives in `@rc-component/form`,
+ * antd's own transitive dependency, which this package does not depend on and
+ * cannot resolve. Only the two members read below are described.
+ */
+interface ValidationFailure {
+  errorFields: { name: (string | number)[]; errors: string[] }[]
+}
+
 interface ProductAttributeRow {
   id?: string
   name: string
@@ -78,14 +88,22 @@ interface FormValues {
   status: ProductStatus
   categoryId: string | null
   brandId: string
-  price: number
-  compareAtPrice?: number
-  stockQuantity: number
+  /** What the customer pays — the required one. */
+  offerPrice: number
+  /** The struck-through regular price; absent when nothing is on offer. */
+  sellingPrice?: number
+  /** Supplier cost, admin-only. */
+  purchasePrice?: number
+  /*
+   * No `stockQuantity`. Stock is owned by the Stock ledger and only moves via a
+   * StockMovement — receive a purchase order, or adjust stock. Editing it here
+   * asserted a quantity no ledger row backed, which the storefront advertised
+   * and checkout then rejected.
+   */
   lowStockThreshold: number
   isFeatured: boolean
 
   taxRuleId?: string
-  shippingRuleId?: string
   bundleDealId?: string | null
   collectionIds: string[]
   tags: string[]
@@ -108,13 +126,12 @@ const EMPTY_VALUES: FormValues = {
   status: 'DRAFT',
   categoryId: null,
   brandId: '',
-  price: 0,
-  compareAtPrice: undefined,
-  stockQuantity: 0,
+  offerPrice: 0,
+  sellingPrice: undefined,
+  purchasePrice: undefined,
   lowStockThreshold: 5,
   isFeatured: false,
   taxRuleId: undefined,
-  shippingRuleId: undefined,
   bundleDealId: null,
   collectionIds: [],
   tags: [],
@@ -161,7 +178,6 @@ export default function ProductFormPage() {
   const { data: brandsData } = useBrands()
   const { data: attributes = [] } = useAllAttributes()
   const { data: taxRules = [] } = useAllTaxRules()
-  const { data: shippingRules = [] } = useAllShippingRules()
   const { data: collections = [] } = useAllCollections()
   const { data: bundleDeals = [] } = useAllBundleDeals()
 
@@ -172,6 +188,31 @@ export default function ProductFormPage() {
 
   const [saveError, setSaveError] = React.useState<string | null>(null)
 
+  /**
+   * Surfaces a rejected validation instead of letting the click look like a
+   * no-op.
+   *
+   * antd renders each message beneath its own field, but this form is long and
+   * the buttons live in the header — so a required field left empty far down
+   * the page produced a header button that appeared frozen, with the only
+   * feedback off-screen. `scrollToFirstError` on `<Form>` does not cover this:
+   * it applies to the `onFinish` path, not to a rejected `validateFields()`.
+   *
+   * So: scroll to the first offending field, and say at the top of the form how
+   * many there are, using the same banner a failed save already uses.
+   */
+  const reportValidationFailure = (error: unknown) => {
+    const fields = (error as ValidationFailure | undefined)?.errorFields ?? []
+    if (fields.length === 0) return
+
+    form.scrollToField(fields[0].name, { behavior: 'smooth', block: 'center' })
+    setSaveError(
+      fields.length === 1
+        ? `${fields[0].errors[0] ?? 'A field needs attention'} — it is highlighted below.`
+        : `${fields.length} fields need attention before this can be saved. The first is highlighted below.`,
+    )
+  }
+
   /*
    * Watched rather than read with `getFieldValue`: a new combination starts
    * from the product's price and code, and antd does not re-render this
@@ -179,7 +220,7 @@ export default function ProductFormPage() {
    * variant editor whatever they were when the page first drew, which on a
    * create is 0 and "".
    */
-  const watchedPrice = Form.useWatch('price', form)
+  const watchedPrice = Form.useWatch('offerPrice', form)
   const watchedSku = Form.useWatch('sku', form)
 
   /**
@@ -226,7 +267,21 @@ export default function ProductFormPage() {
    * rather than leaving the form describing the request instead of the result.
    */
   const productKey = product ? `${product.id}:${product.updatedAt}` : undefined
-  const [syncedProductKey, setSyncedProductKey] = React.useState<string | undefined>(productKey)
+  /*
+   * Deliberately starts as `undefined`, NOT as `productKey`.
+   *
+   * `useState(productKey)` only honours its argument on the first render — and
+   * when the detail query is already warm (arriving from the products list, or
+   * back on this page after a save invalidated it) `product` is non-undefined
+   * on that very first render. Seeding the key from it therefore marked the
+   * product as "already synced" before anything had been read out of it, so the
+   * block below never ran and `images`/`rows`/`video` kept their empty
+   * defaults. The gallery looked empty, and — because the form submits
+   * `images` as the complete intended set — saving then deleted every image
+   * row the product had. Starting at `undefined` makes the first render always
+   * a cache miss, so the sync runs exactly once per product either way.
+   */
+  const [syncedProductKey, setSyncedProductKey] = React.useState<string | undefined>(undefined)
   if (product && productKey !== syncedProductKey) {
     setSyncedProductKey(productKey)
 
@@ -238,11 +293,11 @@ export default function ProductFormPage() {
       valueIds: (variant.optionValues ?? []).map((selection) => selection.valueId),
       name: variant.name,
       sku: variant.sku,
-      price: variant.price === undefined ? 0 : Number(variant.price),
-      compareAtPrice:
-        variant.compareAtPrice === null || variant.compareAtPrice === undefined
+      offerPrice: variant.offerPrice === undefined ? 0 : Number(variant.offerPrice),
+      sellingPrice:
+        variant.sellingPrice === null || variant.sellingPrice === undefined
           ? undefined
-          : Number(variant.compareAtPrice),
+          : Number(variant.sellingPrice),
       stockQuantity: variant.stockQuantity ?? 0,
     }))
 
@@ -289,14 +344,16 @@ export default function ProductFormPage() {
       status: product.status,
       categoryId: product.categoryId ?? null,
       brandId: product.brandId ?? '',
-      price: Number(product.price),
-      compareAtPrice:
-        product.compareAtPrice === null ? undefined : Number(product.compareAtPrice),
-      stockQuantity: product.stockQuantity,
+      offerPrice: Number(product.offerPrice),
+      sellingPrice:
+        product.sellingPrice === null ? undefined : Number(product.sellingPrice),
+      purchasePrice:
+        product.purchasePrice === null || product.purchasePrice === undefined
+          ? undefined
+          : Number(product.purchasePrice),
       lowStockThreshold: product.lowStockThreshold,
       isFeatured: product.isFeatured,
       taxRuleId: product.taxRuleId ?? undefined,
-      shippingRuleId: product.shippingRuleId ?? undefined,
       bundleDealId: product.bundleDealId ?? null,
       collectionIds: (product.collections ?? []).map((row) => row.collection.id),
       tags: (product.tags ?? []).map((row) => row.tag.name),
@@ -381,6 +438,24 @@ export default function ProductFormPage() {
     setSaveError(null)
 
     /*
+     * Refuse to submit a gallery the form never managed to load.
+     *
+     * `images` is sent as the COMPLETE intended set — the server deletes every
+     * row not resubmitted — so an empty array is indistinguishable from "the
+     * merchant removed them all". If the product on record has images and this
+     * form is holding none, that is a load failure, not an intention, and
+     * saving would silently destroy them. Deleting the last image is still
+     * possible: it goes through the gallery's own remove control, which leaves
+     * the product's `images` empty on the next load too.
+     */
+    if (isEdit && (product?.images?.length ?? 0) > 0 && images.length === 0) {
+      setSaveError(
+        'This product has images on record but none are loaded here, so saving would delete them. Reload the page and try again.',
+      )
+      return
+    }
+
+    /*
      * The attributes this product sells, in shop order, with only the values it
      * sells. `valueIds` order is what `optionValueIndexes` indexes into, so the
      * two are built from the same list and cannot disagree.
@@ -398,9 +473,10 @@ export default function ProductFormPage() {
       ...(row.id ? { id: row.id } : {}),
       name: row.name,
       sku: row.sku,
-      price: row.price,
-      ...(row.compareAtPrice === undefined ? {} : { compareAtPrice: row.compareAtPrice }),
-      stockQuantity: row.stockQuantity,
+      offerPrice: row.offerPrice,
+      ...(row.sellingPrice === undefined ? {} : { sellingPrice: row.sellingPrice }),
+      // No `stockQuantity` — the ledger owns it, and the backend no longer
+      // accepts one here. The row still carries it, to display.
       attributes: {},
       // Sent only when options exist; the backend rejects a selection on a
       // product that has none.
@@ -453,14 +529,13 @@ export default function ProductFormPage() {
       status: values.status,
       categoryId: values.categoryId ?? undefined,
       brandId: values.brandId,
-      price: values.price,
-      compareAtPrice: values.compareAtPrice,
-      stockQuantity: values.stockQuantity,
+      offerPrice: values.offerPrice,
+      sellingPrice: values.sellingPrice,
+      purchasePrice: values.purchasePrice,
       lowStockThreshold: values.lowStockThreshold,
       isFeatured: values.isFeatured,
 
       taxRuleId: values.taxRuleId,
-      shippingRuleId: values.shippingRuleId,
       // Null clears the offer; the backend distinguishes that from omission.
       bundleDealId: values.bundleDealId ?? null,
       collectionIds: values.collectionIds ?? [],
@@ -555,10 +630,7 @@ export default function ProductFormPage() {
                     await handleSubmit(values as FormValues)
                     navigate('/catalog/products')
                   },
-                  () => {
-                    // antd renders the per-field messages and scrolls to the
-                    // first; nothing more to say here.
-                  },
+                  reportValidationFailure,
                 )
               }}
             >
@@ -577,7 +649,11 @@ export default function ProductFormPage() {
         layout="vertical"
         initialValues={EMPTY_VALUES}
         onFinish={handleSubmit}
-        scrollToFirstError
+        // The "…and continue editing" button submits through here, so its
+        // failures need the same banner the "…and return" button gets — without
+        // this they are silent too, for the same reason.
+        onFinishFailed={reportValidationFailure}
+        scrollToFirstError={{ behavior: 'smooth', block: 'center' }}
       >
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
           {/* --- The product itself, one column, scrolled top to bottom --- */}
@@ -719,20 +795,33 @@ export default function ProductFormPage() {
               </CardHeader>
               <CardContent className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
                 <Form.Item
-                  name="price"
-                  label="Price"
-                  rules={[
-                    { required: true, message: 'Price is required' },
-                    { type: 'number', min: 0, message: 'Price cannot be negative' },
-                  ]}
+                  name="purchasePrice"
+                  label="Purchase price"
+                  rules={[{ type: 'number', min: 0, message: 'Cannot be negative' }]}
+                  extra="What you paid your supplier. Never shown to customers."
                 >
                   <InputNumber className="w-full" min={0} step={0.01} />
                 </Form.Item>
                 <Form.Item
-                  name="compareAtPrice"
-                  label="Compare-at price"
+                  name="offerPrice"
+                  label="Offer price"
+                  rules={[
+                    { required: true, message: 'Offer price is required' },
+                    { type: 'number', min: 0, message: 'Offer price cannot be negative' },
+                  ]}
+                  extra="What the customer actually pays."
+                >
+                  <InputNumber className="w-full" min={0} step={0.01} />
+                </Form.Item>
+                <Form.Item
+                  name="sellingPrice"
+                  label="Regular price"
                   rules={[{ type: 'number', min: 0, message: 'Cannot be negative' }]}
-                  extra="Shown struck through next to the price."
+                  /*
+                   * The required field is the OFFER price, not this one, which
+                   * reads oddly without saying so — see design.md Decision 3.
+                   */
+                  extra="Shown struck through above the offer price. Leave empty if this product is not on offer."
                 >
                   <InputNumber className="w-full" min={0} step={0.01} />
                 </Form.Item>
@@ -747,18 +836,6 @@ export default function ProductFormPage() {
                       value: rule.id,
                       label: `${rule.name} — ${rule.type === 'PERCENT' ? `${Number(rule.value)}%` : Number(rule.value)}`,
                     }))}
-                    optionFilterProp="label"
-                    showSearch
-                  />
-                </Form.Item>
-                <Form.Item
-                  name="shippingRuleId"
-                  label="Shipping rule"
-                  rules={[{ required: true, message: 'A product must be deliverable' }]}
-                >
-                  <Select
-                    placeholder="Select a shipping rule"
-                    options={shippingRules.map((rule) => ({ value: rule.id, label: rule.name }))}
                     optionFilterProp="label"
                     showSearch
                   />
@@ -899,18 +976,25 @@ export default function ProductFormPage() {
               <CardHeader>
                 <CardTitle>Inventory</CardTitle>
                 <CardDescription>
-                  The product's own stock. A product selling attribute values counts its stock per
-                  combination above instead.
+                  Stock is not set here. It moves when you receive a purchase order or adjust stock,
+                  so every change leaves a record of where the units came from.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
-                <Form.Item
-                  name="stockQuantity"
-                  label="Stock quantity"
-                  rules={[{ type: 'number', min: 0, message: 'Cannot be negative' }]}
-                >
-                  <InputNumber className="w-full" min={0} />
-                </Form.Item>
+                {/* Read-only: the ledger is the only writer. Shown so this page
+                    still answers "how many are there?" without implying it can
+                    change the answer. Deliberately NOT a `Form.Item` — this is
+                    not a form field, and antd injects `value`/`onChange` into a
+                    Form.Item's child, which a plain element cannot accept. */}
+                <div className="mb-6">
+                  <p className="mb-2 text-sm">In stock</p>
+                  <p className="tabular-nums text-sm">
+                    {isEdit ? (product?.stockQuantity ?? 0) : 0}
+                    <span className="text-muted-foreground ml-2 text-xs">
+                      {isEdit ? 'across all warehouses' : 'until stock is received'}
+                    </span>
+                  </p>
+                </div>
                 <Form.Item
                   name="lowStockThreshold"
                   label="Low stock threshold"

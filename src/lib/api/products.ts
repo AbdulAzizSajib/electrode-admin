@@ -6,7 +6,6 @@ import { queryKeys } from '@/lib/api/query-keys'
 import type { Category } from '@/lib/api/categories'
 import type { Brand } from '@/lib/api/brands'
 import type { TaxRule } from '@/lib/api/tax-rules'
-import type { ShippingRule } from '@/lib/api/shipping-rules'
 import type { BundleDeal } from '@/lib/api/bundle-deals'
 import type { Collection } from '@/lib/api/collections'
 
@@ -74,8 +73,8 @@ export interface ProductVariant {
   name: string
   sku: string
   /** Decimal column — arrives as a string from the API (see design.md). */
-  price?: string
-  compareAtPrice?: string | null
+  offerPrice?: string
+  sellingPrice?: string | null
   stockQuantity?: number
   attributes: Record<string, string>
   image?: string | null
@@ -83,14 +82,17 @@ export interface ProductVariant {
   optionValues?: { valueId: string }[]
 }
 
-/** Request-side counterpart of `ProductVariant` — `price` is a plain number here, not the string a Decimal column reads back as. */
+/** Request-side counterpart of `ProductVariant` — the prices are plain numbers here, not the strings a Decimal column reads back as. */
 export interface ProductVariantInput {
   id?: string
   name: string
   sku: string
-  price: number
-  compareAtPrice?: number
-  stockQuantity: number
+  offerPrice: number
+  sellingPrice?: number
+  /*
+   * No `stockQuantity`. The Stock ledger owns it and the backend rejects it
+   * here — a variant's stock moves only via a StockMovement.
+   */
   attributes: Record<string, string>
   /**
    * One index per option, into that option's `valueIds`. Positional because on
@@ -120,10 +122,16 @@ export interface Product {
   brandId: string | null
   category: Category | null
   brand: Brand | null
-  /** Decimal column — arrives as a string from the API (see design.md). */
-  price: string
-  /** Decimal column — arrives as a string from the API (see design.md). */
-  compareAtPrice: string | null
+  /** What the shopper is charged. Decimal column — arrives as a string from the API (see design.md). */
+  offerPrice: string
+  /** The regular price, shown struck through. Null when nothing is on offer. */
+  sellingPrice: string | null
+  /**
+   * Supplier cost. Optional because only ADMIN reads carry it — the public
+   * product projections exclude it deliberately, so a response shaped by them
+   * has no such key at all.
+   */
+  purchasePrice?: string | null
   stockQuantity: number
   lowStockThreshold: number
   isFeatured: boolean
@@ -143,14 +151,16 @@ export interface Product {
   attributes?: ProductAttribute[]
 
   /*
-   * The named rules pricing this product's tax and delivery. Nullable in the
-   * schema because rows predate the columns, but the service treats a product
-   * without them as incomplete — one cannot be taxed, the other delivered.
+   * The named rule pricing this product's tax. Nullable in the schema because
+   * rows predate the column, but the service treats a product without one as
+   * incomplete — it cannot be taxed.
+   *
+   * There is no delivery counterpart any more. Delivery is a store-wide list the
+   * shopper picks from at checkout, configured in Checkout Settings, so it is
+   * not a property of a product at all.
    */
   taxRuleId: string | null
   taxRule?: TaxRule | null
-  shippingRuleId: string | null
-  shippingRule?: ShippingRule | null
   /** Optional: a product is perfectly sellable with no offer. */
   bundleDealId: string | null
   bundleDeal?: BundleDeal | null
@@ -210,14 +220,17 @@ export interface ProductInput {
   status?: ProductStatus
   categoryId?: string
   brandId?: string
-  price: number
-  compareAtPrice?: number
-  stockQuantity?: number
+  /** What the shopper is charged — the only price a product must have. */
+  offerPrice: number
+  /** The regular price, struck through. Omitted when nothing is on offer. */
+  sellingPrice?: number
+  /** Supplier cost. Admin-only — the storefront never receives it. */
+  purchasePrice?: number
+  /** No `stockQuantity` — see `ProductVariantInput` above. */
   lowStockThreshold?: number
   isFeatured?: boolean
 
   taxRuleId?: string
-  shippingRuleId?: string
   /** `null` clears the offer; omitting the key leaves it as it was. */
   bundleDealId?: string | null
 
@@ -270,12 +283,12 @@ export interface ProductListParams extends ListParams {
 export interface ProductListItem {
   id: string
   name: string
-  /** Supplier cost — the "purchase" column. Decimal, so a string. Null until the merchant records one. */
-  costPrice: string | null
-  /** Decimal column — arrives as a string from the API (see design.md). */
-  price: string
-  /** Decimal column — arrives as a string from the API (see design.md). */
-  compareAtPrice: string | null
+  /** Supplier cost. Decimal, so a string. Null until the merchant records one. */
+  purchasePrice: string | null
+  /** What the shopper is charged. Decimal column — arrives as a string. */
+  offerPrice: string
+  /** The regular price, shown struck through. Decimal column — arrives as a string. */
+  sellingPrice: string | null
   stockQuantity: number
   lowStockThreshold: number
   createdAt: string

@@ -402,6 +402,16 @@ export const DEFAULT_CHECKOUT_CONFIG: CheckoutConfig = {
   showOrderNote: true,
   allowGuestCheckout: true,
   notice: '',
+  /*
+   * Empty, and collection off — the same default the backend carries, and the
+   * state a store that has never configured delivery is genuinely in. There is
+   * no delivery setup that is right for an arbitrary shop: an area named for the
+   * wrong city, or a price nobody chose, would be worse than nothing because it
+   * would be charged. Checkout refuses to price an order until the merchant
+   * fills this in, and the form refuses to SAVE an empty list — so the emptiness
+   * is a visible setup step rather than a silently wrong charge.
+   */
+  delivery: { offersPickup: false, options: [] },
 }
 
 export const DEFAULT_THEME: Theme = {

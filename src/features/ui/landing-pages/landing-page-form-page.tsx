@@ -354,14 +354,14 @@ function LandingPageFields({
               This page will show{' '}
               <strong className="text-foreground">
                 {/* Decimal columns read back as strings from the API. */}
-                {formatCurrency(Number(selectedProduct.price))}
+                {formatCurrency(Number(selectedProduct.offerPrice))}
               </strong>
-              {selectedProduct.compareAtPrice ? (
+              {selectedProduct.sellingPrice ? (
                 <>
                   {' '}
                   with{' '}
                   <span className="line-through">
-                    {formatCurrency(Number(selectedProduct.compareAtPrice))}
+                    {formatCurrency(Number(selectedProduct.sellingPrice))}
                   </span>{' '}
                   struck through
                 </>

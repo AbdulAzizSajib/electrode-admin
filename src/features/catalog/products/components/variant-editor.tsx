@@ -48,7 +48,7 @@ export interface VariantEditorProps {
   rows: CombinationRow[]
   onRowsChange: (rows: CombinationRow[]) => void
 
-  /** The product's own price, used as the starting price for a new combination. */
+  /** The product's own offer price, used as the starting price for a new combination. */
   basePrice: number
   /** Prefix for a generated variant SKU. */
   skuPrefix: string
@@ -69,8 +69,8 @@ function toExisting(rows: CombinationRow[]): ExistingVariant[] {
     variantKey: row.variantKey,
     name: row.name,
     sku: row.sku,
-    price: row.price,
-    compareAtPrice: row.compareAtPrice,
+    offerPrice: row.offerPrice,
+    sellingPrice: row.sellingPrice,
     stockQuantity: row.stockQuantity,
     valueIds: row.valueIds,
   }))
@@ -129,7 +129,7 @@ export function VariantEditor({
       .filter((attribute) => attribute.valueIds.length > 0)
 
     const result = rebuildCombinations(nextAttributes, toExisting(rows), {
-      price: basePrice,
+      offerPrice: basePrice,
       skuPrefix,
       nextKey: nextVariantKey,
     })
@@ -250,8 +250,8 @@ export function VariantEditor({
               <TableRow>
                 <TableHead>Combination</TableHead>
                 <TableHead className="w-44">Product code</TableHead>
-                <TableHead className="w-28">Price</TableHead>
-                <TableHead className="w-28">Compare-at</TableHead>
+                <TableHead className="w-28">Offer price</TableHead>
+                <TableHead className="w-28">Regular price</TableHead>
                 <TableHead className="w-24">Stock</TableHead>
                 <TableHead className="w-40">Images</TableHead>
                 <TableHead className="w-10" />
@@ -285,8 +285,8 @@ export function VariantEditor({
                       className="w-full"
                       min={0}
                       step={0.01}
-                      value={row.price}
-                      onChange={(value) => updateRow(index, { price: value ?? 0 })}
+                      value={row.offerPrice}
+                      onChange={(value) => updateRow(index, { offerPrice: value ?? 0 })}
                     />
                   </TableCell>
                   <TableCell className="align-top">
@@ -294,17 +294,15 @@ export function VariantEditor({
                       className="w-full"
                       min={0}
                       step={0.01}
-                      value={row.compareAtPrice}
-                      onChange={(value) => updateRow(index, { compareAtPrice: value ?? undefined })}
+                      value={row.sellingPrice}
+                      onChange={(value) => updateRow(index, { sellingPrice: value ?? undefined })}
                     />
                   </TableCell>
+                  {/* Read-only: a variant's stock is owned by the Stock ledger
+                      and moves only via a StockMovement (receive a purchase
+                      order, or adjust stock). A new row reads 0 until then. */}
                   <TableCell className="align-top">
-                    <InputNumber
-                      className="w-full"
-                      min={0}
-                      value={row.stockQuantity}
-                      onChange={(value) => updateRow(index, { stockQuantity: value ?? 0 })}
-                    />
+                    <p className="tabular-nums pt-2 text-sm">{row.stockQuantity}</p>
                   </TableCell>
                   <TableCell className="align-top">
                     {/* Files picked here are stamped with this row's key, which

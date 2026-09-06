@@ -156,7 +156,7 @@ export default function ProductDetailPage() {
                       <TableRow>
                         <TableHead>Name</TableHead>
                         <TableHead>SKU</TableHead>
-                        <TableHead>Price</TableHead>
+                        <TableHead>Offer price</TableHead>
                         <TableHead>Stock</TableHead>
                         <TableHead>Attributes</TableHead>
                       </TableRow>
@@ -166,7 +166,7 @@ export default function ProductDetailPage() {
                         <TableRow key={v.id ?? v.sku}>
                           <TableCell>{v.name}</TableCell>
                           <TableCell>{v.sku}</TableCell>
-                          <TableCell>{v.price === undefined ? '—' : formatCurrency(Number(v.price))}</TableCell>
+                          <TableCell>{v.offerPrice === undefined ? '—' : formatCurrency(Number(v.offerPrice))}</TableCell>
                           <TableCell>{v.stockQuantity ?? 0}</TableCell>
                           <TableCell>
                             <div className="flex flex-wrap gap-1">
@@ -198,8 +198,11 @@ export default function ProductDetailPage() {
               {product.isFeatured && <Row label="Featured" value={<Badge variant="info">Featured</Badge>} />}
               <Row label="Category" value={product.category?.name ?? '—'} />
               <Row label="Brand" value={product.brand?.name ?? '—'} />
-              <Row label="Price" value={formatCurrency(Number(product.price))} />
-              {product.compareAtPrice && <Row label="Compare-at price" value={formatCurrency(Number(product.compareAtPrice))} />}
+              {product.purchasePrice != null && (
+                <Row label="Purchase price" value={formatCurrency(Number(product.purchasePrice))} />
+              )}
+              <Row label="Offer price" value={formatCurrency(Number(product.offerPrice))} />
+              {product.sellingPrice && <Row label="Regular price" value={formatCurrency(Number(product.sellingPrice))} />}
               <Row label="Stock" value={<Badge variant={STOCK_VARIANT[product.stockStatus]}>{STOCK_LABEL[product.stockStatus]}</Badge>} />
               <Row label="Quantity" value={String(product.stockQuantity)} />
               <Row label="Low stock threshold" value={String(product.lowStockThreshold)} />

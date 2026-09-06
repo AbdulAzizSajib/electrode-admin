@@ -228,7 +228,16 @@ export default function OrderDetailPage() {
             <div className="flex flex-col gap-1 border-t border-border px-4 py-3 text-sm">
               <Row label="Subtotal" value={formatCurrency(Number(order.subtotal))} />
               {Number(order.discountAmount) > 0 && <Row label="Discount" value={`-${formatCurrency(Number(order.discountAmount))}`} />}
-              <Row label="Shipping" value={formatCurrency(Number(order.shippingAmount))} />
+              {/* The option's captured name, so this line reads as the choice
+                  the shopper made rather than a bare "Shipping" — and keeps
+                  reading that way after the option is renamed or deleted. */}
+              <Row
+                label={
+                  order.deliveryOptionLabel ??
+                  (order.deliveryMethod === 'PICKUP' ? 'Collection' : 'Shipping')
+                }
+                value={formatCurrency(Number(order.shippingAmount))}
+              />
               <Row label="Tax" value={formatCurrency(Number(order.taxAmount))} />
               <Row label="Total" value={formatCurrency(Number(order.totalAmount))} bold />
             </div>
@@ -321,8 +330,34 @@ export default function OrderDetailPage() {
             </Card>
           )}
 
+          {/*
+            A collection order must be unmistakable, because the failure it
+            prevents is a real one: handing a parcel the customer is coming to
+            fetch to a courier, and charging for a delivery nobody asked for.
+            The address card below still renders whatever was captured, but this
+            says plainly that nothing is being delivered.
+          */}
+          {order.deliveryMethod === 'PICKUP' && (
+            <Card className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
+              <CardHeader><CardTitle>Collection — do not dispatch</CardTitle></CardHeader>
+              <CardContent className="flex flex-col gap-1 text-sm">
+                <span className="font-medium text-foreground">
+                  {order.deliveryOptionLabel ?? 'Collection in person'}
+                </span>
+                <span className="text-muted-foreground">
+                  The customer is collecting this order in person. It is not to be
+                  handed to a courier.
+                </span>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
-            <CardHeader><CardTitle>Shipping address</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle>
+                {order.deliveryMethod === 'PICKUP' ? 'Contact details' : 'Shipping address'}
+              </CardTitle>
+            </CardHeader>
             <CardContent className="flex flex-col gap-0.5 text-sm text-foreground">
               {order.shippingAddress ? (
                 <>
@@ -334,7 +369,14 @@ export default function OrderDetailPage() {
                   <span className="text-muted-foreground">{order.shippingAddress.phone}</span>
                 </>
               ) : (
-                <span className="text-muted-foreground">No shipping address on file.</span>
+                <span className="text-muted-foreground">
+                  {order.deliveryMethod === 'PICKUP'
+                    ? // Expected, not missing data: the checkout stops asking a
+                      // collecting shopper for an address, since there is
+                      // nothing to deliver to.
+                      'None — this order is being collected in person.'
+                    : 'No shipping address on file.'}
+                </span>
               )}
             </CardContent>
           </Card>

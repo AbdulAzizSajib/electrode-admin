@@ -92,11 +92,28 @@ export interface Order {
    * deleted or renamed — which is what keeps a finished campaign's orders
    * readable.
    *
-   * Which delivery area the shopper chose is not here: it is on
-   * `shippingAddress.state`.
+   * Which delivery zone a LANDING-PAGE shopper chose is not here: it is on
+   * `shippingAddress.state`, because those zones belong to the page rather than
+   * to the store. A shop order carries its choice in the delivery fields below.
    */
   landingPageId: string | null
   landingPageTitle: string | null
+  /**
+   * What the shopper chose at checkout, captured when the order was placed.
+   *
+   * `deliveryOptionLabel` does NOT change when the merchant later renames,
+   * reprices or deletes that option — it is what this shopper agreed to, and it
+   * is what keeps the order readable once the option is gone.
+   * `deliveryOptionKey` is the stable handle that survives a rename, so counting
+   * orders by option still works after the list is edited.
+   *
+   * All three null for two populations that legitimately have no choice
+   * recorded: orders placed before delivery options existed, and landing-page
+   * orders, which are priced by the page's own zones.
+   */
+  deliveryMethod: 'DELIVERY' | 'PICKUP' | null
+  deliveryOptionKey: string | null
+  deliveryOptionLabel: string | null
   /** Only present on detail responses (`GET /orders/:id`). */
   landingPage?: { id: string; title: string; slug: string } | null
   shippingAddress: OrderShippingAddress | null

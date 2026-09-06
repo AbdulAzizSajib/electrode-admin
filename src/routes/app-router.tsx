@@ -22,10 +22,6 @@ const AttributesPage = lazy(() => import('@/features/catalog/attributes/attribut
 const AttributeFormPage = lazy(() => import('@/features/catalog/attributes/attribute-form-page'))
 const TaxRulesPage = lazy(() => import('@/features/catalog/tax-rules/tax-rules-page'))
 const TaxRuleFormPage = lazy(() => import('@/features/catalog/tax-rules/tax-rule-form-page'))
-const ShippingRulesPage = lazy(() => import('@/features/catalog/shipping-rules/shipping-rules-page'))
-const ShippingRuleFormPage = lazy(
-  () => import('@/features/catalog/shipping-rules/shipping-rule-form-page'),
-)
 const CollectionsPage = lazy(() => import('@/features/catalog/collections/collections-page'))
 const CollectionFormPage = lazy(
   () => import('@/features/catalog/collections/collection-form-page'),
@@ -170,9 +166,6 @@ export function AppRouter() {
           <Route path="/catalog/tax-rules" element={<TaxRulesPage />} />
           <Route path="/catalog/tax-rules/new" element={<TaxRuleFormPage />} />
           <Route path="/catalog/tax-rules/:taxRuleId" element={<TaxRuleFormPage />} />
-          <Route path="/catalog/shipping-rules" element={<ShippingRulesPage />} />
-          <Route path="/catalog/shipping-rules/new" element={<ShippingRuleFormPage />} />
-          <Route path="/catalog/shipping-rules/:shippingRuleId" element={<ShippingRuleFormPage />} />
           <Route path="/catalog/collections" element={<CollectionsPage />} />
           <Route path="/catalog/collections/new" element={<CollectionFormPage />} />
           <Route path="/catalog/collections/:collectionId" element={<CollectionFormPage />} />

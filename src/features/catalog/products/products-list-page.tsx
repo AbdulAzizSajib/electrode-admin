@@ -22,17 +22,19 @@ const STOCK_LABEL = { in_stock: 'In stock', low_stock: 'Low stock', out_of_stock
 /**
  * Splits the two prices a row shows.
  *
- * `compareAtPrice` is the struck-through "was" figure and `price` is what the
- * customer actually pays, so a product carrying both is on offer: the list
- * price is the higher one and the offer is the lower. A product with no
- * `compareAtPrice` is simply not on offer — its `price` IS the selling price,
- * and the offer column stays empty rather than repeating it.
+ * The columns already read "Selling" and "Offered"; before the fields were
+ * renamed this had to translate `compareAtPrice`/`price` into those words by
+ * hand, which is the confusion the rename removed. The fields now say what the
+ * columns say, so this only decides whether an offer is running.
+ *
+ * A product with no `sellingPrice` is not on offer — its `offerPrice` IS the
+ * selling price, and the offer column stays empty rather than repeating it.
  */
 function prices(row: ProductListRow) {
-  const onOffer = row.compareAtPrice !== null
+  const onOffer = row.sellingPrice !== null
   return {
-    selling: Number(onOffer ? row.compareAtPrice : row.price),
-    offered: onOffer ? Number(row.price) : null,
+    selling: Number(onOffer ? row.sellingPrice : row.offerPrice),
+    offered: onOffer ? Number(row.offerPrice) : null,
   }
 }
 
@@ -108,10 +110,10 @@ export default function ProductsListPage() {
     { id: 'brand', header: 'Brand', cell: ({ row }) => row.original.brand?.name ?? EMPTY },
     { id: 'taxRule', header: 'Tax rule', cell: ({ row }) => row.original.taxRule?.name ?? EMPTY },
     {
-      id: 'costPrice',
+      id: 'purchasePrice',
       header: 'Purchase',
       cell: ({ row }) =>
-        row.original.costPrice === null ? EMPTY : formatCurrency(Number(row.original.costPrice)),
+        row.original.purchasePrice === null ? EMPTY : formatCurrency(Number(row.original.purchasePrice)),
     },
     {
       id: 'sellingPrice',

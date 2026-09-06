@@ -66,8 +66,8 @@ export default function StockReportPage() {
       // unpriced stock reads as complete when it is not.
       hint:
         summary && summary.unvaluedItemCount > 0
-          ? `Excludes ${formatNumber(summary.unvaluedItemCount)} item(s) / ${formatNumber(summary.unvaluedUnitCount)} unit(s) with no cost price`
-          : 'Every item in this result has a cost price',
+          ? `Excludes ${formatNumber(summary.unvaluedItemCount)} item(s) / ${formatNumber(summary.unvaluedUnitCount)} unit(s) with no purchase price`
+          : 'Every item in this result has a purchase price',
     },
     { label: 'Stock value at retail', value: formatCurrency(summary?.totalRetailValue ?? 0) },
   ]
@@ -139,9 +139,9 @@ export default function StockReportPage() {
       header: 'Cost value',
       cell: ({ row }) =>
         row.original.costValue === null ? (
-          // Never "৳0" — an item with no cost price is unvalued, and showing
+          // Never "৳0" — an item with no purchase price is unvalued, and showing
           // zero would read as free stock.
-          <span className="text-muted-foreground">No cost price</span>
+          <span className="text-muted-foreground">No purchase price</span>
         ) : (
           formatCurrency(row.original.costValue)
         ),

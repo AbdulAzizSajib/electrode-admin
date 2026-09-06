@@ -62,9 +62,10 @@ export interface StockReportRow {
   hasQuantityMismatch: boolean
   lowStockThreshold: number
   isLowStock: boolean
-  price: number | null
-  costPrice: number | null
-  /** Null, never 0, when the item has no cost price — it is unvalued, not free. */
+  offerPrice: number | null
+  /** Supplier cost. Present here because the stock report is admin-only. */
+  purchasePrice: number | null
+  /** Null, never 0, when the item has no purchase price — it is unvalued, not free. */
   costValue: number | null
   retailValue: number | null
   warehouses: Array<{ warehouseId: string; warehouseName: string; quantity: number; reserved: number }>

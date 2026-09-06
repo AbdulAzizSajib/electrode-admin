@@ -42,7 +42,7 @@ const keyFactory = () => {
   return () => `__new_${(n += 1)}`
 }
 
-const defaults = () => ({ price: 100, skuPrefix: 'prod', nextKey: keyFactory() })
+const defaults = () => ({ offerPrice: 100, skuPrefix: 'prod', nextKey: keyFactory() })
 
 const existing = (
   over: Partial<ExistingVariant> & Pick<ExistingVariant, 'variantKey'>,
@@ -50,7 +50,7 @@ const existing = (
   id: over.variantKey,
   name: '',
   sku: '',
-  price: 0,
+  offerPrice: 0,
   stockQuantity: 0,
   valueIds: [],
   ...over,
@@ -98,7 +98,7 @@ describe('rebuildCombinations', () => {
     expect(result.rows.map((r) => r.name)).toEqual(['Red', 'Green'])
     // Nothing was invented: a brand-new combination starts unstocked.
     expect(result.rows.every((r) => r.stockQuantity === 0)).toBe(true)
-    expect(result.rows.every((r) => r.price === 100)).toBe(true)
+    expect(result.rows.every((r) => r.offerPrice === 100)).toBe(true)
   })
 
   it('9.2 — unticking a value removes only that value’s combinations', () => {
@@ -107,7 +107,7 @@ describe('rebuildCombinations', () => {
         variantKey: row.variantKey,
         name: row.name,
         sku: row.sku,
-        price: row.price,
+        offerPrice: row.offerPrice,
         stockQuantity: 7,
         valueIds: row.valueIds,
       }),
@@ -122,14 +122,14 @@ describe('rebuildCombinations', () => {
     expect(result.removed.map((r) => r.name)).toEqual(['Green / S', 'Green / M'])
   })
 
-  it('9.3 — adding a value leaves every existing combination’s stock, price, code and identity alone', () => {
+  it('9.3 — adding a value leaves every existing combination’s stock, offerPrice, code and identity alone', () => {
     // Four combinations, each individually stocked and coded. This is the exact
     // situation that lost four variants' stock before this change.
     const before: ExistingVariant[] = [
-      existing({ variantKey: 'db-1', name: 'Red / S', sku: 'RS', price: 111, stockQuantity: 11, valueIds: ['v-red', 'v-s'] }),
-      existing({ variantKey: 'db-2', name: 'Red / M', sku: 'RM', price: 122, stockQuantity: 22, valueIds: ['v-red', 'v-m'] }),
-      existing({ variantKey: 'db-3', name: 'Green / S', sku: 'GS', price: 133, stockQuantity: 33, valueIds: ['v-green', 'v-s'] }),
-      existing({ variantKey: 'db-4', name: 'Green / M', sku: 'GM', price: 144, stockQuantity: 44, valueIds: ['v-green', 'v-m'] }),
+      existing({ variantKey: 'db-1', name: 'Red / S', sku: 'RS', offerPrice: 111, stockQuantity: 11, valueIds: ['v-red', 'v-s'] }),
+      existing({ variantKey: 'db-2', name: 'Red / M', sku: 'RM', offerPrice: 122, stockQuantity: 22, valueIds: ['v-red', 'v-m'] }),
+      existing({ variantKey: 'db-3', name: 'Green / S', sku: 'GS', offerPrice: 133, stockQuantity: 33, valueIds: ['v-green', 'v-s'] }),
+      existing({ variantKey: 'db-4', name: 'Green / M', sku: 'GM', offerPrice: 144, stockQuantity: 44, valueIds: ['v-green', 'v-m'] }),
     ]
 
     const sizeWithXl = attribute('a-size', 'Size', [
@@ -149,16 +149,16 @@ describe('rebuildCombinations', () => {
       const kept = result.rows.find((row) => row.id === source.id)
       expect(kept, `${source.name} survived`).toBeDefined()
       expect(kept?.sku).toBe(source.sku)
-      expect(kept?.price).toBe(source.price)
+      expect(kept?.offerPrice).toBe(source.offerPrice)
       expect(kept?.stockQuantity).toBe(source.stockQuantity)
       expect(kept?.variantKey).toBe(source.variantKey)
     }
 
-    // The two genuinely new combinations start from the product price with no
+    // The two genuinely new combinations start from the product offerPrice with no
     // stock — stock is never invented for something never counted.
     const fresh = result.rows.filter((row) => !row.id)
     expect(fresh.map((r) => r.name)).toEqual(['Red / XL', 'Green / XL'])
-    expect(fresh.every((r) => r.stockQuantity === 0 && r.price === 100)).toBe(true)
+    expect(fresh.every((r) => r.stockQuantity === 0 && r.offerPrice === 100)).toBe(true)
 
     // And nothing was dropped, so nothing needs warning about.
     expect(result.removed).toEqual([])
@@ -188,8 +188,8 @@ describe('rebuildCombinations', () => {
     // A product like Q86: variants named "Black", "White", authored before
     // options existed, so they carry no value ids to match on.
     const legacy = [
-      existing({ variantKey: 'db-black', name: 'Black', sku: 'Q86-BK', price: 750, stockQuantity: 5 }),
-      existing({ variantKey: 'db-white', name: 'White', sku: 'Q86-WH', price: 750, stockQuantity: 3 }),
+      existing({ variantKey: 'db-black', name: 'Black', sku: 'Q86-BK', offerPrice: 750, stockQuantity: 5 }),
+      existing({ variantKey: 'db-white', name: 'White', sku: 'Q86-WH', offerPrice: 750, stockQuantity: 3 }),
     ]
 
     const q86Colour = attribute('a-colour', 'Colour', [
