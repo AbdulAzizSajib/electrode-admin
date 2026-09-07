@@ -1,15 +1,40 @@
 import * as React from 'react'
-import { Select } from 'antd'
+import { Combobox } from '@/components/ui/combobox'
 import type { Category } from '@/lib/api/categories'
 
 export interface CategoryParentPickerProps {
   /** Full hierarchy from useCategoryTree() — all statuses, unlimited depth, nested via `children`. */
   tree: Category[]
-  /** Injected by antd's <Form.Item name="parentId">: the effective parentId (leaf of the chain), or null for top-level. */
+  /**
+   * Categories created since `tree` was last fetched, flat rather than nested.
+   *
+   * A category created from this picker resolves before the tree refetches, and
+   * one absent from the tree breaks the component twice over: its level renders
+   * without it, and the chain walk cannot place it. Merged into the lookup maps
+   * below rather than spliced into the nested tree, which would mean cloning it
+   * at every ancestor. Drops out on its own once the refetch lands.
+   */
+  extraCategories?: Category[]
+  /**
+   * Offers "create a category" on each level. Called with that level's parent —
+   * which is what makes a category created from the third dropdown a child of
+   * the second's selection rather than a new top-level one.
+   */
+  onCreate?: (parentId: string | null) => void
+  /**
+   * The effective parentId (leaf of the chain), or null for top-level.
+   *
+   * Injected by whichever form owns the field. antd's `<Form.Item name="parentId">`
+   * clones this component with `value`/`onChange`, and react-hook-form's
+   * `<FormField render={({ field })}>` hands over the same two — so this stays one
+   * component serving the migrated product form and the still-antd category form.
+   */
   value?: string | null
   onChange?: (parentId: string | null) => void
   /** Exclude this category and its whole subtree — editing a category can't nest it under itself. */
   excludeId?: string
+  /** Names each level's control for a screen reader; the visible label sits on the form item. */
+  'aria-label'?: string
 }
 
 /**
@@ -18,11 +43,19 @@ export interface CategoryParentPickerProps {
  * every depth together. Selecting "None — stop here" at any level truncates everything deeper and
  * makes the previous level's selection the effective parent.
  *
- * A standard antd `Form.Item`-compatible control (reads `value`, calls `onChange`) — the enclosing
- * `<Form>` owns and resets `parentId`, so this component only needs to derive its per-level chain
- * from `value`, not track its own copy of it.
+ * A plain controlled control (reads `value`, calls `onChange`) — the enclosing form owns and resets
+ * `parentId`, so this component only needs to derive its per-level chain from `value`, not track its
+ * own copy of it. That contract is what lets one implementation serve both form libraries.
  */
-export function CategoryParentPicker({ tree, value = null, onChange, excludeId }: CategoryParentPickerProps) {
+export function CategoryParentPicker({
+  tree,
+  extraCategories,
+  onCreate,
+  value = null,
+  onChange,
+  excludeId,
+  'aria-label': ariaLabel = 'Parent category',
+}: CategoryParentPickerProps) {
   // Flatten once for id-based lookups (parent walks, children-of-id, excluded subtree).
   const flat = React.useMemo(() => {
     const out: Category[] = []
@@ -33,8 +66,14 @@ export function CategoryParentPicker({ tree, value = null, onChange, excludeId }
       }
     }
     walk(tree)
+    // Only the ones the refetch has not caught up with yet — a duplicate would
+    // otherwise show the same category twice on its level.
+    const known = new Set(out.map((category) => category.id))
+    for (const extra of extraCategories ?? []) {
+      if (!known.has(extra.id)) out.push(extra)
+    }
     return out
-  }, [tree])
+  }, [tree, extraCategories])
 
   const byId = React.useMemo(() => new Map(flat.map((c) => [c.id, c])), [flat])
 
@@ -62,9 +101,17 @@ export function CategoryParentPicker({ tree, value = null, onChange, excludeId }
   const childrenOf = React.useCallback(
     (parentId: string | null): Category[] => {
       const source = parentId === null ? tree : (byId.get(parentId)?.children ?? [])
-      return source.filter((c) => !excludedIds.has(c.id)).sort((a, b) => a.sortOrder - b.sortOrder)
+      // A just-created category is not yet in the tree's `children` arrays, so
+      // its level is assembled from both sources.
+      const seen = new Set(source.map((c) => c.id))
+      const extras = (extraCategories ?? []).filter(
+        (c) => !seen.has(c.id) && (c.parentId ?? null) === parentId,
+      )
+      return [...source, ...extras]
+        .filter((c) => !excludedIds.has(c.id))
+        .sort((a, b) => a.sortOrder - b.sortOrder)
     },
-    [tree, byId, excludedIds],
+    [tree, byId, excludedIds, extraCategories],
   )
 
   // Derive the ancestor chain straight from `value` by walking up via parentId to the root — no
@@ -96,7 +143,11 @@ export function CategoryParentPicker({ tree, value = null, onChange, excludeId }
       {levels.map((levelIndex) => {
         const parentId = levelIndex === 0 ? null : chain[levelIndex - 1]
         const options = childrenOf(parentId)
-        if (levelIndex > 0 && options.length === 0) return null // no children under the last pick — nothing more to choose
+        // No children under the last pick — nothing more to choose. Unless the
+        // caller offers to create one: then this level is the only place a
+        // subcategory of a leaf can be added, and hiding it would leave that
+        // unreachable.
+        if (levelIndex > 0 && options.length === 0 && !onCreate) return null
 
         const stopLabel = levelIndex === 0 ? 'No parent (top-level)' : 'None — stop here'
         const parentName = parentId ? byId.get(parentId)?.name : undefined
@@ -104,10 +155,26 @@ export function CategoryParentPicker({ tree, value = null, onChange, excludeId }
         return (
           <div key={levelIndex} className="flex flex-col gap-1">
             {levelIndex > 0 && <span className="text-xs text-muted-foreground">Subcategory of {parentName}</span>}
-            <Select
+            <Combobox
+              // "none" is a real option rather than an empty value: choosing it is how a merchant
+              // truncates the chain, which is different from having chosen nothing yet.
               value={chain[levelIndex] ?? 'none'}
-              onChange={(v: string) => handleSelect(levelIndex, v === 'none' ? null : v)}
-              options={[{ value: 'none', label: stopLabel }, ...options.map((c) => ({ value: c.id, label: c.name }))]}
+              onValueChange={(v) => handleSelect(levelIndex, v === null || v === 'none' ? null : v)}
+              options={[
+                { value: 'none', label: stopLabel },
+                ...options.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+              aria-label={levelIndex === 0 ? ariaLabel : `Subcategory of ${parentName}`}
+              searchPlaceholder="Search categories"
+              createAction={
+                onCreate
+                  ? {
+                      label:
+                        levelIndex === 0 ? 'Add category' : `Add subcategory of ${parentName}`,
+                      onSelect: () => onCreate(parentId ?? null),
+                    }
+                  : undefined
+              }
             />
           </div>
         )

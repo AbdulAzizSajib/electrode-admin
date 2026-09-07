@@ -1,6 +1,7 @@
 import * as React from 'react'
-import { Alert, Input } from 'antd'
 import { Film, Image as ImageIcon, Loader2, Plus, Star, Trash2, Upload } from 'lucide-react'
+import { Alert } from '@/components/ui/alert'
+import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from '@/components/ui/use-toast'
@@ -232,12 +233,10 @@ export function MediaSidebar({
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {!productExists ? (
-            <Alert
-              type="info"
-              showIcon
-              message="Available after saving"
-              description="Gallery images attach to a product, so this becomes available once the product exists. Save it and you can add them here without leaving the page."
-            />
+            <Alert title="Available after saving">
+              Gallery images attach to a product, so this becomes available once the product
+              exists. Save it and you can add them here without leaving the page.
+            </Alert>
           ) : (
             <>
               <ImageUploadField
@@ -262,10 +261,15 @@ export function MediaSidebar({
                   >
                     <Thumb url={image.url} className="size-12 shrink-0" />
                     <div className="flex flex-1 flex-col gap-1.5">
+                      {/* A placeholder is not an accessible name, and it
+                          disappears the moment the field is typed in — so each
+                          input names itself, numbered because the gallery holds
+                          several identical-looking rows. */}
                       <Input
-                        size="small"
                         value={image.url}
                         placeholder="https://…"
+                        aria-label={`Image ${index + 1} address`}
+                        className="h-7 text-xs"
                         onChange={(event) =>
                           onImagesChange(
                             images.map((row, i) =>
@@ -275,9 +279,10 @@ export function MediaSidebar({
                         }
                       />
                       <Input
-                        size="small"
                         value={image.altText ?? ''}
                         placeholder="Alt text"
+                        aria-label={`Image ${index + 1} alt text`}
+                        className="h-7 text-xs"
                         onChange={(event) =>
                           onImagesChange(
                             images.map((row, i) =>

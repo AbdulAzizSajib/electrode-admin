@@ -1,6 +1,9 @@
 import * as React from 'react'
-import { Alert, Checkbox, Input, InputNumber, Modal } from 'antd'
-import { Link as LinkIcon, Trash2 } from 'lucide-react'
+import { Link as LinkIcon, Plus, Trash2 } from 'lucide-react'
+import { Alert } from '@/components/ui/alert'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -60,6 +63,16 @@ export interface VariantEditorProps {
 
   /** Called when a row disappears, so its images can be released. */
   onRowRemoved?: (variantKey: string) => void
+
+  /**
+   * Offers "create an attribute" beside the checkbox groups.
+   *
+   * The other five reference pickers on the product form hang this off their
+   * dropdown; attributes are picked as checkbox groups, so there is no option
+   * list to hang it from and it becomes a button of its own. The page owns the
+   * dialog, as it does for the other five.
+   */
+  onCreateAttribute?: () => void
 }
 
 /** The rows as the matcher wants them. */
@@ -88,6 +101,7 @@ export function VariantEditor({
   pendingImages,
   onPendingImagesChange,
   onRowRemoved,
+  onCreateAttribute,
 }: VariantEditorProps) {
   /** A change waiting on the merchant's agreement, held until they answer. */
   const [pendingChange, setPendingChange] = React.useState<{
@@ -181,26 +195,36 @@ export function VariantEditor({
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3">
         {attributes.length === 0 ? (
-          <Alert
-            type="info"
-            showIcon
-            message="No attributes defined yet"
-            description="Attributes are shop-wide. Define Colour or Size once under Catalog → Attributes, then tick its values here."
-          />
+          <Alert title="No attributes defined yet">
+            Attributes are shop-wide. Define Colour or Size once under Catalog → Attributes, then
+            tick its values here — or add one from here without leaving this product.
+          </Alert>
         ) : (
           attributes.map((attribute) => {
             const ids = attribute.values.map((v) => v.id)
             const chosen = ids.filter((id) => selected.has(id))
+            // Some but not all is a third state, and it has to be drawn as one:
+            // showing it as unchecked invites a click that selects everything
+            // when the merchant meant to clear the few already ticked.
+            const allChosen = chosen.length > 0 && chosen.length === ids.length
+            const someChosen = chosen.length > 0 && chosen.length < ids.length
             return (
               <div key={attribute.id} className="rounded-md border border-border p-3">
                 <div className="mb-2 flex items-center gap-2">
+                  {/* Radix takes the label as a sibling rather than as children,
+                      so each box is paired with its own `htmlFor` — which is
+                      also what makes the label clickable. */}
                   <Checkbox
-                    checked={chosen.length > 0 && chosen.length === ids.length}
-                    indeterminate={chosen.length > 0 && chosen.length < ids.length}
-                    onChange={(e) => toggleWholeAttribute(attribute, e.target.checked)}
+                    id={`attribute-${attribute.id}`}
+                    checked={someChosen ? 'indeterminate' : allChosen}
+                    onCheckedChange={(next) => toggleWholeAttribute(attribute, next === true)}
+                  />
+                  <label
+                    htmlFor={`attribute-${attribute.id}`}
+                    className="cursor-pointer text-sm font-medium text-foreground"
                   >
-                    <span className="text-sm font-medium text-foreground">{attribute.name}</span>
-                  </Checkbox>
+                    {attribute.name}
+                  </label>
                   {chosen.length > 0 && (
                     <Badge variant="secondary">
                       {chosen.length} of {ids.length}
@@ -210,12 +234,16 @@ export function VariantEditor({
                 <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                   {/* Authored order, so S / M / XL reads correctly. */}
                   {attribute.values.map((value) => (
-                    <Checkbox
-                      key={value.id}
-                      checked={selected.has(value.id)}
-                      onChange={(e) => toggleValue(value.id, e.target.checked)}
-                    >
-                      <span className="inline-flex items-center gap-1.5 text-sm">
+                    <div key={value.id} className="flex items-center gap-1.5">
+                      <Checkbox
+                        id={`value-${value.id}`}
+                        checked={selected.has(value.id)}
+                        onCheckedChange={(next) => toggleValue(value.id, next === true)}
+                      />
+                      <label
+                        htmlFor={`value-${value.id}`}
+                        className="inline-flex cursor-pointer items-center gap-1.5 text-sm"
+                      >
                         {attribute.presentation === 'SWATCH' && value.swatch && (
                           <span
                             aria-hidden
@@ -224,13 +252,30 @@ export function VariantEditor({
                           />
                         )}
                         {value.label}
-                      </span>
-                    </Checkbox>
+                      </label>
+                    </div>
                   ))}
                 </div>
               </div>
             )
           })
+        )}
+
+        {/*
+         * Beside the groups rather than inside one, and offered whether or not
+         * any attribute exists — "there are none yet" is the state where it is
+         * needed most.
+         */}
+        {onCreateAttribute && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="self-start"
+            onClick={onCreateAttribute}
+          >
+            <Plus className="size-4" /> Add attribute
+          </Button>
         )}
       </div>
 
@@ -278,24 +323,46 @@ export function VariantEditor({
                       value={row.sku}
                       onChange={(e) => updateRow(index, { sku: e.target.value })}
                       placeholder="sku-red-xl"
+                      aria-label={`Product code for ${row.name}`}
                     />
                   </TableCell>
                   <TableCell className="align-top">
-                    <InputNumber
-                      className="w-full"
+                    <Input
+                      type="number"
+                      className="w-full tabular-nums"
                       min={0}
                       step={0.01}
                       value={row.offerPrice}
-                      onChange={(value) => updateRow(index, { offerPrice: value ?? 0 })}
+                      aria-label={`Offer price for ${row.name}`}
+                      onChange={(e) =>
+                        updateRow(index, {
+                          offerPrice: e.target.value === '' ? 0 : Number(e.target.value),
+                        })
+                      }
                     />
                   </TableCell>
                   <TableCell className="align-top">
-                    <InputNumber
-                      className="w-full"
+                    {/*
+                     * `''` maps to `undefined`, NOT to 0.
+                     *
+                     * antd's `InputNumber` handed back `null` for an emptied
+                     * field; a native number input hands back `''`, and
+                     * `Number('')` is 0. Left unguarded, clearing this field
+                     * would save the variant as "on offer, regular price zero"
+                     * rather than as "not on offer". See design.md Decision 2.
+                     */}
+                    <Input
+                      type="number"
+                      className="w-full tabular-nums"
                       min={0}
                       step={0.01}
-                      value={row.sellingPrice}
-                      onChange={(value) => updateRow(index, { sellingPrice: value ?? undefined })}
+                      value={row.sellingPrice ?? ''}
+                      aria-label={`Regular price for ${row.name}`}
+                      onChange={(e) =>
+                        updateRow(index, {
+                          sellingPrice: e.target.value === '' ? undefined : Number(e.target.value),
+                        })
+                      }
                     />
                   </TableCell>
                   {/* Read-only: a variant's stock is owned by the Stock ledger
@@ -335,23 +402,26 @@ export function VariantEditor({
         </div>
       )}
 
-      <Modal
+      <ConfirmDialog
         open={Boolean(pendingChange)}
+        // Covers the close button and Escape as well as the cancel button —
+        // every one of them must leave the selection and the table alone.
+        onOpenChange={(open) => {
+          if (!open) setPendingChange(null)
+        }}
         title="Some combinations cannot be carried over"
-        okText="Apply anyway"
-        okButtonProps={{ danger: true }}
-        cancelText="Leave things as they are"
-        onCancel={() => setPendingChange(null)}
-        onOk={() => {
+        description={pendingChange?.message}
+        confirmLabel="Apply anyway"
+        cancelLabel="Leave things as they are"
+        variant="destructive"
+        onConfirm={() => {
           if (!pendingChange) return
           pendingChange.removed.forEach((variant) => onRowRemoved?.(variant.variantKey))
           onSelectedValueIdsChange(pendingChange.valueIds)
           onRowsChange(pendingChange.rows)
           setPendingChange(null)
         }}
-      >
-        <p className="text-sm text-muted-foreground">{pendingChange?.message}</p>
-      </Modal>
+      />
     </div>
   )
 }

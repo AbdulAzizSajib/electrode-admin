@@ -276,7 +276,17 @@ export function RichTextEditor({
    * start — the classic controlled-editor bug.
    */
   React.useEffect(() => {
-    if (!editor) return
+    /*
+     * `isDestroyed` as well as null.
+     *
+     * Under StrictMode React mounts, tears down and remounts effects, and
+     * `useEditor` destroys its editor in that teardown. This effect can then run
+     * holding the destroyed instance — whose ProseMirror schema is null, so
+     * `getHTML()` throws "Cannot read properties of null (reading 'cached')" out
+     * of `DOMSerializer.fromSchema` and takes the whole route down. Nothing to
+     * sync into an editor that no longer exists.
+     */
+    if (!editor || editor.isDestroyed) return
     const incoming = value ?? ''
     const current = editor.getHTML()
     if (incoming === current || (incoming === '' && current === EMPTY_HTML)) return
@@ -284,7 +294,8 @@ export function RichTextEditor({
   }, [editor, value])
 
   React.useEffect(() => {
-    editor?.setEditable(!disabled)
+    if (!editor || editor.isDestroyed) return
+    editor.setEditable(!disabled)
   }, [editor, disabled])
 
   if (!editor) {

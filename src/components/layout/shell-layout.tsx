@@ -31,7 +31,7 @@ export function ShellLayout() {
 
   return (
     <BreadcrumbLabelProvider>
-      <div className="flex h-svh w-full overflow-hidden bg-background border-red-700 border-2">
+      <div className="flex h-svh w-full overflow-hidden bg-background">
         <aside
           className={cn(
             'hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-150 lg:flex',
