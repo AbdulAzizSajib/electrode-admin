@@ -4,6 +4,7 @@ import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
 import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
 
+/** Kept in step with the same union in `@/lib/utils/stock-movement-labels`, which owns the labels and badge variants for these values. */
 export type StockMovementType =
   | 'PURCHASE'
   | 'SALE'
@@ -14,6 +15,7 @@ export type StockMovementType =
   | 'LOSS'
   | 'TRANSFER_IN'
   | 'TRANSFER_OUT'
+  | 'CANCELLATION'
 
 interface MovementEntityRef {
   id: string

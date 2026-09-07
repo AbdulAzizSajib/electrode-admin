@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Link as LinkIcon, Plus, Trash2 } from 'lucide-react'
+import { Link as LinkIcon, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Alert } from '@/components/ui/alert'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -73,6 +73,18 @@ export interface VariantEditorProps {
    * dialog, as it does for the other five.
    */
   onCreateAttribute?: () => void
+
+  /**
+   * Offers "edit this attribute" on each checkbox group.
+   *
+   * `onCreateAttribute` covers the attribute that does not exist yet; this
+   * covers the far more common case of one that does but is missing a value —
+   * a colour the shop has never stocked before. Without it the merchant's only
+   * route is to abandon a part-filled product for the Attributes page, which is
+   * the same dead end quick-create was built to close. The page owns the
+   * dialog, as it does the create one.
+   */
+  onEditAttribute?: (attribute: Attribute) => void
 }
 
 /** The rows as the matcher wants them. */
@@ -102,6 +114,7 @@ export function VariantEditor({
   onPendingImagesChange,
   onRowRemoved,
   onCreateAttribute,
+  onEditAttribute,
 }: VariantEditorProps) {
   /** A change waiting on the merchant's agreement, held until they answer. */
   const [pendingChange, setPendingChange] = React.useState<{
@@ -229,6 +242,20 @@ export function VariantEditor({
                     <Badge variant="secondary">
                       {chosen.length} of {ids.length}
                     </Badge>
+                  )}
+                  {/* Pushed to the far end, so it reads as acting on the group
+                      rather than as another thing to tick. */}
+                  {onEditAttribute && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="ml-auto text-muted-foreground"
+                      aria-label={`Edit ${attribute.name} values`}
+                      onClick={() => onEditAttribute(attribute)}
+                    >
+                      <Pencil className="size-3.5" /> Edit
+                    </Button>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1.5">

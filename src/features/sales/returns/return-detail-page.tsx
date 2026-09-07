@@ -58,6 +58,16 @@ export default function ReturnDetailPage() {
   }
   if (!ret) return <EmptyState title="Return request not found" />
 
+  /*
+   * What the backend will actually accept from here. Completing a return
+   * restocks physical goods, so `COMPLETED` and `CANCELLED` are terminal — a
+   * return that could be moved back and completed again would restock the same
+   * delivery twice. This list comes from the server rather than being derived
+   * here, so the two cannot drift apart.
+   */
+  const allowed = ret.allowedTransitions ?? []
+  const canComplete = allowed.includes('COMPLETED')
+
   const setStatus = (status: ReturnStatus, warehouseIdArg?: string) => {
     updateStatus.mutate(
       { id: ret.id, input: { status, warehouseId: warehouseIdArg } },
@@ -85,24 +95,28 @@ export default function ReturnDetailPage() {
           actions={
             <>
               <Badge variant={STATUS_VARIANT[ret.status]} className="mr-1">{STATUS_LABEL[ret.status]}</Badge>
-              {ret.status === 'REQUESTED' && (
-                <>
-                  <Button size="sm" variant="outline" onClick={() => setStatus('APPROVED')}><CheckCircle2 /> Approve</Button>
-                  <Button size="sm" variant="destructive" onClick={() => setStatus('REJECTED')}><XCircle /> Reject</Button>
-                </>
+              {allowed.includes('APPROVED') && (
+                <Button size="sm" variant="outline" onClick={() => setStatus('APPROVED')}><CheckCircle2 /> Approve</Button>
               )}
-              {ret.status !== 'COMPLETED' && ret.status !== 'CANCELLED' && (
+              {allowed.includes('REJECTED') && (
+                <Button size="sm" variant="destructive" onClick={() => setStatus('REJECTED')}><XCircle /> Reject</Button>
+              )}
+              {canComplete && (
                 <Button size="sm" onClick={() => setCompleteOpen(true)}>
                   <CheckCircle2 /> Complete & restock
                 </Button>
               )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => { setPickedStatus(ret.status); setStatusOpen(true) }}
-              >
-                <Settings2 /> Set status
-              </Button>
+              {/* Hidden entirely at a terminal status: there is nothing to set,
+                  and offering the control invites the operator to try. */}
+              {allowed.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => { setPickedStatus(allowed[0]); setStatusOpen(true) }}
+                >
+                  <Settings2 /> Set status
+                </Button>
+              )}
             </>
           }
         />
@@ -154,11 +168,15 @@ export default function ReturnDetailPage() {
       <Dialog open={statusOpen} onOpenChange={setStatusOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Set return status</DialogTitle></DialogHeader>
+          {/* Only the transitions legal from here. Offering the full list —
+              which this did — is what let an operator move a COMPLETED return
+              back to APPROVED and complete it again, restocking the same goods
+              twice. */}
           <Select value={pickedStatus} onValueChange={(v) => setPickedStatus(v as ReturnStatus)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              {Object.entries(STATUS_LABEL).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
+              {allowed.map((value) => (
+                <SelectItem key={value} value={value}>{STATUS_LABEL[value]}</SelectItem>
               ))}
             </SelectContent>
           </Select>

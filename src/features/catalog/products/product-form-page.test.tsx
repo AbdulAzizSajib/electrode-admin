@@ -99,6 +99,13 @@ vi.mock('@/lib/api/brands', () => ({
 vi.mock('@/lib/api/attributes', () => ({
   useAllAttributes: () => ({ data: [], isLoading: false, isError: false }),
   useCreateAttribute: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // Reached through the edit-values dialog. Stubbed even though no test here
+  // opens it: the module factory replaces the whole module, so a hook it omits
+  // is `undefined` at import time and the page fails to render at all.
+  useUpdateAttribute: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateAttributeValue: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateAttributeValue: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteAttributeValue: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 vi.mock('@/lib/api/tax-rules', () => ({
   useAllTaxRules: () => ({
@@ -268,16 +275,27 @@ describe('ProductFormPage', () => {
     })
 
     it('refuses a save that would delete images the form never loaded', async () => {
+      /*
+       * A genuine load failure: the product on record has two images, but the
+       * gallery arrived empty and nobody touched it. Simulated by handing the
+       * form a product whose `images` the response omitted — the shape a
+       * partial/failed detail load produces — while the record still has them.
+       */
       stub.productId = 'p-1'
-      stub.product = withImages()
+      stub.product = { ...withImages(), images: [] }
       const user = userEvent.setup()
-      render(<ProductFormPage />)
+      const { rerender } = render(<ProductFormPage />)
 
-      // Empty both addresses — the form is now holding no usable image rows
-      // while the product on record still has two.
-      await user.clear(screen.getByLabelText('Image 1 address'))
-      await user.click(screen.getAllByRole('button', { name: 'Remove image' })[0])
-      await user.click(screen.getAllByRole('button', { name: 'Remove image' })[0])
+      // Nothing loaded, so there is no remove control to click.
+      expect(screen.queryByLabelText('Image 1 address')).toBeNull()
+
+      /*
+       * The record turns out to have images after all — same `updatedAt`, so the
+       * sync block does not re-run and the gallery stays empty. That divergence
+       * is precisely the load failure the guard exists to catch.
+       */
+      stub.product = withImages()
+      rerender(<ProductFormPage />)
 
       await user.click(saveAndContinue())
 
@@ -285,6 +303,29 @@ describe('ProductFormPage', () => {
         expect(screen.getByRole('alert').textContent).toContain('saving would delete them'),
       )
       expect(updateMutate).not.toHaveBeenCalled()
+    })
+
+    it('saves an emptied gallery when the merchant removed every image', async () => {
+      /*
+       * The counterpart to the guard above, and the reason it needs to tell
+       * intent from failure: removing the last image must be possible. This
+       * used to be refused, which left no way to delete a product's final
+       * image at all — the save that would have emptied `product.images` was
+       * the very thing being blocked.
+       */
+      stub.productId = 'p-1'
+      stub.product = withImages()
+      const user = userEvent.setup()
+      render(<ProductFormPage />)
+
+      await user.click(screen.getAllByRole('button', { name: 'Remove image' })[0])
+      await user.click(screen.getAllByRole('button', { name: 'Remove image' })[0])
+
+      await user.click(saveAndContinue())
+
+      await waitFor(() => expect(updateMutate).toHaveBeenCalled())
+      expect(lastUpdateInput().input.images).toEqual([])
+      expect(screen.queryByRole('alert')).toBeNull()
     })
 
     it('never falls through to an empty form when the product will not load', () => {

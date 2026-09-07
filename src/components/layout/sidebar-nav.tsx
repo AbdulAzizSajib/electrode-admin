@@ -13,6 +13,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Badge } from '@/components/ui/badge'
+import { usePulseValue } from '@/lib/realtime/use-realtime'
+
+/** The one nav item that carries a live count — orders still waiting on staff action. */
+const PENDING_BADGE_PATH = '/sales/orders'
 
 export interface SidebarNavProps {
   collapsed?: boolean
@@ -35,6 +40,9 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
   const role = useSessionStore((s) => s.user?.role ?? 'STAFF')
   const { pathname } = useLocation()
   const baseId = React.useId()
+
+  // Reads the shell's poll rather than starting one; renders nothing until the first pulse.
+  const pendingOrders = usePulseValue()?.pendingOrderCount ?? 0
 
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {}
@@ -148,7 +156,15 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
                       )}
                     >
                       <ItemIcon className="size-4 shrink-0" />
-                      <span>{item.label}</span>
+                      <span className="flex-1">{item.label}</span>
+                      {item.path === PENDING_BADGE_PATH && pendingOrders > 0 && (
+                        <Badge
+                          variant="destructive"
+                          className="h-4 min-w-4 justify-center rounded-full p-0 px-1 text-[11px]"
+                        >
+                          {pendingOrders > 99 ? '99+' : pendingOrders}
+                        </Badge>
+                      )}
                     </NavLink>
                   )
                 })}

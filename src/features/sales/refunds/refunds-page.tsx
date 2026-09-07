@@ -13,7 +13,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { toast } from '@/components/ui/use-toast'
-import { useCreateRefund, useRefunds, type Refund, type RefundStatus } from '@/lib/api/refunds'
+import { Alert } from '@/components/ui/alert'
+import {
+  useCreateRefund,
+  useRefunds,
+  useUpdateRefund,
+  useVoidRefund,
+  type Refund,
+  type RefundStatus,
+} from '@/lib/api/refunds'
 import { useOrders } from '@/lib/api/orders'
 import { formatCurrency, formatDate } from '@/lib/utils/format'
 
@@ -42,6 +50,53 @@ export default function RefundsPage() {
   const { data, isLoading, isError, refetch } = useRefunds({ page, limit: pageSize })
   const { data: ordersData } = useOrders({ limit: 100 })
   const createMutation = useCreateRefund()
+  const updateMutation = useUpdateRefund()
+  const voidMutation = useVoidRefund()
+
+  // Correction state for the refund being viewed. Seeded when the dialog opens
+  // so the field starts at the recorded amount — an operator correcting 5000 to
+  // 500 is editing a figure, not entering a new one.
+  const [amendAmount, setAmendAmount] = React.useState('')
+  const [correctionError, setCorrectionError] = React.useState<string | null>(null)
+
+  /** A voided refund is settled history — its money no longer stands, and nothing further can be done to it. */
+  const isVoided = viewing?.status === 'CANCELLED'
+
+  const openRefund = (refund: Refund) => {
+    setViewing(refund)
+    setAmendAmount(String(Number(refund.amount)))
+    setCorrectionError(null)
+  }
+
+  const submitAmend = async () => {
+    if (!viewing) return
+    const amount = Number(amendAmount)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setCorrectionError('Enter an amount greater than zero.')
+      return
+    }
+    try {
+      await updateMutation.mutateAsync({ refundId: viewing.id, input: { amount } })
+      toast({ title: 'Refund amount corrected' })
+      setViewing(null)
+    } catch (err) {
+      setCorrectionError(err instanceof Error ? err.message : 'The refund could not be amended.')
+    }
+  }
+
+  const submitVoid = async () => {
+    if (!viewing) return
+    try {
+      await voidMutation.mutateAsync(viewing.id)
+      toast({
+        title: 'Refund voided',
+        description: 'The payment status, the return it settled and the sales count were all restored.',
+      })
+      setViewing(null)
+    } catch (err) {
+      setCorrectionError(err instanceof Error ? err.message : 'The refund could not be voided.')
+    }
+  }
 
   const form = useForm<Values, unknown, OutputValues>({ resolver: zodResolver(schema), defaultValues: { orderId: '', amount: 0, reason: '' } })
 
@@ -82,7 +137,7 @@ export default function RefundsPage() {
         isLoading={isLoading}
         isError={isError}
         onRetry={() => refetch()}
-        onRowClick={(row) => setViewing(row)}
+        onRowClick={openRefund}
         emptyState={{ icon: Receipt, title: 'No refunds issued yet' }}
         page={page}
         pageSize={pageSize}
@@ -141,9 +196,55 @@ export default function RefundsPage() {
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Reason</span><span>{viewing.reason ?? '—'}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Status</span><Badge variant={STATUS_VARIANT[viewing.status]}>{viewing.status}</Badge></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Date</span><span>{formatDate(viewing.createdAt)}</span></div>
+
+              {isVoided ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  This refund was voided. It is kept here because it happened and the payments
+                  report has already shown it, but its money no longer stands.
+                </p>
+              ) : (
+                <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
+                  <span className="text-sm font-medium text-foreground">Correct this refund</span>
+                  <p className="text-xs text-muted-foreground">
+                    Change the amount if it was mistyped, or void the whole refund — voiding puts
+                    the payment status, the return it settled and the product's sales count back to
+                    what they were.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      aria-label="Corrected amount"
+                      className="w-40"
+                      value={amendAmount}
+                      onChange={(e) => {
+                        setAmendAmount(e.target.value)
+                        setCorrectionError(null)
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      loading={updateMutation.isPending}
+                      onClick={submitAmend}
+                    >
+                      Save amount
+                    </Button>
+                  </div>
+                  {correctionError && (
+                    <Alert variant="destructive" title="This refund was not changed">{correctionError}</Alert>
+                  )}
+                </div>
+              )}
             </div>
           )}
           <DialogFooter>
+            {!isVoided && (
+              <Button variant="destructive" loading={voidMutation.isPending} onClick={submitVoid}>
+                Void refund
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setViewing(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>

@@ -20,8 +20,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/use-toast'
 import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
 import { useSuppliers } from '@/lib/api/suppliers'
-import { useProducts } from '@/lib/api/products'
+import { useProduct, useProducts } from '@/lib/api/products'
 import {
+  useAmendPurchaseOrderItems,
   useCreatePurchaseOrder,
   usePurchaseOrder,
   useUpdatePurchaseOrder,
@@ -74,6 +75,14 @@ const schema = z.object({
     .array(
       z.object({
         productId: z.string().min(1, 'Select a product'),
+        /**
+         * Which variant the line replenishes. Empty for a simple product; a
+         * variable product's line is rejected below until one is chosen,
+         * because stock is held per (warehouse, product, variant) and orders
+         * deduct against the variant bought — stock received against no variant
+         * leaves every variant reading out of stock however much arrived.
+         */
+        variantId: z.string().optional(),
         quantity: z.coerce.number().min(1, 'Quantity must be at least 1'),
         unitCost: z.coerce.number().min(0, 'Cost cannot be negative'),
       }),
@@ -89,6 +98,89 @@ type OutputValues = z.output<typeof schema>
  * whichever field the cursor happened to be over.
  */
 const blurOnWheel = (event: React.WheelEvent<HTMLInputElement>) => event.currentTarget.blur()
+
+/**
+ * The variant picker for one line, and the only place the form learns whether a
+ * product even has variants.
+ *
+ * It fetches the product's detail rather than reading the row already in the
+ * combobox: `GET /products/admin` omits `variants` entirely (see products.ts),
+ * so the list the picker is populated from cannot answer this. One query per
+ * distinct product, cached and shared by react-query, and only while a row
+ * actually holds a product.
+ *
+ * `onResolved` reports back what arrived so the parent can validate the line —
+ * a variable product whose line names no variant is the bug this whole field
+ * exists to prevent, and the parent cannot see it from `productId` alone.
+ */
+function VariantCell({
+  control,
+  index,
+  productId,
+  lineLabel,
+  onResolved,
+}: {
+  control: ReturnType<typeof useForm<Values, unknown, OutputValues>>['control']
+  index: number
+  productId: string
+  lineLabel: string
+  onResolved: (productId: string, variantIds: string[]) => void
+}) {
+  const { data: product, isFetching } = useProduct(productId || undefined)
+  const variants = React.useMemo(() => product?.variants ?? [], [product])
+
+  React.useEffect(() => {
+    if (product) onResolved(productId, variants.map((v) => v.id).filter((id): id is string => !!id))
+  }, [product, productId, variants, onResolved])
+
+  const options = React.useMemo<ComboboxOption[]>(
+    () =>
+      variants
+        .filter((v): v is typeof v & { id: string } => !!v.id)
+        // SKU as keywords: the packing slip in the merchant's hand names the
+        // variant by SKU more often than by label.
+        .map((v) => ({ value: v.id, label: v.name, keywords: v.sku })),
+    [variants],
+  )
+
+  if (!productId) {
+    return <span className="text-xs text-muted-foreground">Select a product first</span>
+  }
+
+  if (isFetching && !product) {
+    return <Skeleton className="h-9 w-full" />
+  }
+
+  // A simple product has nothing to choose between, and the backend wants the
+  // field absent rather than empty for one.
+  if (options.length === 0) {
+    return <span className="text-xs text-muted-foreground">No variants</span>
+  }
+
+  return (
+    <FormField
+      control={control}
+      name={`items.${index}.variantId`}
+      render={({ field }) => (
+        <FormItem>
+          <FormControl>
+            <Combobox
+              aria-label={`Variant for ${lineLabel}`}
+              placeholder="Select a variant"
+              searchPlaceholder="Search by name or SKU…"
+              options={options}
+              value={field.value || null}
+              noOptionsText="No variants"
+              onValueChange={(value) => field.onChange(value ?? '')}
+              onBlur={field.onBlur}
+            />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  )
+}
 
 /**
  * Loads the record and owns every path the form itself cannot be on: still
@@ -162,6 +254,18 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
   const { data: suppliersData, isLoading: loadingSuppliers } = useSuppliers()
   const createMutation = useCreatePurchaseOrder()
   const updateMutation = useUpdatePurchaseOrder()
+  const amendMutation = useAmendPurchaseOrderItems()
+
+  /** The scalar endpoint refuses every edit once receiving has begun. */
+  const statusIsEditable = !po || isEditableStatus(po.status)
+
+  /*
+   * Line items stay amendable after a partial receipt — that is the whole point
+   * of the separate endpoint. Only a cancelled order is closed to it, and a
+   * received quantity is immutable within it (the backend refuses a reduction
+   * below what arrived, and the row shows what has landed).
+   */
+  const canAmendItems = !!po && po.status !== 'CANCELLED'
 
   /*
    * The product list is searched on the server rather than filtered in the
@@ -177,6 +281,21 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
   })
 
   const [saveError, setSaveError] = React.useState<string | null>(null)
+  /*
+   * Which variant ids each picked product owns, filled in by the rows' variant
+   * pickers as their fetches land. Submit reads it to refuse a variable
+   * product's line that names no variant — the one mistake this form used to
+   * let through silently, and whose only symptom was a product that stayed out
+   * of stock after its stock arrived.
+   */
+  const [variantIdsByProduct, setVariantIdsByProduct] = React.useState<Record<string, string[]>>({})
+  const rememberVariants = React.useCallback((productId: string, variantIds: string[]) => {
+    setVariantIdsByProduct((prev) =>
+      prev[productId]?.length === variantIds.length && prev[productId]?.every((id, i) => id === variantIds[i])
+        ? prev
+        : { ...prev, [productId]: variantIds },
+    )
+  }, [])
   // Index of a row appended by "Add item", so the keyboard lands in it instead
   // of leaving the merchant to reach for the mouse on every line.
   const [focusRow, setFocusRow] = React.useState<number | null>(null)
@@ -192,7 +311,12 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
           // A received purchase order has no editable status; the field below is
           // rendered read-only in that case and onSubmit leaves it out entirely.
           status: isEditableStatus(po.status) ? po.status : 'DRAFT',
-          items: po.items.map((i) => ({ productId: i.productId, quantity: i.quantity, unitCost: Number(i.unitCost) })),
+          items: po.items.map((i) => ({
+            productId: i.productId,
+            variantId: i.variantId ?? undefined,
+            quantity: i.quantity,
+            unitCost: Number(i.unitCost),
+          })),
         }
       : {
           supplierId: '',
@@ -200,7 +324,7 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
           shippingCost: undefined,
           taxAmount: undefined,
           status: 'DRAFT',
-          items: [{ productId: '', quantity: 1, unitCost: 0 }],
+          items: [{ productId: '', variantId: undefined, quantity: 1, unitCost: 0 }],
         },
   })
 
@@ -250,30 +374,104 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
 
   const addItem = () => {
     setFocusRow(fields.length)
-    append({ productId: '', quantity: 1, unitCost: 0 })
+    append({ productId: '', variantId: undefined, quantity: 1, unitCost: 0 })
   }
 
   const onSubmit = async (values: OutputValues) => {
     setSaveError(null)
     try {
       if (po) {
-        // Line items and supplier aren't editable once a PO exists — the backend's PATCH doesn't
-        // accept them (see design.md), so only the scalar fields below are sent.
-        const input: PurchaseOrderUpdateInput = {
-          shippingCost: values.shippingCost,
-          taxAmount: values.taxAmount,
-          notes: values.notes,
-          // Omitted for a received or partially received order: the form never
-          // offered its real status, so it must not write one back.
-          status: isEditableStatus(po.status) ? values.status : undefined,
+        /*
+         * Line items go to their own endpoint. PATCH /:id owns the scalar
+         * fields and refuses any edit once receiving has begun; the items
+         * endpoint is the opposite shape — it stays available after a partial
+         * receipt, because what it may change is precisely what has not yet
+         * arrived. Sent first: if the amendment is refused, the scalar update
+         * must not land on its own and report success.
+         */
+        if (canAmendItems) {
+          const changed =
+            values.items.length !== po.items.length ||
+            values.items.some((item, index) => {
+              const original = po.items[index]
+              return (
+                !original ||
+                item.productId !== original.productId ||
+                (item.variantId || undefined) !== (original.variantId ?? undefined) ||
+                item.quantity !== original.quantity ||
+                item.unitCost !== Number(original.unitCost)
+              )
+            })
+
+          if (changed) {
+            await amendMutation.mutateAsync({
+              id: po.id,
+              input: {
+                items: values.items.map((item, index) => ({
+                  // An id marks an existing line; its absence adds one.
+                  id: po.items[index]?.id,
+                  productId: item.productId,
+                  variantId: item.variantId || undefined,
+                  quantity: item.quantity,
+                  unitCost: item.unitCost,
+                })),
+              },
+            })
+          }
         }
-        await updateMutation.mutateAsync({ id: po.id, input })
+
+        // The scalar endpoint refuses every edit once receiving has begun, so
+        // sending it for such an order would fail the whole save even though
+        // the line amendment above succeeded.
+        if (statusIsEditable) {
+          const input: PurchaseOrderUpdateInput = {
+            shippingCost: values.shippingCost,
+            taxAmount: values.taxAmount,
+            notes: values.notes,
+            // Omitted for a received or partially received order: the form never
+            // offered its real status, so it must not write one back.
+            status: isEditableStatus(po.status) ? values.status : undefined,
+          }
+          await updateMutation.mutateAsync({ id: po.id, input })
+        }
+
         toast({ title: 'Purchase order updated' })
         navigate(`${LIST_PATH}/${po.id}`)
       } else {
+        /*
+         * A line on a product that has variants must name one. Enforced here
+         * rather than in the schema because whether a product is variable is
+         * not in the form's values — it arrives with the product detail the
+         * rows fetch. The message is attached to the row's own field so it
+         * appears under the picker that has to be filled in.
+         */
+        let missingVariant = false
+        values.items.forEach((item, index) => {
+          const variantIds = variantIdsByProduct[item.productId]
+          if (variantIds?.length && !item.variantId) {
+            missingVariant = true
+            form.setError(`items.${index}.variantId`, {
+              type: 'manual',
+              message: 'Choose which variant this line is for',
+            })
+          }
+        })
+        if (missingVariant) {
+          setSaveError(
+            'Every line for a product with variants must say which variant it is for — otherwise the stock arrives against no variant and the product still reads as out of stock.',
+          )
+          return
+        }
+
         const input: PurchaseOrderCreateInput = {
           supplierId: values.supplierId,
-          items: values.items,
+          items: values.items.map((item) => ({
+            productId: item.productId,
+            // Omitted, not empty-string, for a simple product.
+            variantId: item.variantId || undefined,
+            quantity: item.quantity,
+            unitCost: item.unitCost,
+          })),
           shippingCost: values.shippingCost,
           taxAmount: values.taxAmount,
           notes: values.notes,
@@ -289,8 +487,6 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
       setSaveError(err instanceof Error ? err.message : 'The purchase order could not be saved.')
     }
   }
-
-  const statusIsEditable = !po || isEditableStatus(po.status)
 
   return (
     <div className="flex flex-col gap-4">
@@ -319,10 +515,10 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
           )}
 
           <Card className="xl:col-span-8">
-            <CardHeader className={isEdit ? undefined : 'flex-row items-center justify-between space-y-0'}>
+            <CardHeader className={isEdit && !canAmendItems ? undefined : 'flex-row items-center justify-between space-y-0'}>
               <CardTitle>Line items</CardTitle>
-              {isEdit ? (
-                <CardDescription>Line items can't be changed after a purchase order is created.</CardDescription>
+              {isEdit && !canAmendItems ? (
+                <CardDescription>A cancelled purchase order's line items can't be changed.</CardDescription>
               ) : (
                 <Button type="button" size="sm" variant="outline" onClick={addItem}>
                   <Plus /> Add item
@@ -335,19 +531,26 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-48">Product</TableHead>
+                    <TableHead className="min-w-44">Variant</TableHead>
                     <TableHead className="w-20">Qty</TableHead>
                     <TableHead className="w-28">Unit cost</TableHead>
+                    {/* Only on an existing order, and read-only: a received
+                        quantity moved real stock and set a cost basis, so the
+                        backend refuses to amend a line below it. */}
+                    {isEdit && <TableHead className="w-24">Received</TableHead>}
                     <TableHead className="w-28 text-right">Amount</TableHead>
-                    {!isEdit && <TableHead className="w-10" />}
+                    {canAmendItems || !isEdit ? <TableHead className="w-10" /> : null}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {isEdit
+                  {isEdit && !canAmendItems
                     ? po?.items.map((item) => (
                         <TableRow key={item.id} className="hover:bg-transparent">
                           <TableCell className="font-medium text-foreground">{item.product.name}</TableCell>
+                          <TableCell className="text-muted-foreground">{item.variant?.name ?? '—'}</TableCell>
                           <TableCell className="tabular-nums">{item.quantity}</TableCell>
                           <TableCell className="tabular-nums">{formatCurrency(Number(item.unitCost))}</TableCell>
+                          <TableCell className="tabular-nums">{item.receivedQuantity}</TableCell>
                           <TableCell className="text-right tabular-nums">{formatCurrency(Number(item.totalCost))}</TableCell>
                         </TableRow>
                       ))
@@ -376,6 +579,12 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
                                       onValueChange={(value) => {
                                         field.onChange(value ?? '')
                                         rememberProduct(value)
+                                        // The old choice belongs to the product
+                                        // being replaced; left in place it would
+                                        // submit a variant of a different product,
+                                        // which the backend rejects outright.
+                                        form.setValue(`items.${index}.variantId`, undefined)
+                                        form.clearErrors(`items.${index}.variantId`)
                                       }}
                                       onBlur={field.onBlur}
                                       // Focus lands here on the row "Add item" just made,
@@ -395,6 +604,15 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
                             />
                           </TableCell>
                           <TableCell>
+                            <VariantCell
+                              control={form.control}
+                              index={index}
+                              productId={watchedItems?.[index]?.productId ?? ''}
+                              lineLabel={lineName(index)}
+                              onResolved={rememberVariants}
+                            />
+                          </TableCell>
+                          <TableCell>
                             <FormField
                               control={form.control}
                               name={`items.${index}.quantity`}
@@ -403,7 +621,10 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
                                   <FormControl>
                                     <Input
                                       type="number"
-                                      min="1"
+                                      // Never below what has already arrived: the
+                                      // backend refuses it, and the stepper should
+                                      // not offer a value that will be rejected.
+                                      min={Math.max(1, po?.items[index]?.receivedQuantity ?? 0)}
                                       inputMode="numeric"
                                       className="tabular-nums"
                                       aria-label={`Quantity for ${lineName(index)}`}
@@ -441,6 +662,11 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
                               )}
                             />
                           </TableCell>
+                          {isEdit && (
+                            <TableCell className="tabular-nums text-muted-foreground">
+                              {po?.items[index]?.receivedQuantity ?? 0}
+                            </TableCell>
+                          )}
                           <TableCell className="text-right tabular-nums text-foreground">
                             {formatCurrency(lineAmount(index))}
                           </TableCell>
@@ -449,9 +675,17 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
                               type="button"
                               variant="ghost"
                               size="icon"
-                              disabled={fields.length === 1}
+                              // A line that has received stock cannot be removed:
+                              // the receipt moved real goods and set a cost basis.
+                              disabled={fields.length === 1 || (po?.items[index]?.receivedQuantity ?? 0) > 0}
                               aria-label={`Remove ${lineName(index)}`}
-                              title={fields.length === 1 ? 'A purchase order needs at least one line item' : undefined}
+                              title={
+                                (po?.items[index]?.receivedQuantity ?? 0) > 0
+                                  ? 'This line has already received stock and cannot be removed'
+                                  : fields.length === 1
+                                    ? 'A purchase order needs at least one line item'
+                                    : undefined
+                              }
                               onClick={() => remove(index)}
                             >
                               <Trash2 className="size-4" />

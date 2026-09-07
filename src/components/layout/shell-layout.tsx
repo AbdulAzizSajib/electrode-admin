@@ -7,6 +7,9 @@ import { BreadcrumbLabelProvider } from '@/components/layout/breadcrumb-context'
 import { useCurrencyFormatSync } from '@/components/providers/currency-format-provider'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { useUiStore } from '@/lib/store/ui-store'
+import { useRealtime } from '@/lib/realtime/use-realtime'
+import { useOrderAlert, useOrderAlertSound } from '@/lib/realtime/use-order-alert'
+import { armAlertSound } from '@/lib/realtime/alert-sound'
 import { cn } from '@/lib/utils/cn'
 
 function RouteFallback() {
@@ -29,9 +32,24 @@ export function ShellLayout() {
    */
   const currencyKey = useCurrencyFormatSync()
 
+  /*
+   * The panel's single live poll, mounted here because this layout is the first thing behind
+   * the auth guard and outlives every routed page — so the poll survives navigation, and one
+   * poll serves the dashboard, the pending badge and the notification count alike.
+   */
+  const pulse = useRealtime()
+  const { muted, toggleMuted } = useOrderAlertSound()
+  useOrderAlert(pulse, muted)
+
   return (
     <BreadcrumbLabelProvider>
-      <div className="flex h-svh w-full overflow-hidden bg-background">
+      {/* Any click or keypress in the panel counts as the user gesture browsers require before
+          they'll allow audio, so the first order of a session is audible rather than silent. */}
+      <div
+        className="flex h-svh w-full overflow-hidden bg-background"
+        onPointerDownCapture={armAlertSound}
+        onKeyDownCapture={armAlertSound}
+      >
         <aside
           className={cn(
             'hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-150 lg:flex',
@@ -64,7 +82,7 @@ export function ShellLayout() {
         </Sheet>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <Topbar />
+          <Topbar soundMuted={muted} onToggleSound={toggleMuted} />
           {/* Keyed on the currency format so the routed page re-renders its
               amounts the moment the merchant's settings arrive — at most once
               per session, before anything has been typed. */}

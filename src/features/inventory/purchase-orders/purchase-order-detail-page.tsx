@@ -183,6 +183,7 @@ export default function PurchaseOrderDetailPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Product</TableHead>
+                <TableHead>Variant</TableHead>
                 <TableHead>Ordered</TableHead>
                 <TableHead>Received</TableHead>
                 <TableHead>Unit cost</TableHead>
@@ -193,6 +194,9 @@ export default function PurchaseOrderDetailPage() {
               {po.items.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-medium text-foreground">{item.product.name}</TableCell>
+                  {/* An em dash, not blank: a simple product has no variant to name,
+                      which is different from one whose variant went unrecorded. */}
+                  <TableCell className="text-muted-foreground">{item.variant?.name ?? '—'}</TableCell>
                   <TableCell>{item.quantity}</TableCell>
                   <TableCell>{item.receivedQuantity}</TableCell>
                   <TableCell>{formatCurrency(Number(item.unitCost))}</TableCell>
@@ -248,7 +252,13 @@ export default function PurchaseOrderDetailPage() {
               return (
                 <div key={item.id} className="flex items-center justify-between gap-3">
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">{item.product.name}</span>
+                    {/* Two lines of the same variable product are otherwise
+                        indistinguishable here, and the quantities would be
+                        entered against whichever row happened to come first. */}
+                    <span className="text-sm font-medium text-foreground">
+                      {item.product.name}
+                      {item.variant ? ` — ${item.variant.name}` : ''}
+                    </span>
                     <span className="text-xs text-muted-foreground">{remaining} remaining of {item.quantity}</span>
                   </div>
                   <Input

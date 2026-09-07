@@ -53,7 +53,11 @@ import {
 } from '@/features/catalog/products/components/image-upload-field'
 import { MediaSidebar, type ImageRow } from '@/features/catalog/products/components/media-sidebar'
 import { VariantEditor } from '@/features/catalog/products/components/variant-editor'
-import type { CombinationRow } from '@/features/catalog/products/components/variant-combinations'
+import {
+  rebuildCombinations,
+  type CombinationRow,
+} from '@/features/catalog/products/components/variant-combinations'
+import { EditAttributeValues } from '@/features/catalog/products/components/edit-attribute-values'
 import { CategoryParentPicker } from '@/features/catalog/categories/category-parent-picker'
 import { slugify } from '@/lib/utils/slug'
 
@@ -328,6 +332,16 @@ export default function ProductFormPage() {
   /** Which quick-create dialog is open, if any — one piece of state, not six flags. */
   const [quickCreate, setQuickCreate] = React.useState<QuickCreateTarget>(null)
 
+  /**
+   * The attribute whose values are being edited, if any.
+   *
+   * Held as an id rather than as the attribute itself, so the dialog re-reads
+   * it from `attributes` on every render: each edit inside it invalidates the
+   * attributes query, and a captured copy would go on drawing the values as
+   * they were before the merchant's own change landed.
+   */
+  const [editingAttributeId, setEditingAttributeId] = React.useState<string | null>(null)
+
   const categoryTree = categoriesQuery.data
   const brands = React.useMemo(
     () => withCreated(brandsQuery.data?.data ?? [], createdBrands),
@@ -336,6 +350,10 @@ export default function ProductFormPage() {
   const attributes = React.useMemo(
     () => withCreated(attributesQuery.data ?? [], createdAttributes),
     [attributesQuery.data, createdAttributes],
+  )
+  const editingAttribute = React.useMemo(
+    () => attributes.find((attribute) => attribute.id === editingAttributeId) ?? null,
+    [attributes, editingAttributeId],
   )
   const taxRules = withCreated(taxRulesQuery.data ?? [], createdTaxRules)
   const collections = withCreated(collectionsQuery.data ?? [], createdCollections)
@@ -449,6 +467,27 @@ export default function ProductFormPage() {
   const [selectedValueIds, setSelectedValueIds] = React.useState<string[]>([])
   const [rows, setRows] = React.useState<CombinationRow[]>([])
   const [images, setImages] = React.useState<ImageRow[]>([])
+  /*
+   * Whether the empty gallery below is something the merchant did.
+   *
+   * The save guard cannot read intent off `images` alone: "removed every image"
+   * and "the gallery never loaded" both leave it empty while the product on
+   * record still has rows. Without this the guard refused both, which made
+   * deleting a product's last image impossible through the UI — the removal
+   * could never be saved, so `product.images` never emptied.
+   *
+   * Set from the setter wrapper rather than a dedicated MediaSidebar callback:
+   * removal there is an `onImagesChange(filter(...))` like any other edit, and
+   * a shrinking list is exactly the signal, whatever control produced it.
+   */
+  const [imagesRemoved, setImagesRemoved] = React.useState(false)
+
+  const handleImagesChange = React.useCallback((next: ImageRow[]) => {
+    setImages((prev) => {
+      if (next.length < prev.length) setImagesRemoved(true)
+      return next
+    })
+  }, [])
   const [video, setVideo] = React.useState<{ url: string | null; thumbnailUrl: string | null }>({
     url: null,
     thumbnailUrl: null,
@@ -530,6 +569,8 @@ export default function ProductFormPage() {
       })),
     )
     setVideo({ url: product.video, thumbnailUrl: product.videoThumbnail })
+    // Fresh server state: whatever was removed before is either saved or gone.
+    setImagesRemoved(false)
   }
 
   /** Mirrors the product name into SKU as a slug, until the merchant edits SKU. */
@@ -576,6 +617,53 @@ export default function ProductFormPage() {
         image.variantKey === variantKey ? { ...image, variantKey: SHARED_VARIANT_KEY } : image,
       ),
     )
+  }
+
+  /**
+   * Drops a value the merchant deleted shop-wide out of this product.
+   *
+   * The deletion has already happened by the time this runs, so this is not a
+   * choice to offer — untick and rebuild, no confirm. The dialog asked the
+   * question that mattered ("products still sell this — remove anyway?") before
+   * sending it. Leaving the id selected would mean a saved product referencing
+   * a value the backend no longer has.
+   */
+  const dropDeletedValue = (valueId: string) => {
+    if (!selectedValueIds.includes(valueId)) return
+
+    const nextValueIds = selectedValueIds.filter((id) => id !== valueId)
+    const nextSelected = new Set(nextValueIds)
+    const nextAttributes = attributes
+      .map((attribute) => ({
+        attributeId: attribute.id,
+        name: attribute.name,
+        valueIds: attribute.values.filter((v) => nextSelected.has(v.id)).map((v) => v.id),
+        labelById: Object.fromEntries(attribute.values.map((v) => [v.id, v.label])),
+      }))
+      .filter((attribute) => attribute.valueIds.length > 0)
+
+    const result = rebuildCombinations(
+      nextAttributes,
+      rows.map((row) => ({
+        id: row.id,
+        variantKey: row.variantKey,
+        name: row.name,
+        sku: row.sku,
+        offerPrice: row.offerPrice,
+        sellingPrice: row.sellingPrice,
+        stockQuantity: row.stockQuantity,
+        valueIds: row.valueIds,
+      })),
+      {
+        offerPrice: Number(watchedPrice) || 0,
+        skuPrefix: watchedSku ?? '',
+        nextKey: nextVariantKey,
+      },
+    )
+
+    result.removed.forEach((variant) => releaseVariantMedia(variant.variantKey))
+    setSelectedValueIds(nextValueIds)
+    setRows(result.rows)
   }
 
   /**
@@ -657,14 +745,17 @@ export default function ProductFormPage() {
      * Refuse to submit a gallery the form never managed to load.
      *
      * `images` is sent as the COMPLETE intended set — the server deletes every
-     * row not resubmitted — so an empty array is indistinguishable from "the
-     * merchant removed them all". If the product on record has images and this
-     * form is holding none, that is a load failure, not an intention, and
-     * saving would silently destroy them. Deleting the last image is still
-     * possible: it goes through the gallery's own remove control, which leaves
-     * the product's `images` empty on the next load too.
+     * row not resubmitted — so an empty array on its own is ambiguous: it means
+     * either "the merchant removed them all" or "the load failed". `imagesRemoved`
+     * is what tells the two apart, because only a removal the merchant performed
+     * sets it. An empty gallery nobody emptied is a load failure, and saving it
+     * would silently destroy every image on record.
+     *
+     * Both halves are load-bearing: without the flag this also blocked deleting
+     * a product's last image, since that save could never go through to make
+     * `product.images` empty on the next load.
      */
-    if (isEdit && (product?.images?.length ?? 0) > 0 && images.length === 0) {
+    if (isEdit && (product?.images?.length ?? 0) > 0 && images.length === 0 && !imagesRemoved) {
       setSaveError(
         'This product has images on record but none are loaded here, so saving would delete them. Reload the page and try again.',
       )
@@ -1555,6 +1646,7 @@ export default function ProductFormPage() {
                       onPendingImagesChange={setPendingImages}
                       onRowRemoved={releaseVariantMedia}
                       onCreateAttribute={() => setQuickCreate({ kind: 'attribute' })}
+                      onEditAttribute={(attribute) => setEditingAttributeId(attribute.id)}
                     />
                   )}
                 </CardContent>
@@ -1622,7 +1714,7 @@ export default function ProductFormPage() {
             {/* --- Media, beside the copy it illustrates --- */}
             <MediaSidebar
               images={images}
-              onImagesChange={setImages}
+              onImagesChange={handleImagesChange}
               pendingImages={pendingImages}
               onPendingImagesChange={setPendingImages}
               video={video.url}
@@ -1729,6 +1821,31 @@ export default function ProductFormPage() {
             ])
             announceCreated('Attribute', attribute.name)
           }}
+        />
+      )}
+
+      {editingAttribute && (
+        <EditAttributeValues
+          attribute={editingAttribute}
+          open
+          onOpenChange={(next) => {
+            if (!next) setEditingAttributeId(null)
+          }}
+          onValueCreated={(value) => {
+            /*
+             * Ticked on arrival, for the same reason a quick-created
+             * attribute's values are: the merchant added this value in order to
+             * sell it here. The editor's rebuild reacts to the changed
+             * selection and carries the rows already priced over.
+             *
+             * Note this only handles values created from within the dialog —
+             * `createdAttributes` is not touched, because unlike a quick-create
+             * the attribute already exists and the invalidated query brings its
+             * new value back on the next fetch.
+             */
+            setSelectedValueIds((current) => [...current, value.id])
+          }}
+          onValueDeleted={dropDeletedValue}
         />
       )}
     </div>

@@ -71,6 +71,19 @@ async function adjustStock(id: string, quantityDelta: number, note: string): Pro
   return toRow(res.data)
 }
 
+async function reassignStockVariant(
+  id: string,
+  variantId: string,
+  quantity: number,
+  note?: string,
+): Promise<StockRow> {
+  const res = await request<StockRecord>(`/stock/${id}/reassign-variant`, {
+    method: 'PATCH',
+    body: JSON.stringify({ variantId, quantity, note }),
+  })
+  return toRow(res.data)
+}
+
 export function useStock(params: StockListParams = {}) {
   return useQuery({ queryKey: queryKeys.stock.list(params), queryFn: () => listStock(params) })
 }
@@ -82,6 +95,21 @@ export function useAdjustStock() {
     onSuccess: () => {
       client.invalidateQueries({ queryKey: queryKeys.stock.all })
       client.invalidateQueries({ queryKey: queryKeys.stockMovements.all })
+    },
+  })
+}
+
+export function useReassignStockVariant() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, variantId, quantity, note }: { id: string; variantId: string; quantity: number; note?: string }) =>
+      reassignStockVariant(id, variantId, quantity, note),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: queryKeys.stock.all })
+      client.invalidateQueries({ queryKey: queryKeys.stockMovements.all })
+      // The variant and product mirrors the storefront reads have moved, so the
+      // catalogue's stock figures are stale until refetched.
+      client.invalidateQueries({ queryKey: queryKeys.products.all })
     },
   })
 }

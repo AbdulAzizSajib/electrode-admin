@@ -70,7 +70,13 @@ export default function VouchersPage() {
     {
       id: 'usage',
       header: 'Usage',
-      // Redemption counts are recorded server-side as orders are placed — shown, never edited.
+      /*
+       * Counted server-side from the orders that still stand — a cancelled
+       * order releases its redemption, so this figure can go down. It is the
+       * same count the redemption limit is enforced against, so a voucher
+       * reading 2/2 here is genuinely exhausted; it used to be able to show a
+       * ceiling that cancellations had inflated. Shown, never edited.
+       */
       cell: ({ row }) => `${row.original.usageCount} / ${row.original.usageLimit ?? '∞'}`,
     },
     {

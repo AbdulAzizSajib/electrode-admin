@@ -123,6 +123,16 @@ export interface Order {
   shipments?: Shipment[]
   /** Only present on detail responses. */
   statusHistory?: OrderStatusEvent[]
+  /**
+   * The statuses this order may still move to, computed server-side from the
+   * same transition map the API enforces. Staff detail reads only.
+   *
+   * Read rather than restated here: cancelling before fulfilment returns stock
+   * to the shelf, so a transition that could not happen physically produces
+   * side effects nothing can reconcile. Absent (older backend) means the page
+   * falls back to offering nothing rather than guessing.
+   */
+  allowedTransitions?: OrderStatus[]
   createdAt: string
   updatedAt: string
 }

@@ -41,6 +41,17 @@ export interface ReturnRequest {
   description: string | null
   status: ReturnStatus
   items: ReturnItem[]
+  /**
+   * The statuses this return may still move to, computed server-side from the
+   * same transition map the API enforces. Present on the detail read only.
+   *
+   * Read rather than restated here: completing a return restocks physical
+   * goods, and a UI that listed the statuses independently is exactly how a
+   * completed return came to be re-completable — restocking the same delivery
+   * twice. Absent (older backend) means the page falls back to offering
+   * nothing rather than guessing.
+   */
+  allowedTransitions?: ReturnStatus[]
   createdAt: string
   updatedAt: string
 }

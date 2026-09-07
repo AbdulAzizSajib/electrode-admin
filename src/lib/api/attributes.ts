@@ -94,6 +94,52 @@ async function deleteAttribute(id: string, force?: boolean): Promise<void> {
   await request<unknown>(`/attributes/${id}${force ? '?force=1' : ''}`, { method: 'DELETE' })
 }
 
+/*
+ * One value at a time.
+ *
+ * `updateAttribute` sends the whole `values` array and the backend deletes what
+ * it omits — right for the Attributes page, which authors that list, and unsafe
+ * anywhere else: a caller that rebuilds the array from a list fetched a minute
+ * ago drops any value added since. These three name the value in the path and
+ * touch nothing else, which is what lets the product form edit an attribute it
+ * does not own.
+ */
+
+async function createAttributeValue(
+  attributeId: string,
+  input: { label: string; swatch?: string },
+): Promise<AttributeValue> {
+  const res = await request<AttributeValue>(`/attributes/${attributeId}/values`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return res.data
+}
+
+async function updateAttributeValue(
+  attributeId: string,
+  valueId: string,
+  input: { label?: string; swatch?: string | null },
+): Promise<AttributeValue> {
+  const res = await request<AttributeValue>(`/attributes/${attributeId}/values/${valueId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+  return res.data
+}
+
+/** `force` confirms removing a value products still sell; without it, a 409. */
+async function deleteAttributeValue(
+  attributeId: string,
+  valueId: string,
+  force?: boolean,
+): Promise<void> {
+  await request<unknown>(
+    `/attributes/${attributeId}/values/${valueId}${force ? '?force=1' : ''}`,
+    { method: 'DELETE' },
+  )
+}
+
 export function useAttributes(params: ListParams = {}) {
   return useQuery({
     queryKey: queryKeys.attributes.list(params),
@@ -141,6 +187,52 @@ export function useDeleteAttribute() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: ({ id, force }: { id: string; force?: boolean }) => deleteAttribute(id, force),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.attributes.all }),
+  })
+}
+
+export function useCreateAttributeValue() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      attributeId,
+      input,
+    }: {
+      attributeId: string
+      input: { label: string; swatch?: string }
+    }) => createAttributeValue(attributeId, input),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.attributes.all }),
+  })
+}
+
+export function useUpdateAttributeValue() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      attributeId,
+      valueId,
+      input,
+    }: {
+      attributeId: string
+      valueId: string
+      input: { label?: string; swatch?: string | null }
+    }) => updateAttributeValue(attributeId, valueId, input),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.attributes.all }),
+  })
+}
+
+export function useDeleteAttributeValue() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      attributeId,
+      valueId,
+      force,
+    }: {
+      attributeId: string
+      valueId: string
+      force?: boolean
+    }) => deleteAttributeValue(attributeId, valueId, force),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.attributes.all }),
   })
 }

@@ -1,7 +1,11 @@
 /**
  * Real backend refund calls — follows the same envelope/error pattern as `categories.ts`/`products.ts`.
- * No status-update function here: the backend has no endpoint that changes a refund's status once
- * created (see integrate-post-purchase-api design.md Decision 1) — refunds are create-and-list only.
+ *
+ * Refunds were create-and-list only, which made a mistyped amount permanent: a
+ * compensating second refund cannot express the correction, since amounts must
+ * be positive. `add-admin-correction-paths` added amend and void — void being a
+ * status change to CANCELLED rather than a delete, because a refund that
+ * existed is a thing that happened and the payments report has already shown it.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
@@ -40,6 +44,20 @@ export interface CreateRefundInput {
   reason?: string
   paymentId?: string
   returnRequestId?: string
+  /**
+   * Set when the returned goods physically came back and should be restocked
+   * into this warehouse. Omitting it records a refund for goods the customer
+   * keeps. Only meaningful alongside `returnRequestId` — completing a return
+   * used to mean two different things about stock depending on which endpoint
+   * did it, and this is how the caller now says which happened.
+   */
+  restockWarehouseId?: string
+}
+
+/** Only the figures are amendable — void and re-issue to change which payment or return a refund covers. */
+export interface UpdateRefundInput {
+  amount?: number
+  reason?: string
 }
 
 async function listRefunds(params: RefundListParams = {}): Promise<PaginatedResponse<Refund>> {
@@ -69,10 +87,43 @@ export function useRefunds(params: RefundListParams = {}) {
   return useQuery({ queryKey: queryKeys.refunds.list(params), queryFn: () => listRefunds(params) })
 }
 
+async function updateRefund(refundId: string, input: UpdateRefundInput): Promise<Refund> {
+  const res = await request<Refund>(`/refunds/${refundId}`, { method: 'PATCH', body: JSON.stringify(input) })
+  return res.data
+}
+
+async function voidRefund(refundId: string): Promise<Refund> {
+  const res = await request<Refund>(`/refunds/${refundId}/void`, { method: 'PATCH' })
+  return res.data
+}
+
 export function useCreateRefund() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: ({ orderId, input }: { orderId: string; input: CreateRefundInput }) => createRefund(orderId, input),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.refunds.all }),
+  })
+}
+
+export function useUpdateRefund() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ refundId, input }: { refundId: string; input: UpdateRefundInput }) => updateRefund(refundId, input),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.refunds.all }),
+  })
+}
+
+export function useVoidRefund() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (refundId: string) => voidRefund(refundId),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: queryKeys.refunds.all })
+      // Voiding restores the payment's status, the return it completed and the
+      // product's sold count — every one of those is stale until refetched.
+      client.invalidateQueries({ queryKey: queryKeys.orders.all })
+      client.invalidateQueries({ queryKey: queryKeys.returns.all })
+      client.invalidateQueries({ queryKey: queryKeys.products.all })
+    },
   })
 }

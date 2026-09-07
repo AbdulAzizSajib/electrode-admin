@@ -18,6 +18,16 @@ export interface PurchaseOrderLineItem {
   id: string
   productId: string
   product: PurchaseOrderItemProductRef
+  /**
+   * Which variant this line replenishes, when the product has any. Stock is
+   * held per (warehouse, product, variant) and customer orders deduct against
+   * the variant actually bought, so a line for a variable product that leaves
+   * this null receives stock no order can ever match — the product reads out of
+   * stock however much arrived. Null for a simple product, which has no
+   * variants to choose between.
+   */
+  variantId: string | null
+  variant: PurchaseOrderItemProductRef | null
   quantity: number
   receivedQuantity: number
   /** Decimal column — arrives as a string from the API (see integrate-products-api design.md). */
@@ -59,14 +69,33 @@ export interface PurchaseOrder {
 
 export interface PurchaseOrderCreateInput {
   supplierId: string
-  items: Array<{ productId: string; quantity: number; unitCost: number }>
+  /** `variantId` is omitted for a simple product and required for a variable one — see `PurchaseOrderLineItem.variantId`. */
+  items: Array<{ productId: string; variantId?: string; quantity: number; unitCost: number }>
   shippingCost?: number
   taxAmount?: number
   notes?: string
   orderedAt?: string
 }
 
-/** Line items aren't editable via update — only these scalar fields, plus a pre-receipt status transition. */
+/**
+ * Amends what a purchase order still has outstanding — a separate endpoint from
+ * the scalar update below, which refuses any edit once receiving has begun.
+ *
+ * This one stays available after a partial receipt, because what it may change
+ * is precisely what has NOT arrived: a line may be amended down to, never below,
+ * its received quantity, and only a line that has received nothing may be
+ * removed. Lines omitted from `items` are removed; a line without an `id` is
+ * added.
+ *
+ * Amending also moves the order's total, which is what supplier payments are
+ * judged against — an understated order used to cap what could legitimately be
+ * recorded as paid, with no way to raise it.
+ */
+export interface PurchaseOrderAmendInput {
+  items: Array<{ id?: string; productId: string; variantId?: string; quantity: number; unitCost: number }>
+}
+
+/** Line items aren't editable via update — use `amendPurchaseOrderItems` for those. Only these scalar fields, plus a pre-receipt status transition. */
 export interface PurchaseOrderUpdateInput {
   shippingCost?: number
   taxAmount?: number
@@ -120,6 +149,14 @@ async function updatePurchaseOrder(id: string, input: PurchaseOrderUpdateInput):
   return res.data
 }
 
+async function amendPurchaseOrderItems(id: string, input: PurchaseOrderAmendInput): Promise<PurchaseOrder> {
+  const res = await request<PurchaseOrder>(`/purchase-orders/${id}/items`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+  return res.data
+}
+
 async function deletePurchaseOrder(id: string): Promise<void> {
   await request<PurchaseOrder>(`/purchase-orders/${id}`, { method: 'DELETE' })
 }
@@ -153,6 +190,21 @@ export function useUpdatePurchaseOrder() {
     onSuccess: (_d, variables) => {
       client.invalidateQueries({ queryKey: queryKeys.purchaseOrders.all })
       client.invalidateQueries({ queryKey: queryKeys.purchaseOrders.detail(variables.id) })
+    },
+  })
+}
+
+export function useAmendPurchaseOrderItems() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: PurchaseOrderAmendInput }) =>
+      amendPurchaseOrderItems(id, input),
+    onSuccess: (_d, variables) => {
+      client.invalidateQueries({ queryKey: queryKeys.purchaseOrders.all })
+      client.invalidateQueries({ queryKey: queryKeys.purchaseOrders.detail(variables.id) })
+      // The order total moved, and that is what supplier payments are judged
+      // against — the settlement figures on this order are now stale.
+      client.invalidateQueries({ queryKey: queryKeys.supplierPayments.all })
     },
   })
 }

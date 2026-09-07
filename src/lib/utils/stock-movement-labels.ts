@@ -18,6 +18,7 @@ export type StockMovementType =
   | 'LOSS'
   | 'TRANSFER_IN'
   | 'TRANSFER_OUT'
+  | 'CANCELLATION'
 
 export const STOCK_MOVEMENT_TYPE_LABEL: Record<StockMovementType, string> = {
   PURCHASE: 'Purchase',
@@ -29,6 +30,9 @@ export const STOCK_MOVEMENT_TYPE_LABEL: Record<StockMovementType, string> = {
   LOSS: 'Loss',
   TRANSFER_IN: 'Transfer in',
   TRANSFER_OUT: 'Transfer out',
+  // Names the cause, not the mechanism: the merchant is looking for why stock
+  // came back, and "cancelled order" is the answer they are checking against.
+  CANCELLATION: 'Order cancelled',
 }
 
 export type StockMovementBadgeVariant =
@@ -48,6 +52,8 @@ export const STOCK_MOVEMENT_TYPE_VARIANT: Record<StockMovementType, StockMovemen
   LOSS: 'destructive',
   TRANSFER_IN: 'success',
   TRANSFER_OUT: 'warning',
+  // Info, not success: stock coming back is neutral news, unlike a delivery.
+  CANCELLATION: 'info',
 }
 
 export const STOCK_MOVEMENT_TYPES = Object.keys(STOCK_MOVEMENT_TYPE_LABEL) as StockMovementType[]

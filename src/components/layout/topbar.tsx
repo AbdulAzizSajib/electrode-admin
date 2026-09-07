@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router'
-import { Bell, LogOut, Menu, Search, Settings, User as UserIcon, PanelLeft } from 'lucide-react'
+import { Bell, LogOut, Menu, Search, Settings, User as UserIcon, PanelLeft, Volume2, VolumeX } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,15 +17,31 @@ import { RequireRole } from '@/routes/guards'
 import { useSessionStore } from '@/lib/store/session-store'
 import { useUiStore } from '@/lib/store/ui-store'
 import { useUnreadNotificationCount } from '@/lib/api/notifications'
+import { usePulseValue } from '@/lib/realtime/use-realtime'
 import { initials } from '@/lib/utils/format'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
-export function Topbar() {
+interface TopbarProps {
+  /** Owned by `ShellLayout` so the toggle and the alert hook can't disagree about the setting. */
+  soundMuted: boolean
+  onToggleSound: () => void
+}
+
+export function Topbar({ soundMuted, onToggleSound }: TopbarProps) {
   const navigate = useNavigate()
   const user = useSessionStore((s) => s.user)
   const logout = useSessionStore((s) => s.logout)
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen)
-  const { data: unreadCount = 0 } = useUnreadNotificationCount()
+  const { data: fetchedUnreadCount = 0 } = useUnreadNotificationCount()
+
+  /*
+   * The live pulse is authoritative once it has arrived: it refreshes on the shared interval,
+   * while `useUnreadNotificationCount` only refetches when something invalidates it. Falling
+   * back to the fetched count keeps the badge correct on first paint, before the first pulse.
+   */
+  const pulse = usePulseValue()
+  const unreadCount = pulse?.unreadNotificationCount ?? fetchedUnreadCount
 
   const handleLogout = () => {
     logout()
@@ -60,6 +76,25 @@ export function Topbar() {
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search…" className="h-8 w-56 pl-7" />
         </div>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onToggleSound}
+              aria-pressed={soundMuted}
+              aria-label={soundMuted ? 'Unmute new-order sound' : 'Mute new-order sound'}
+            >
+              {soundMuted ? (
+                <VolumeX className="size-4 text-muted-foreground" />
+              ) : (
+                <Volume2 className="size-4" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{soundMuted ? 'New-order sound off' : 'New-order sound on'}</TooltipContent>
+        </Tooltip>
 
         <Button variant="ghost" size="icon" className="relative" asChild>
           <Link to="/notifications" aria-label="Notifications">

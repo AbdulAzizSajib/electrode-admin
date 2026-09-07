@@ -80,13 +80,17 @@ export const queryKeys = {
   permissions: { all: ['permissions'] as const, list: (p?: object) => ['permissions', 'list', p] as const },
   auditLogs: { all: ['audit-logs'] as const, list: (p?: object) => ['audit-logs', 'list', p] as const },
 
+  /**
+   * The shared live poll. Not under `dashboard` because it outlives any one page — the pending
+   * badge and notification count read it from the app shell — and because invalidating
+   * `['dashboard']` on a detected change must not also invalidate the probe that detected it.
+   */
+  pulse: ['pulse'] as const,
+
   dashboard: {
+    all: ['dashboard'] as const,
     summary: (range: string) => ['dashboard', 'summary', range] as const,
     topProducts: (range: string) => ['dashboard', 'top-products', range] as const,
-    salesByCategory: (range: string) => ['dashboard', 'sales-by-category', range] as const,
-    orderStatusBreakdown: (range: string) => ['dashboard', 'order-status-breakdown', range] as const,
-    paymentBreakdown: (range: string) => ['dashboard', 'payment-breakdown', range] as const,
-    returnsRefunds: (range: string) => ['dashboard', 'returns-refunds', range] as const,
   },
 
   /**

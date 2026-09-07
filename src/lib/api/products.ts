@@ -400,8 +400,22 @@ export function useProducts(params: ProductListParams = {}) {
   return useQuery({ queryKey: queryKeys.products.list(params), queryFn: () => listProducts(params) })
 }
 
+/**
+ * `refetchOnWindowFocus` is off here despite being on globally (see `query-client.ts`).
+ *
+ * The edit form syncs its inventory half — images, combination rows, video — out of this query
+ * whenever `updatedAt` changes, overwriting whatever is in the form. A refetch triggered by the
+ * merchant tabbing away to a file picker or an image host and back would therefore discard their
+ * unsaved edits mid-session. The list stays focus-refreshed; only the detail a form writes over
+ * opts out.
+ */
 export function useProduct(id: string | undefined) {
-  return useQuery({ queryKey: queryKeys.products.detail(id ?? ''), queryFn: () => getProduct(id!), enabled: !!id })
+  return useQuery({
+    queryKey: queryKeys.products.detail(id ?? ''),
+    queryFn: () => getProduct(id!),
+    enabled: !!id,
+    refetchOnWindowFocus: false,
+  })
 }
 
 export function useCreateProduct() {

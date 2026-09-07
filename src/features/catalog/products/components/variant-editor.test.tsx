@@ -50,10 +50,12 @@ function Harness({
   initialSelected = [],
   initialRows = [],
   onRowRemoved,
+  onEditAttribute,
 }: {
   initialSelected?: string[]
   initialRows?: CombinationRow[]
   onRowRemoved?: (key: string) => void
+  onEditAttribute?: (attribute: Attribute) => void
 }) {
   const [selected, setSelected] = React.useState<string[]>(initialSelected)
   const [rows, setRows] = React.useState<CombinationRow[]>(initialRows)
@@ -72,6 +74,7 @@ function Harness({
         pendingImages={[]}
         onPendingImagesChange={() => {}}
         onRowRemoved={onRowRemoved}
+        onEditAttribute={onEditAttribute}
       />
       <output data-testid="state">
         {JSON.stringify({
@@ -264,5 +267,28 @@ describe('VariantEditor', () => {
     )
 
     expect(screen.getByText('No attributes defined yet')).not.toBeNull()
+  })
+
+  /*
+   * The checkboxes answer "which of these does this product sell?" — they have
+   * never had an answer to "none of these is the colour I stock". That sent the
+   * merchant to Catalog → Attributes with a part-filled product behind them,
+   * which is the same round-trip quick-create was built to close for a whole
+   * attribute. This is the handle on it.
+   */
+  it('offers editing an existing attribute, naming which one', async () => {
+    const user = userEvent.setup()
+    const onEditAttribute = vi.fn()
+    render(<Harness onEditAttribute={onEditAttribute} />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit Colour values' }))
+
+    expect(onEditAttribute).toHaveBeenCalledWith(COLOUR)
+  })
+
+  it('leaves the group unadorned when editing is not offered', () => {
+    render(<Harness />)
+
+    expect(screen.queryByRole('button', { name: /edit colour/i })).toBeNull()
   })
 })

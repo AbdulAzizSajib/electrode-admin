@@ -115,6 +115,14 @@ export default function OrderDetailPage() {
   const paidTotal = (payments ?? []).filter((p) => p.status === 'PAID').reduce((s, p) => s + Number(p.amount), 0)
   const balanceDue = Math.max(0, Number(order.totalAmount) - paidTotal)
 
+  /*
+   * What the backend will accept from here. `CANCELLED` and `COMPLETED` are
+   * terminal, and a delivered order cannot be cancelled — goods already with
+   * the customer come back through a return, not a cancellation that would
+   * credit stock nobody has.
+   */
+  const allowedStatuses = order.allowedTransitions ?? []
+
   const submitStatus = async (values: StatusUpdateValues) => {
     try {
       await updateStatus.mutateAsync({ id: order.id, input: values })
@@ -170,10 +178,14 @@ export default function OrderDetailPage() {
           actions={
             <>
               <Badge variant={STATUS_VARIANT[order.status]} className="mr-1">{STATUS_LABEL[order.status]}</Badge>
-              <Button size="sm" onClick={() => setStatusOpen(true)}>
-                Update status
-              </Button>
-              {order.status !== 'CANCELLED' && order.status !== 'COMPLETED' && (
+              {/* Hidden at a terminal status: there is nothing to set, and
+                  offering the control invites the operator to try. */}
+              {allowedStatuses.length > 0 && (
+                <Button size="sm" onClick={() => setStatusOpen(true)}>
+                  Update status
+                </Button>
+              )}
+              {allowedStatuses.includes('CANCELLED') && (
                 <Button
                   variant="destructive"
                   size="sm"
@@ -409,9 +421,14 @@ export default function OrderDetailPage() {
                   <FormLabel>Status</FormLabel>
                   <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    {/* Only the transitions legal from here. Offering the full
+                        list let an order be moved from CANCELLED to DELIVERED,
+                        and cancelling now returns stock to the shelf — a
+                        transition that cannot happen physically produces side
+                        effects nothing can reconcile. */}
                     <SelectContent>
-                      {Object.entries(STATUS_LABEL).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                      {allowedStatuses.map((value) => (
+                        <SelectItem key={value} value={value}>{STATUS_LABEL[value]}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -515,7 +532,9 @@ export default function OrderDetailPage() {
         open={confirmCancel.open}
         onOpenChange={confirmCancel.setOpen}
         title="Cancel this order?"
-        description="The customer will be notified. This cannot be undone."
+        // Says what happens to stock: the items go back on the shelf and become
+        // sellable again, which is the part an operator needs to predict.
+        description="The items go back into stock and the customer will be notified. This cannot be undone."
         confirmLabel="Cancel order"
         loading={confirmCancel.pending}
         onConfirm={confirmCancel.handleConfirm}
