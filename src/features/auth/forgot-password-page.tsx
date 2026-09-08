@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
+import { usePublicBranding } from '@/lib/api/public-settings'
 
 const schema = z.object({
   email: z.string().min(1, 'Email is required').email('Enter a valid email address'),
@@ -17,6 +18,10 @@ type Values = z.infer<typeof schema>
 
 export default function ForgotPasswordPage() {
   const [sent, setSent] = React.useState(false)
+
+  // Cached by `AuthLayout`'s own read — same key, so no second request.
+  const { data: branding } = usePublicBranding()
+  const emailPlaceholder = branding?.contact?.email?.trim() || 'you@store.com'
 
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { email: '' } })
 
@@ -53,7 +58,7 @@ export default function ForgotPasswordPage() {
                   <FormItem>
                     <FormLabel>Email</FormLabel>
                     <FormControl>
-                      <Input placeholder="you@store.com" {...field} />
+                      <Input placeholder={emailPlaceholder} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

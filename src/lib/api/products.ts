@@ -116,6 +116,9 @@ export interface Product {
   sku: string | null
   description: string | null
   shortDescription: string | null
+  /** SEO overrides, editable on this form and from SEO → Page SEO. */
+  seoTitle: string | null
+  seoDescription: string | null
   type: ProductType
   status: ProductStatus
   categoryId: string | null
@@ -216,6 +219,12 @@ export interface ProductInput {
   sku?: string
   description?: string
   shortDescription?: string
+  /**
+   * Sent as `''` rather than omitted when cleared — an omitted key means "leave
+   * unchanged", so omitting would make these impossible to remove once set.
+   */
+  seoTitle?: string
+  seoDescription?: string
   type?: ProductType
   status?: ProductStatus
   categoryId?: string

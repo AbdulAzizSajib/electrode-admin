@@ -222,6 +222,135 @@ export const DEFAULT_CATALOG_CONFIG: CatalogConfig = {
 }
 
 /* ------------------------------------------------------------------ *
+ * SEO
+ * ------------------------------------------------------------------ */
+
+/**
+ * The route groups a storefront page can belong to.
+ *
+ * A CLOSED set mirroring the backend's `SEO_ROUTE_GROUPS`, in the order the
+ * Indexing screen renders them: public surfaces first, then the private ones a
+ * shop never wants indexed.
+ */
+export const SEO_ROUTE_GROUPS = [
+  'home',
+  'product',
+  'category',
+  'blog',
+  'page',
+  'landingPage',
+  'account',
+  'cart',
+  'checkout',
+  'wishlist',
+  'compare',
+  'search',
+] as const
+
+export type SeoRouteGroup = (typeof SEO_ROUTE_GROUPS)[number]
+
+export const SEO_CONTENT_TYPES = [
+  'product',
+  'category',
+  'page',
+  'blogPost',
+  'landingPage',
+] as const
+
+export type SeoContentType = (typeof SEO_CONTENT_TYPES)[number]
+
+export interface SeoRobotsGroup {
+  index: boolean
+  follow: boolean
+}
+
+export interface SeoConfig {
+  /** `%s` is replaced by the page's title. `''` means no template. */
+  titleTemplate: string
+  defaultMetaTitle: string
+  defaultMetaDescription: string
+  defaultOgImageUrl: string
+  twitterCardType: 'summary' | 'summary_large_image'
+  twitterSite: string
+  robots: {
+    /** Overrides every group below, and empties the sitemap. */
+    globalNoindex: boolean
+    groups: Record<SeoRouteGroup, SeoRobotsGroup>
+    customRules: string
+  }
+  sitemap: Record<SeoContentType, boolean>
+  structuredData: {
+    enableOrganization: boolean
+    enableProduct: boolean
+    enableArticle: boolean
+    enableBreadcrumb: boolean
+    organization: {
+      legalName: string
+      logoUrl: string
+      email: string
+      phone: string
+      sameAs: string[]
+    }
+  }
+  verification: {
+    google: string
+    bing: string
+    other: string
+  }
+}
+
+/**
+ * Mirrors the backend's `DEFAULT_SEO_CONFIG`. Keep in step with it — the same
+ * obligation `DEFAULT_CATALOG_CONFIG` above already carries.
+ *
+ * Seeds all four SEO screens for a store whose column has never been written,
+ * so they show what the storefront is actually doing rather than reading as
+ * off — which for an `index` flag would be a page withdrawn from search by the
+ * UI's own default rather than by anyone's decision.
+ */
+export const DEFAULT_SEO_CONFIG: SeoConfig = {
+  titleTemplate: '',
+  defaultMetaTitle: '',
+  defaultMetaDescription: '',
+  defaultOgImageUrl: '',
+  twitterCardType: 'summary_large_image',
+  twitterSite: '',
+  robots: {
+    globalNoindex: false,
+    groups: {
+      home: { index: true, follow: true },
+      product: { index: true, follow: true },
+      category: { index: true, follow: true },
+      blog: { index: true, follow: true },
+      page: { index: true, follow: true },
+      landingPage: { index: true, follow: true },
+      account: { index: false, follow: false },
+      cart: { index: false, follow: false },
+      checkout: { index: false, follow: false },
+      wishlist: { index: false, follow: false },
+      compare: { index: false, follow: false },
+      search: { index: false, follow: false },
+    },
+    customRules: '',
+  },
+  sitemap: { product: true, category: true, page: true, blogPost: true, landingPage: true },
+  structuredData: {
+    enableOrganization: true,
+    enableProduct: true,
+    enableArticle: true,
+    enableBreadcrumb: true,
+    organization: { legalName: '', logoUrl: '', email: '', phone: '', sameAs: [] },
+  },
+  verification: { google: '', bing: '', other: '' },
+}
+
+/** How long a meta title/description can be before search engines truncate it. */
+export const SEO_LENGTH_LIMITS = {
+  titleMax: 60,
+  descriptionMax: 160,
+} as const
+
+/* ------------------------------------------------------------------ *
  * Theme
  * ------------------------------------------------------------------ */
 
@@ -340,6 +469,8 @@ export interface StoreSettings {
   checkoutConfig: CheckoutConfig | null
   /** Null until a merchant opens Catalog Setting — same "not configured" distinction as above. */
   catalogConfig: CatalogConfig | null
+  /** Null until a merchant saves any SEO screen — same distinction again. */
+  seoConfig: SeoConfig | null
   theme: Theme | null
   /**
    * The website ↔ single-landing-page toggle, and the page it points at.
@@ -404,6 +535,16 @@ export interface StoreSettingsInput {
 
   checkoutConfig?: CheckoutConfig
   catalogConfig?: CatalogConfig
+  /**
+   * The WHOLE SEO config, never a slice of one.
+   *
+   * Unlike every other key here, the backend does not merge this one field by
+   * field — a present `seoConfig` replaces the stored blob outright. The four
+   * SEO screens each edit one facet of it, so each must send the full object it
+   * loaded with its own section's edits applied. Sending only the section's own
+   * keys would blank the other three.
+   */
+  seoConfig?: SeoConfig
   /** `font` goes up as pasted text; the backend parses it. See `ThemeInput`. */
   theme?: ThemeInput
 

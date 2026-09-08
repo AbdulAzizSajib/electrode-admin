@@ -155,9 +155,15 @@ export default function SiteSettingsPage() {
     if (value.siteNameAccent.trim()) input.siteNameAccent = value.siteNameAccent.trim()
     if (value.logoUrl.trim()) input.logoUrl = value.logoUrl.trim()
     if (value.footerLogoUrl.trim()) input.footerLogoUrl = value.footerLogoUrl.trim()
-    if (value.siteUrl.trim()) input.siteUrl = value.siteUrl.trim()
-    if (value.metaTitle.trim()) input.metaTitle = value.metaTitle.trim()
-    if (value.metaDescription.trim()) input.metaDescription = value.metaDescription.trim()
+    /*
+     * `siteUrl`, `metaTitle` and `metaDescription` are deliberately NOT sent
+     * any more — SEO → General owns them now. Still loaded into this page's
+     * draft above (harmlessly, and so the diff stays small), but writing them
+     * from here would make this screen and the SEO one fight over the same three
+     * columns: whichever was saved second would win with whatever it had loaded,
+     * which is exactly the clobbering the disjoint-key-set rule exists to
+     * prevent.
+     */
     if (value.copyrightText.trim()) input.copyrightText = value.copyrightText.trim()
 
     try {
@@ -290,45 +296,26 @@ export default function SiteSettingsPage() {
         </Labelled>
       </EditorSection>
 
+      {/*
+        The SEO fields that used to sit here now live under SEO → General,
+        alongside the robots, sitemap, structured-data and verification settings
+        they belong with. The columns are unchanged and so are their values —
+        only the screen that edits them moved.
+
+        A signpost rather than a silent removal: a merchant who knew these were
+        on this page needs to be told where they went, once. Worth deleting after
+        a release or two, when nobody is still looking for them here.
+      */}
       <EditorSection
         title="SEO"
-        description="What search engines and social previews read. Individual product and content pages keep their own titles; these are the site-wide defaults beneath them."
+        description="Search engine settings have moved to the SEO section in the sidebar, where they sit with indexing, sitemap and structured data. Your existing title, description and site address are unchanged."
       >
-        <Labelled
-          id="site-url"
-          label="Site URL"
-          hint="Your storefront's public address. Used to build absolute links in previews and canonical tags."
+        <Link
+          to="/seo/general"
+          className="text-sm font-medium text-primary underline-offset-4 hover:underline"
         >
-          <Input
-            id="site-url"
-            value={value.siteUrl}
-            onChange={(e) => set({ siteUrl: e.target.value })}
-            placeholder="https://example.com"
-          />
-        </Labelled>
-        <Labelled
-          id="meta-title"
-          label="Meta title"
-          hint="Leave empty to use the site name."
-        >
-          <Input
-            id="meta-title"
-            value={value.metaTitle}
-            onChange={(e) => set({ metaTitle: e.target.value })}
-            maxLength={200}
-            placeholder="Gadgets Mart - Electronics Store"
-          />
-        </Labelled>
-        <Labelled id="meta-description" label="Meta description">
-          <Textarea
-            id="meta-description"
-            value={value.metaDescription}
-            onChange={(e) => set({ metaDescription: e.target.value })}
-            maxLength={500}
-            rows={3}
-            placeholder="Shop the latest electronics with fast delivery across Bangladesh."
-          />
-        </Labelled>
+          Go to SEO → General
+        </Link>
       </EditorSection>
 
       <EditorSection

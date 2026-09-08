@@ -1,0 +1,250 @@
+/*
+ * Print styles for the fulfilment documents (packing slip, invoice, shipping
+ * label).
+ *
+ * Loaded only by the print routes, which render outside ShellLayout — that is
+ * what keeps the sidebar, topbar and breadcrumbs off the paper. Hiding chrome
+ * with `@media print` from inside the shell was the alternative and is
+ * rejected: every ancestor's layout still participates, so an unrelated change
+ * to the shell's flex container or an `overflow: hidden` silently breaks a
+ * label. See design.md Decision 3.
+ *
+ * ## Thermal rules are failure modes, not preferences
+ *
+ * A thermal printhead burns dots; it prints black or nothing. So:
+ *
+ *  - NO background colours or shading anywhere. A grey table header renders as
+ *    a solid black block with unreadable text, or vanishes entirely depending
+ *    on the driver. Emphasis comes from weight and rules, never fill.
+ *  - Print width is 72mm inside 80mm paper. The head does not reach the edges,
+ *    and content in that margin is simply cut off.
+ *  - ~9pt minimum body size. Below that the dot grid stops resolving glyphs.
+ *
+ * These are deliberately expressed as plain CSS rather than Tailwind classes:
+ * the utility layer's colour tokens are exactly what must not appear here.
+ */
+
+/* ---- shared ---- */
+
+.print-doc {
+  /* Explicit black on white. Inherited theme colours must not reach paper. */
+  color: #000;
+  background: #fff;
+  font-family: 'Roboto', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* Normal, not the admin's compact scale — this is read off paper, not screen. */
+  line-height: 1.4;
+}
+
+.print-doc * {
+  /* Nothing inherits a fill. Guards against a stray utility class or a browser
+     default (e.g. <mark>) putting a black block on thermal paper. */
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.print-doc table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.print-doc th,
+.print-doc td {
+  text-align: left;
+  vertical-align: top;
+  padding: 1.5mm 1mm;
+}
+
+.print-doc th {
+  /* Weight and a rule, never a fill — see the thermal note above. */
+  font-weight: 700;
+  border-bottom: 0.4mm solid #000;
+}
+
+.print-doc .num {
+  text-align: right;
+  /* Tabular figures so columns of money line up on the decimal. */
+  font-variant-numeric: tabular-nums;
+}
+
+.print-doc tbody tr {
+  border-bottom: 0.2mm solid #999;
+  /* A line item split across a page break is unpickable — the packer sees a
+     product name on one sheet and its quantity on the next. */
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.print-doc thead {
+  display: table-header-group; /* repeat headers on every page of a long slip */
+}
+
+.print-doc .doc-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5mm;
+}
+
+.print-doc .muted {
+  /* Grey text, not a grey background. Thermal renders this as lighter dots,
+     which is legible; a fill would not be. */
+  color: #444;
+}
+
+.print-doc .totals {
+  margin-left: auto;
+}
+
+.print-doc .totals td {
+  padding: 0.8mm 1mm;
+}
+
+.print-doc .totals .grand td {
+  font-weight: 700;
+  font-size: 1.1em;
+  border-top: 0.4mm solid #000;
+}
+
+.print-doc .barcode-text {
+  display: block;
+  text-align: center;
+  font-family: 'Roboto Mono', 'Consolas', monospace;
+  /* Wide tracking so a human reading this back cannot confuse 0/O or 1/I. */
+  letter-spacing: 0.6mm;
+  margin-top: 1mm;
+}
+
+.print-doc .section {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* ---- 80mm thermal ---- */
+
+.print-doc[data-size='thermal'] {
+  width: 72mm;
+  font-size: 9pt;
+}
+
+.print-doc[data-size='thermal'] .doc-title {
+  font-size: 11pt;
+}
+
+.print-doc[data-size='thermal'] th,
+.print-doc[data-size='thermal'] td {
+  padding: 1mm 0.5mm;
+}
+
+/* Receipt paper is narrow: the address block reads better stacked than in the
+   two columns A4 affords. */
+.print-doc[data-size='thermal'] .cols {
+  display: block;
+}
+
+.print-doc[data-size='thermal'] .cols > * + * {
+  margin-top: 2mm;
+}
+
+/* ---- A4 ---- */
+
+.print-doc[data-size='a4'] {
+  width: 190mm; /* 210mm less 10mm margins each side */
+  font-size: 10pt;
+}
+
+.print-doc[data-size='a4'] .doc-title {
+  font-size: 16pt;
+}
+
+.print-doc[data-size='a4'] .cols {
+  display: flex;
+  gap: 10mm;
+}
+
+.print-doc[data-size='a4'] .cols > * {
+  flex: 1;
+}
+
+/* ---- screen preview ---- */
+
+/*
+ * On screen the document sits on a grey page so its edges are visible. The
+ * document itself keeps a white background: this is a preview of paper.
+ */
+@media screen {
+  .print-preview {
+    min-height: 100vh;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .print-doc {
+    box-shadow: 0 1px 4px rgb(0 0 0 / 20%) !important;
+    padding: 6mm;
+  }
+}
+
+/* ---- print ---- */
+
+@media print {
+  /* Belt and braces: the print routes render no chrome, but a stray toolbar
+     rendered by a future change must not reach paper. */
+  .no-print {
+    display: none !important;
+  }
+
+  .print-preview {
+    padding: 0;
+    display: block;
+  }
+
+  .print-doc {
+    /* Margins come from @page; the document itself fills the printable area. */
+    width: auto !important;
+    padding: 0;
+    box-shadow: none !important;
+  }
+
+  /* Force the browser to honour the black rules and text above rather than
+     dropping "background graphics". Borders are structural here. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/*
+ * Paper size. Declared per size class rather than toggled in JS because
+ * `@page` cannot be set from an element style — it is page-level, so the size
+ * choice has to select between two rules.
+ *
+ * `80mm auto` lets the receipt run as long as its content. Some driver and
+ * browser combinations ignore this and fall back to the printer's configured
+ * default, which is why the printer itself should be set to 80mm paper: this
+ * rule is a refinement, not the only mechanism. The A4 toggle is the escape
+ * hatch when a machine misbehaves.
+ */
+@page {
+  margin: 10mm;
+}
+
+.print-page-thermal {
+  page: thermal;
+}
+
+@page thermal {
+  size: 80mm auto;
+  /* 4mm each side inside 80mm leaves the 72mm the head can actually reach. */
+  margin: 4mm;
+}
+
+.print-page-a4 {
+  page: a4;
+}
+
+@page a4 {
+  size: A4;
+  margin: 10mm;
+}

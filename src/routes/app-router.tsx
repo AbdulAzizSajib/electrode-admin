@@ -49,6 +49,9 @@ const PurchaseOrderDetailPage = lazy(
 
 const OrdersListPage = lazy(() => import('@/features/sales/orders/orders-list-page'))
 const OrderDetailPage = lazy(() => import('@/features/sales/orders/order-detail-page'))
+const OrderDocumentPage = lazy(
+  () => import('@/features/sales/orders/documents/order-document-page'),
+)
 const ReturnsPage = lazy(() => import('@/features/sales/returns/returns-page'))
 const ReturnDetailPage = lazy(() => import('@/features/sales/returns/return-detail-page'))
 const RefundsPage = lazy(() => import('@/features/sales/refunds/refunds-page'))
@@ -94,6 +97,15 @@ const CheckoutSettingsPage = lazy(
   () => import('@/features/ui/checkout-settings/checkout-settings-page'),
 )
 const SiteSettingsPage = lazy(() => import('@/features/ui/site-settings/site-settings-page'))
+const SeoGeneralPage = lazy(() => import('@/features/seo/general/seo-general-page'))
+const SeoIndexingPage = lazy(() => import('@/features/seo/indexing/seo-indexing-page'))
+const SeoStructuredDataPage = lazy(
+  () => import('@/features/seo/structured-data/seo-structured-data-page'),
+)
+const SeoVerificationPage = lazy(
+  () => import('@/features/seo/verification/seo-verification-page'),
+)
+const PageSeoPage = lazy(() => import('@/features/seo/page-seo/page-seo-page'))
 
 const CustomersListPage = lazy(() => import('@/features/customers/customers/customers-list-page'))
 const CustomerDetailPage = lazy(() => import('@/features/customers/customers/customer-detail-page'))
@@ -255,6 +267,16 @@ export function AppRouter() {
             <Route path="/ui/catalog-settings" element={<CatalogSettingsPage />} />
             <Route path="/ui/checkout-settings" element={<CheckoutSettingsPage />} />
             <Route path="/ui/site-settings" element={<SiteSettingsPage />} />
+
+            {/* SEO. Inside the same OWNER/ADMIN guard as the UI screens — these
+                decide whether the shop is findable at all, which is not a staff
+                decision. Kept in step with the `roles` on the SEO section in
+                nav-config.ts by hand; nothing enforces that they agree. */}
+            <Route path="/seo/general" element={<SeoGeneralPage />} />
+            <Route path="/seo/indexing" element={<SeoIndexingPage />} />
+            <Route path="/seo/structured-data" element={<SeoStructuredDataPage />} />
+            <Route path="/seo/verification" element={<SeoVerificationPage />} />
+            <Route path="/seo/pages" element={<PageSeoPage />} />
           </Route>
 
           <Route path="/customers/customers" element={<CustomersListPage />} />
@@ -283,6 +305,19 @@ export function AppRouter() {
 
           <Route path="*" element={<NotFoundPage />} />
         </Route>
+
+        {/* Fulfilment documents: signed in, but OUTSIDE ShellLayout.
+            That placement is the feature — a printed packing slip or label must
+            carry no sidebar, topbar or breadcrumbs, and hiding them with
+            `@media print` from inside the shell still leaves every ancestor's
+            layout participating in the printed page. Reached from an order, so
+            deliberately absent from nav-config.ts.
+            See openspec/changes/add-order-fulfillment-documents design.md
+            Decision 3. */}
+        <Route
+          path="/sales/orders/:orderId/print/:document"
+          element={<OrderDocumentPage />}
+        />
       </Route>
     </Routes>
   )

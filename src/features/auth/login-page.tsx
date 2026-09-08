@@ -10,6 +10,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { useSessionStore } from '@/lib/store/session-store'
 import { ApiError } from '@/lib/api/client'
 import { toast } from '@/components/ui/use-toast'
+import { usePublicBranding } from '@/lib/api/public-settings'
 
 const loginSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Enter a valid email address'),
@@ -22,6 +23,22 @@ export default function LoginPage() {
   const login = useSessionStore((s) => s.login)
   const navigate = useNavigate()
   const location = useLocation()
+
+  /*
+   * Shares the cached read the surrounding `AuthLayout` already made — same
+   * query key, so this is not a second request. Used only for copy: the form
+   * never waits on it, and every value below falls back. See
+   * `lib/api/public-settings.ts`.
+   */
+  const { data: branding } = usePublicBranding()
+  const storeName = branding?.storeName?.trim()
+
+  /*
+   * The store's own contact address as the placeholder when there is one — it
+   * is very often the address the owner actually signs in with, and it beats a
+   * fictional "you@store.com" as a hint about the expected format.
+   */
+  const emailPlaceholder = branding?.contact?.email?.trim() || 'you@store.com'
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -45,7 +62,11 @@ export default function LoginPage() {
     <Card>
       <CardHeader>
         <CardTitle>Sign in</CardTitle>
-        <CardDescription>Sign in with your Ecom Admin account.</CardDescription>
+        <CardDescription>
+          {storeName
+            ? `Sign in to manage ${storeName}.`
+            : 'Sign in with your administrator account.'}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
@@ -57,7 +78,7 @@ export default function LoginPage() {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input placeholder="you@store.com" autoComplete="username" {...field} />
+                    <Input placeholder={emailPlaceholder} autoComplete="username" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

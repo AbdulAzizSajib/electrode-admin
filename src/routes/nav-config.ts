@@ -48,6 +48,11 @@ import {
   ShoppingBasket,
   History,
   Wallet,
+  Search,
+  Bot,
+  Braces,
+  BadgeCheck,
+  ListChecks,
   type LucideIcon,
 } from 'lucide-react'
 import type { AdminRole } from '@/lib/store/session-store'
@@ -177,6 +182,36 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Catalog Setting', path: '/ui/catalog-settings', icon: Boxes },
       { label: 'Checkout Setting', path: '/ui/checkout-settings', icon: ShoppingCart },
       { label: 'Site Setting', path: '/ui/site-settings', icon: Globe },
+    ],
+  },
+  {
+    /*
+     * Everything that decides how the shop appears in a search result, in one
+     * place. It was previously spread across four screens and two that did not
+     * exist: three fields at the bottom of Site Setting, per-record meta boxes
+     * on Pages, Blog and Landing Pages, two columns on Product and Category that
+     * no form ever rendered, and no way at all to reach robots, the sitemap or
+     * structured data.
+     *
+     * A section of its own rather than another entry under UI: UI is about what
+     * a visitor sees on the page, and this is about what a crawler reads off it.
+     * The two are edited by the same person at different times, and the SEO
+     * settings a merchant needs are not findable under "Palette".
+     */
+    label: 'SEO',
+    icon: Search,
+    roles: ['OWNER', 'ADMIN'],
+    items: [
+      { label: 'General', path: '/seo/general', icon: SlidersHorizontal },
+      { label: 'Indexing', path: '/seo/indexing', icon: Bot },
+      { label: 'Structured Data', path: '/seo/structured-data', icon: Braces },
+      { label: 'Verification', path: '/seo/verification', icon: BadgeCheck },
+      /*
+       * Last, and the only one that is a list rather than a settings form: it is
+       * where a merchant goes once the global settings are right, to fix the
+       * individual pages that are still missing a title or a description.
+       */
+      { label: 'Page SEO', path: '/seo/pages', icon: ListChecks },
     ],
   },
   {

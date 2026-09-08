@@ -31,6 +31,13 @@ interface FormValues {
   parentId: string | null
   status: boolean
   sortOrder: number
+  /**
+   * The same two columns the SEO menu's Page SEO table writes. They existed on
+   * the model and were accepted by the backend's validation long before this
+   * form rendered them — so a merchant could not set them from anywhere.
+   */
+  seoTitle?: string
+  seoDescription?: string
 }
 
 const EMPTY_VALUES: FormValues = {
@@ -40,6 +47,8 @@ const EMPTY_VALUES: FormValues = {
   parentId: null,
   status: true,
   sortOrder: 0,
+  seoTitle: '',
+  seoDescription: '',
 }
 
 const toValues = (category: Category): FormValues => ({
@@ -49,6 +58,8 @@ const toValues = (category: Category): FormValues => ({
   parentId: category.parentId,
   status: category.status,
   sortOrder: category.sortOrder,
+  seoTitle: category.seoTitle ?? '',
+  seoDescription: category.seoDescription ?? '',
 })
 
 function toInput(values: FormValues): CategoryInput {
@@ -58,6 +69,13 @@ function toInput(values: FormValues): CategoryInput {
     image: values.image || undefined,
     status: values.status,
     sortOrder: values.sortOrder,
+    /*
+     * Sent even when empty, unlike `description` above. An omitted key means
+     * "leave unchanged" under the partial upsert, so omitting a blank field
+     * would make clearing an SEO title impossible from this form.
+     */
+    seoTitle: values.seoTitle ?? '',
+    seoDescription: values.seoDescription ?? '',
   }
   // Only send parentId when a real parent is picked — the backend rejects `null`
   // for top-level categories, it wants the key left out entirely.
@@ -157,6 +175,23 @@ export default function CategoryFormPage() {
           </Form.Item>
           <Form.Item name="status" label="Active" valuePropName="checked">
             <Switch />
+          </Form.Item>
+
+          {/* Editable here AND from SEO → Page SEO. Both write these same two
+              columns through this same endpoint, so there is no copy to sync. */}
+          <Form.Item
+            name="seoTitle"
+            label="Search result title"
+            extra="Shown as the heading in Google. Leave blank to use the category name."
+          >
+            <Input maxLength={200} />
+          </Form.Item>
+          <Form.Item
+            name="seoDescription"
+            label="Search result description"
+            extra="The sentence under the link in search results. Around 160 characters."
+          >
+            <Input.TextArea rows={3} maxLength={500} />
           </Form.Item>
         </>
       )}

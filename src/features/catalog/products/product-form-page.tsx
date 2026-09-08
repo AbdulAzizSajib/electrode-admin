@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Combobox } from '@/components/ui/combobox'
@@ -109,6 +110,8 @@ const schema = z.object({
   sku: z.string().min(1, 'Product code is required'),
   shortDescription: z.string().optional(),
   description: z.string().min(1, 'Description is required'),
+  seoTitle: z.string().optional(),
+  seoDescription: z.string().optional(),
   type: z.enum(['SIMPLE', 'VARIABLE']),
   status: z.enum(['DRAFT', 'ACTIVE', 'ARCHIVED']),
   categoryId: z
@@ -166,6 +169,8 @@ const EMPTY_VALUES: FormValues = {
   sku: '',
   shortDescription: '',
   description: '',
+  seoTitle: '',
+  seoDescription: '',
   type: 'SIMPLE',
   status: 'DRAFT',
   categoryId: null,
@@ -403,6 +408,8 @@ export default function ProductFormPage() {
       name: product.name,
       sku: product.sku ?? '',
       shortDescription: product.shortDescription ?? '',
+      seoTitle: product.seoTitle ?? '',
+      seoDescription: product.seoDescription ?? '',
       description: product.description ?? '',
       type: product.type,
       status: product.status,
@@ -832,6 +839,8 @@ export default function ProductFormPage() {
       sku: values.sku,
       description: values.description,
       shortDescription: values.shortDescription || undefined,
+      seoTitle: values.seoTitle ?? '',
+      seoDescription: values.seoDescription ?? '',
       type: values.type,
       status: values.status,
       categoryId: values.categoryId ?? undefined,
@@ -1110,6 +1119,54 @@ export default function ProductFormPage() {
                         <FormControl>
                           <RichTextEditor value={field.value} onChange={field.onChange} />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+
+              {/*
+                These two columns existed on the model and were accepted by the
+                backend long before anything rendered them — a merchant could not
+                set a product's search title from anywhere in the panel. The same
+                two fields are also editable in bulk from SEO → Page SEO; both
+                write these columns through this same endpoint.
+              */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Search engine listing</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-5">
+                  <FormField
+                    control={form.control}
+                    name="seoTitle"
+                    render={({ field }) => (
+                      <FormItem data-field="seoTitle">
+                        <FormLabel>Search result title</FormLabel>
+                        <FormControl>
+                          <Input maxLength={200} {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          Shown as the heading in Google. Leave blank to use the product name.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="seoDescription"
+                    render={({ field }) => (
+                      <FormItem data-field="seoDescription">
+                        <FormLabel>Search result description</FormLabel>
+                        <FormControl>
+                          <Textarea rows={3} maxLength={500} {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          The sentence under the link in search results. Around 160 characters.
+                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}

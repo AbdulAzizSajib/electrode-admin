@@ -18,9 +18,16 @@ import { queryKeys } from '@/lib/api/query-keys'
 import type { Payment } from '@/lib/api/payments'
 import type { Shipment } from '@/lib/api/shipments'
 
-export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'COMPLETED'
+/**
+ * Mirrors the backend `OrderStatus` enum. `PACKED` means picked and boxed but
+ * not yet handed to a carrier — see openspec/changes/add-order-fulfillment-documents.
+ *
+ * Which transitions are legal is NOT encoded here: the server sends
+ * `allowedTransitions` on every detail read, and the UI offers exactly those.
+ */
+export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'PROCESSING' | 'PACKED' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'COMPLETED'
 
-export const ORDER_STATUSES: OrderStatus[] = ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'COMPLETED']
+export const ORDER_STATUSES: OrderStatus[] = ['PENDING', 'CONFIRMED', 'PROCESSING', 'PACKED', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'COMPLETED']
 
 export interface OrderLineItem {
   productId: string

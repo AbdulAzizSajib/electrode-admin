@@ -76,6 +76,24 @@ export const queryKeys = {
   notifications: { all: ['notifications'] as const, list: (p?: object) => ['notifications', 'list', p] as const, unreadCount: ['notifications', 'unread-count'] as const },
 
   storeSettings: { detail: ['store-settings'] as const },
+  /*
+   * The unauthenticated branding read used by the auth screens. Its own key
+   * rather than a slice of `storeSettings`: the two come from different
+   * endpoints with different auth, and they are cached across different
+   * sessions — this one is fetched while logged OUT and must not be dropped or
+   * refetched by the invalidation a settings save fires.
+   */
+  publicBranding: { detail: ['public-branding'] as const },
+  /*
+   * The cross-content SEO overview. Separate from `storeSettings` because it
+   * reads five content tables rather than the settings row — saving an SEO
+   * screen must not invalidate a list whose contents it did not change, and
+   * editing a product's meta title must not refetch the settings row.
+   */
+  seo: {
+    all: ['seo'] as const,
+    overview: (p?: object) => ['seo', 'overview', p] as const,
+  },
   roles: { all: ['roles'] as const, list: (p?: object) => ['roles', 'list', p] as const, detail: (id: string) => ['roles', 'detail', id] as const },
   permissions: { all: ['permissions'] as const, list: (p?: object) => ['permissions', 'list', p] as const },
   auditLogs: { all: ['audit-logs'] as const, list: (p?: object) => ['audit-logs', 'list', p] as const },

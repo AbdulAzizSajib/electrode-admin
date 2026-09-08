@@ -36,6 +36,13 @@ export interface CategoryInput {
   sortOrder?: number
   /** Omit entirely for a top-level category — the backend rejects `null` here, it wants the key left out. */
   parentId?: string
+  /**
+   * Sent as `''` rather than omitted when cleared: an omitted key means "leave
+   * unchanged" under the partial upsert, so omitting would make an SEO title
+   * impossible to remove once set. Also written by SEO → Page SEO.
+   */
+  seoTitle?: string
+  seoDescription?: string
 }
 
 export interface CategoryListParams extends ListParams {

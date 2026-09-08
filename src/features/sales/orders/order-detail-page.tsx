@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { ArrowLeft, Ban, CheckCircle2, CreditCard, Truck } from 'lucide-react'
+import { ArrowLeft, Ban, CheckCircle2, CreditCard, Printer, Truck } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -18,7 +18,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
 import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
-import { useOrder, useUpdateOrderStatus, type OrderStatus } from '@/lib/api/orders'
+import { ORDER_STATUSES, useOrder, useUpdateOrderStatus, type OrderStatus } from '@/lib/api/orders'
 import { usePaymentsByOrder, useRecordPayment, type PaymentMethod, type PaymentStatus } from '@/lib/api/payments'
 import { useShipmentByOrder, useUpsertShipment, type ShipmentStatus } from '@/lib/api/shipments'
 import { formatCurrency, formatDateTime } from '@/lib/utils/format'
@@ -27,6 +27,7 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
   PENDING: 'Pending',
   CONFIRMED: 'Confirmed',
   PROCESSING: 'Processing',
+  PACKED: 'Packed',
   SHIPPED: 'Shipped',
   DELIVERED: 'Delivered',
   CANCELLED: 'Cancelled',
@@ -36,6 +37,7 @@ const STATUS_VARIANT: Record<OrderStatus, 'secondary' | 'info' | 'warning' | 'de
   PENDING: 'secondary',
   CONFIRMED: 'info',
   PROCESSING: 'warning',
+  PACKED: 'info',
   SHIPPED: 'default',
   DELIVERED: 'success',
   CANCELLED: 'destructive',
@@ -61,8 +63,32 @@ const shipmentSchema = z.object({
 })
 type ShipmentValues = z.infer<typeof shipmentSchema>
 
+/**
+ * The documents printable from an order, in fulfilment order: pick it, box it
+ * with its invoice, label the parcel.
+ *
+ * Offered at every status rather than gated on one. A slip is reprinted when
+ * the first is lost, and an invoice is reprinted for a customer who asks after
+ * delivery — gating on PACKED would block both for no gain, since printing
+ * mutates nothing.
+ */
+const PRINTABLE_DOCUMENTS = [
+  { kind: 'packing-slip', label: 'Packing slip' },
+  { kind: 'invoice', label: 'Invoice' },
+  { kind: 'shipping-label', label: 'Label' },
+] as const
+
+/*
+ * Derived from ORDER_STATUSES rather than re-listed, so adding a status to the
+ * API module cannot leave this behind. A hand-written copy silently rejected
+ * PACKED here while every other surface accepted it — which is a validation
+ * error on a status the server supports, and reads as a bug in the server.
+ *
+ * This is shape only. Which transitions are legal comes from the order's own
+ * `allowedTransitions`, computed server-side; see `nextStatusOptions` below.
+ */
 const statusUpdateSchema = z.object({
-  status: z.enum(['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'COMPLETED']),
+  status: z.enum(ORDER_STATUSES as [OrderStatus, ...OrderStatus[]]),
   note: z.string().optional(),
 })
 type StatusUpdateValues = z.infer<typeof statusUpdateSchema>
@@ -178,6 +204,17 @@ export default function OrderDetailPage() {
           actions={
             <>
               <Badge variant={STATUS_VARIANT[order.status]} className="mr-1">{STATUS_LABEL[order.status]}</Badge>
+              {/* Print targets open in a new tab so the order stays put behind
+                  them — a packer prints a slip, prints a label, and is still on
+                  the order when they come back. Each route renders outside the
+                  app shell so the printed page carries no chrome. */}
+              {PRINTABLE_DOCUMENTS.map((doc) => (
+                <Button key={doc.kind} variant="outline" size="sm" asChild>
+                  <Link to={`/sales/orders/${order.id}/print/${doc.kind}`} target="_blank" rel="noreferrer">
+                    <Printer /> {doc.label}
+                  </Link>
+                </Button>
+              ))}
               {/* Hidden at a terminal status: there is nothing to set, and
                   offering the control invites the operator to try. */}
               {allowedStatuses.length > 0 && (
