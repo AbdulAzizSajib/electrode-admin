@@ -55,6 +55,7 @@ const OrderDocumentPage = lazy(
 const ReturnsPage = lazy(() => import('@/features/sales/returns/returns-page'))
 const ReturnDetailPage = lazy(() => import('@/features/sales/returns/return-detail-page'))
 const RefundsPage = lazy(() => import('@/features/sales/refunds/refunds-page'))
+const CourierPage = lazy(() => import('@/features/sales/courier/courier-page'))
 
 const StockReportPage = lazy(() => import('@/features/reports/stock/stock-report-page'))
 const SalesReportPage = lazy(() => import('@/features/reports/sales/sales-report-page'))
@@ -209,6 +210,7 @@ export function AppRouter() {
           <Route path="/sales/returns" element={<ReturnsPage />} />
           <Route path="/sales/returns/:returnId" element={<ReturnDetailPage />} />
           <Route path="/sales/refunds" element={<RefundsPage />} />
+          <Route path="/sales/courier" element={<CourierPage />} />
 
           <Route path="/reports/stock" element={<StockReportPage />} />
           <Route path="/reports/sales" element={<SalesReportPage />} />

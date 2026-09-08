@@ -21,6 +21,9 @@ import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
 import { ORDER_STATUSES, useOrder, useUpdateOrderStatus, type OrderStatus } from '@/lib/api/orders'
 import { usePaymentsByOrder, useRecordPayment, type PaymentMethod, type PaymentStatus } from '@/lib/api/payments'
 import { useShipmentByOrder, useUpsertShipment, type ShipmentStatus } from '@/lib/api/shipments'
+import { useCreateCourierReturn, useDispatchSingleOrder } from '@/lib/api/courier'
+import { CourierStatusBadge } from '@/features/sales/courier/courier-status-badge'
+import { courierNeedsAttention, courierStatusLabel } from '@/features/sales/courier/courier-presentation'
 import { formatCurrency, formatDateTime } from '@/lib/utils/format'
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
@@ -102,11 +105,15 @@ export default function OrderDetailPage() {
   const updateStatus = useUpdateOrderStatus()
   const recordPayment = useRecordPayment()
   const upsertShipment = useUpsertShipment()
+  const dispatchOne = useDispatchSingleOrder()
+  const createReturn = useCreateCourierReturn()
   const confirmCancel = useConfirmDialog()
 
   const [statusOpen, setStatusOpen] = React.useState(false)
   const [paymentOpen, setPaymentOpen] = React.useState(false)
   const [shipmentOpen, setShipmentOpen] = React.useState(false)
+  const [returnOpen, setReturnOpen] = React.useState(false)
+  const [returnReason, setReturnReason] = React.useState('')
 
   useBreadcrumbLabel(order?.orderNumber)
 
@@ -169,6 +176,63 @@ export default function OrderDetailPage() {
       paymentForm.reset({ amount: 0, method: 'CARD', status: 'PAID' })
     } catch (err) {
       toast({ title: 'Could not record payment', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
+    }
+  }
+
+  /**
+   * The one condition the whole courier surface reads from.
+   *
+   * Derived from the loaded shipment rather than threaded through as a separate
+   * flag, so it cannot disagree with what the backend will accept — the server
+   * refuses manual writes on exactly this condition.
+   */
+  const isCourierOwned = Boolean(shipment?.consignmentId)
+
+  const dispatchSingle = async () => {
+    try {
+      const summary = await dispatchOne.mutateAsync(order!.id)
+      const result = summary.results[0]
+
+      if (result?.outcome === 'dispatched') {
+        toast({ title: `Sent to Steadfast — consignment ${result.consignmentId}` })
+        return
+      }
+
+      // Anything else is reported with the server's own words. An unconfirmed
+      // outcome especially must not read as a plain failure: retrying it is how
+      // one parcel becomes two consignments.
+      toast({
+        title:
+          result?.outcome === 'unconfirmed'
+            ? 'Outcome unknown — check Steadfast before sending again'
+            : 'Not sent to the courier',
+        description: result?.detail,
+        variant: result?.outcome === 'unconfirmed' ? 'default' : 'destructive',
+      })
+    } catch (err) {
+      toast({
+        title: 'Could not send to the courier',
+        description: err instanceof Error ? err.message : undefined,
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const submitReturn = async () => {
+    try {
+      await createReturn.mutateAsync({
+        orderId: order!.id,
+        reason: returnReason.trim() || undefined,
+      })
+      toast({ title: 'Return request raised with the courier' })
+      setReturnOpen(false)
+      setReturnReason('')
+    } catch (err) {
+      toast({
+        title: 'The courier did not accept the return',
+        description: err instanceof Error ? err.message : undefined,
+        variant: 'destructive',
+      })
     }
   }
 
@@ -318,8 +382,13 @@ export default function OrderDetailPage() {
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <CardTitle>Shipment</CardTitle>
+              {/* Still reachable when the courier owns the shipment: the dialog
+                  is where the fields are shown disabled and Steadfast is named
+                  as their source. Hiding it would leave the operator with no
+                  explanation of why they cannot edit. */}
               <Button size="sm" variant="outline" onClick={() => setShipmentOpen(true)}>
-                <Truck /> {shipment ? 'Update shipment' : 'Create shipment'}
+                <Truck />{' '}
+                {isCourierOwned ? 'View shipment' : shipment ? 'Update shipment' : 'Create shipment'}
               </Button>
             </CardHeader>
             <CardContent>
@@ -328,9 +397,81 @@ export default function OrderDetailPage() {
                   <Row label="Carrier" value={shipment.carrier ?? '—'} />
                   <Row label="Tracking #" value={shipment.trackingNumber ?? '—'} />
                   <Row label="Status" value={shipment.status.replace(/_/g, ' ')} />
+                  {isCourierOwned && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Managed by Steadfast — these values come from the courier and
+                      are not edited here.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No shipment created yet.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/*
+           * Courier state, kept separate from the shipment card above: one is
+           * what this shop recorded, the other is what Steadfast reports, and
+           * merging them would hide which is which.
+           */}
+          <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <CardTitle>Courier</CardTitle>
+              <div className="flex gap-2">
+                {/* Offered only for an order the server would actually accept.
+                    Anything else states the reason instead of presenting a
+                    control that will be refused. */}
+                {!isCourierOwned && order.status === 'PACKED' && (
+                  <Button
+                    size="sm"
+                    disabled={dispatchOne.isPending}
+                    onClick={() => void dispatchSingle()}
+                  >
+                    <Truck /> {dispatchOne.isPending ? 'Sending…' : 'Send to Steadfast'}
+                  </Button>
+                )}
+                {isCourierOwned && (
+                  <Button size="sm" variant="outline" onClick={() => setReturnOpen(true)}>
+                    Raise return
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isCourierOwned ? (
+                <div className="flex flex-col gap-1 text-sm">
+                  <Row label="Consignment" value={shipment?.consignmentId ?? '—'} />
+                  <Row label="Tracking code" value={shipment?.trackingNumber ?? '—'} />
+                  <Row label="Invoice sent" value={shipment?.courierInvoice ?? '—'} />
+                  <div className="flex items-center justify-between gap-2 py-0.5">
+                    <span className="text-muted-foreground">Courier status</span>
+                    <CourierStatusBadge status={shipment?.courierStatus} />
+                  </div>
+                  <Row
+                    label="Last synced"
+                    value={
+                      shipment?.courierSyncedAt
+                        ? formatDateTime(shipment.courierSyncedAt)
+                        : 'Never'
+                    }
+                  />
+                  {courierNeedsAttention(shipment?.courierStatus) && (
+                    <p className="mt-2 rounded-md border border-warning/40 bg-warning/5 px-2 py-1.5 text-xs text-foreground">
+                      The courier reports this consignment as{' '}
+                      {courierStatusLabel(shipment?.courierStatus).toLowerCase()}. Stock and
+                      the order status are deliberately unchanged — the parcel may still be
+                      in transit back. Resolve it with the order's own cancel or return
+                      flow once it is physically in hand.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {order.status === 'PACKED'
+                    ? 'Not dispatched yet.'
+                    : `Not dispatched. Only a packed order can be sent to the courier — this one is ${STATUS_LABEL[order.status].toLowerCase()}.`}
+                </p>
               )}
             </CardContent>
           </Card>
@@ -536,18 +677,33 @@ export default function OrderDetailPage() {
       <Dialog open={shipmentOpen} onOpenChange={setShipmentOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>{shipment ? 'Update shipment' : 'Create shipment'}</DialogTitle></DialogHeader>
+          {/*
+           * Disabled rather than hidden when the courier owns this shipment.
+           * A hidden tracking number reads as "this order has none"; a disabled
+           * one with the courier named beside it says what is actually true.
+           * The backend refuses these writes on the same condition, so the form
+           * cannot offer a control the server will reject.
+           * See design.md Decision 6.
+           */}
+          {isCourierOwned && (
+            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              This shipment is managed by Steadfast (consignment {shipment?.consignmentId}).
+              Its carrier, tracking number, status and timestamps come from the courier and
+              cannot be edited here.
+            </p>
+          )}
           <Form {...shipmentForm}>
             <form onSubmit={shipmentForm.handleSubmit(submitShipment)} className="flex flex-col gap-3.5">
               <FormField control={shipmentForm.control} name="carrier" render={({ field }) => (
-                <FormItem><FormLabel>Carrier</FormLabel><FormControl><Input placeholder="e.g. UPS" {...field} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Carrier</FormLabel><FormControl><Input placeholder="e.g. UPS" disabled={isCourierOwned} {...field} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={shipmentForm.control} name="trackingNumber" render={({ field }) => (
-                <FormItem><FormLabel>Tracking number</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>Tracking number</FormLabel><FormControl><Input disabled={isCourierOwned} {...field} /></FormControl><FormMessage /></FormItem>
               )} />
               <FormField control={shipmentForm.control} name="status" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Status</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
+                  <Select value={field.value} onValueChange={field.onChange} disabled={isCourierOwned}>
                     <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                     <SelectContent>
                       {SHIPMENT_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>)}
@@ -558,10 +714,52 @@ export default function OrderDetailPage() {
               )} />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setShipmentOpen(false)}>Cancel</Button>
-                <Button type="submit" loading={shipmentForm.formState.isSubmitting}>{shipment ? 'Save changes' : 'Create shipment'}</Button>
+                <Button type="submit" disabled={isCourierOwned} loading={shipmentForm.formState.isSubmitting}>{shipment ? 'Save changes' : 'Create shipment'}</Button>
               </DialogFooter>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Courier return. Reachable only from the Courier card, which renders it
+          only for a dispatched order — the server refuses one without a
+          consignment, so offering it otherwise would teach the operator that
+          the button does not work. */}
+      <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Raise a return with Steadfast</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3.5">
+            <p className="text-sm text-muted-foreground">
+              This asks the courier to return consignment {shipment?.consignmentId}. It does
+              not cancel the order, refund anything, or return stock.
+            </p>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="courier-return-reason" className="text-sm font-medium">
+                Reason <span className="text-muted-foreground">(optional)</span>
+              </label>
+              <Input
+                id="courier-return-reason"
+                value={returnReason}
+                onChange={(e) => setReturnReason(e.target.value)}
+                placeholder="Customer refused delivery"
+                maxLength={500}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setReturnOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              loading={createReturn.isPending}
+              onClick={() => void submitReturn()}
+            >
+              Raise return
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

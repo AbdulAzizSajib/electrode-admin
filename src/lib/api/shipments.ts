@@ -22,6 +22,29 @@ export interface Shipment {
   status: ShipmentStatus
   shippedAt: string | null
   deliveredAt: string | null
+  /**
+   * Steadfast's id for this consignment, or null on a hand-entered shipment.
+   *
+   * Its presence is what makes a shipment COURIER-OWNED: the backend then
+   * refuses manual writes to `trackingNumber`, `carrier`, `status` and both
+   * timestamps, because they are derived from the courier. The shipment form
+   * reads exactly this field to decide what to disable — one condition, taken
+   * from the data already present, so it cannot disagree with what the server
+   * will accept.
+   */
+  consignmentId: string | null
+  /** The invoice sent to the courier — the order number at dispatch time. */
+  courierInvoice: string | null
+  /**
+   * The courier's own `delivery_status`, verbatim and lowercased.
+   *
+   * Shown in preference to `status` when the two would disagree: Steadfast has
+   * eleven values against this panel's eight, and only the raw one distinguishes
+   * `delivered_approval_pending` (merchant not yet paid) from `delivered`.
+   */
+  courierStatus: string | null
+  /** When the courier was last heard from, by webhook or reconciliation. */
+  courierSyncedAt: string | null
   createdAt: string
   updatedAt: string
 }

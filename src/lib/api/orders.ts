@@ -126,8 +126,19 @@ export interface Order {
   shippingAddress: OrderShippingAddress | null
   /** Only present on detail responses (`GET /orders/:id`) — list rows omit these. */
   payments?: Payment[]
-  /** Only present on detail responses. */
-  shipments?: Shipment[]
+  /**
+   * Present on BOTH list and detail responses, but with different shapes.
+   *
+   * A detail read returns whole shipment rows. A list read returns at most one,
+   * narrowed to the three courier fields the orders table shows at a glance —
+   * deliberately, so the list needs no per-row shipment request (the N+1 the
+   * integrate-orders-api change removed).
+   *
+   * So treat every field beyond those three as detail-only when reading a list
+   * row. See the server's ORDER_LIST_INCLUDE.
+   */
+  shipments?: (Partial<Shipment> &
+    Pick<Shipment, 'consignmentId' | 'courierStatus' | 'trackingNumber'>)[]
   /** Only present on detail responses. */
   statusHistory?: OrderStatusEvent[]
   /**

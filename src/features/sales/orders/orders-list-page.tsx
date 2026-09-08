@@ -1,11 +1,15 @@
 import * as React from 'react'
 import { useNavigate } from 'react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import { ShoppingCart } from 'lucide-react'
+import { AlertTriangle, ShoppingCart, Truck } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { DataTable } from '@/components/ui/data-table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { CourierStatusBadge } from '@/features/sales/courier/courier-status-badge'
+import { courierNeedsAttention } from '@/features/sales/courier/courier-presentation'
+import { DispatchDialog } from '@/features/sales/courier/dispatch-preview'
 import { useOrders, type Order, type OrderStatus } from '@/lib/api/orders'
 import { formatCurrency, formatDate } from '@/lib/utils/format'
 
@@ -37,12 +41,35 @@ export default function OrdersListPage() {
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
 
+  const [selection, setSelection] = React.useState<string[]>([])
+  const [dispatchOpen, setDispatchOpen] = React.useState(false)
+
   const { data, isLoading, isError, refetch } = useOrders({
     search,
     page,
     limit: pageSize,
     status: status === 'all' ? undefined : (status as OrderStatus),
   })
+
+  /*
+   * Selection is cleared whenever the visible set changes.
+   *
+   * Rows the operator can no longer see must not stay selected: keeping them
+   * would mean "12 selected" while four rows are visible, and a dispatch that
+   * includes parcels nobody has looked at since narrowing the filter. That is
+   * defensible for a delete-many flow over interchangeable objects; it is not
+   * when every row is a parcel with a COD amount on it.
+   * See design.md Decision 2.
+   *
+   * Done in the handlers rather than an effect on [page, search, status]: an
+   * effect would clear on the render AFTER the change, so a dispatch fired in
+   * that window would carry the stale selection — and it is the one case where
+   * being a render late sends real parcels.
+   */
+  const changeView = <T,>(set: (value: T) => void) => (value: T) => {
+    set(value)
+    setSelection([])
+  }
 
   /*
    * Scan-to-open.
@@ -113,6 +140,39 @@ export default function OrdersListPage() {
     { id: 'items', header: 'Items', cell: ({ row }) => row.original.items?.reduce((sum, i) => sum + i.quantity, 0) ?? '—' },
     { id: 'total', header: 'Total', cell: ({ row }) => formatCurrency(Number(row.original.totalAmount)) },
     { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={STATUS_VARIANT[row.original.status]}>{STATUS_LABEL[row.original.status]}</Badge> },
+    /*
+     * Courier state, read off the list payload the server already sends
+     * (ORDER_LIST_INCLUDE carries the newest shipment's three courier fields).
+     * No per-row request — that would reintroduce the N+1 integrate-orders-api
+     * removed. See design.md Decision 5.
+     */
+    {
+      id: 'courier',
+      header: 'Courier',
+      cell: ({ row }) => {
+        const shipment = row.original.shipments?.[0]
+
+        if (!shipment?.consignmentId) {
+          return <span className="text-muted-foreground">Not sent</span>
+        }
+
+        return (
+          <div className="flex items-center gap-1.5">
+            <CourierStatusBadge status={shipment.courierStatus} />
+            {/*
+             * A cancelled or partly-delivered consignment needs a person. The
+             * flag says so and nothing more — no status change, no restock;
+             * the parcel is still in transit back.
+             */}
+            {courierNeedsAttention(shipment.courierStatus) ? (
+              <span title="Needs attention — resolve through the order's own cancellation or return flow">
+                <AlertTriangle className="size-3.5 text-warning" />
+              </span>
+            ) : null}
+          </div>
+        )
+      },
+    },
     { accessorKey: 'createdAt', header: 'Placed', cell: ({ row }) => formatDate(row.original.createdAt) },
   ]
 
@@ -120,19 +180,48 @@ export default function OrdersListPage() {
     <div className="flex flex-col gap-4" ref={pageRef}>
       <PageHeader title="Orders" description="Track and fulfill customer orders." />
 
+      {/*
+       * The bulk action bar, present only when something is selected. It says
+       * how many rather than just offering the action, because the count is the
+       * one thing an operator checks before sending real parcels.
+       */}
+      {selection.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-muted/40 px-3 py-2">
+          <span className="text-sm font-medium text-foreground">
+            {selection.length} order{selection.length === 1 ? '' : 's'} selected
+          </span>
+          <Button size="sm" onClick={() => setDispatchOpen(true)}>
+            <Truck /> Send to Steadfast
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelection([])}>
+            Clear
+          </Button>
+        </div>
+      )}
+
+      <DispatchDialog
+        orderIds={selection}
+        open={dispatchOpen}
+        onOpenChange={setDispatchOpen}
+        onDispatched={() => setSelection([])}
+      />
+
       <DataTable
         columns={columns}
         data={data?.data ?? []}
+        selection={selection}
+        onSelectionChange={setSelection}
+        getRowId={(row) => row.id}
         isLoading={isLoading}
         isError={isError}
         onRetry={() => refetch()}
         searchValue={search}
-        onSearchChange={(v) => { setSearch(v); setPage(1) }}
+        onSearchChange={changeView((v: string) => { setSearch(v); setPage(1) })}
         searchPlaceholder="Search or scan an order number…"
         onRowClick={(row) => navigate(`/sales/orders/${row.id}`)}
         emptyState={{ icon: ShoppingCart, title: 'No orders found' }}
         toolbar={
-          <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1) }}>
+          <Select value={status} onValueChange={changeView((v: string) => { setStatus(v); setPage(1) })}>
             <SelectTrigger className="h-8 w-40">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
@@ -147,8 +236,8 @@ export default function OrdersListPage() {
         page={page}
         pageSize={pageSize}
         total={data?.meta.total ?? 0}
-        onPageChange={setPage}
-        onPageSizeChange={(size) => { setPageSize(size); setPage(1) }}
+        onPageChange={changeView(setPage)}
+        onPageSizeChange={changeView((size: number) => { setPageSize(size); setPage(1) })}
       />
     </div>
   )

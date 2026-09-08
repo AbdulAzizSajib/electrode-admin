@@ -27,6 +27,10 @@ export const queryKeys = {
   orders: { all: ['orders'] as const, list: (p?: object) => ['orders', 'list', p] as const, detail: (id: string) => ['orders', 'detail', id] as const },
   payments: { byOrder: (orderId: string) => ['payments', 'by-order', orderId] as const },
   shipments: { byOrder: (orderId: string) => ['shipments', 'by-order', orderId] as const },
+  // Only `balance` is cached. Dispatch and its preview are mutations — both take
+  // a body, both are asked for on demand, and caching eligibility would be wrong
+  // the moment someone packs an order.
+  courier: { all: ['courier'] as const, balance: ['courier', 'balance'] as const },
   returns: { all: ['returns'] as const, list: (p?: object) => ['returns', 'list', p] as const, detail: (id: string) => ['returns', 'detail', id] as const },
   refunds: { all: ['refunds'] as const, list: (p?: object) => ['refunds', 'list', p] as const, detail: (id: string) => ['refunds', 'detail', id] as const },
 

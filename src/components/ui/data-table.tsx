@@ -13,6 +13,7 @@ import { DataPagination } from '@/components/ui/pagination'
 import { EmptyState, type EmptyStateProps } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils/cn'
 
 export interface DataTableProps<TData> {
@@ -35,6 +36,22 @@ export interface DataTableProps<TData> {
   onRowClick?: (row: TData) => void
   sorting?: SortingState
   onSortingChange?: (sorting: SortingState) => void
+  /**
+   * Row selection — entirely opt-in.
+   *
+   * Roughly 117 pages share this component and only the orders list wants
+   * selection, so absent these three props nothing about the table changes: no
+   * checkbox column, no header checkbox, no behavioural difference.
+   *
+   * The state lives with the caller rather than inside the table, for the same
+   * reason sorting and pagination already do — the page is what renders a bulk
+   * action bar from it, and a ref could not drive that.
+   * See openspec/changes/add-steadfast-courier-integration-admin, design.md Decision 1.
+   */
+  selection?: string[]
+  onSelectionChange?: (selection: string[]) => void
+  /** Stable id per row. Required for selection; ignored without it. */
+  getRowId?: (row: TData) => string
 }
 
 export function DataTable<TData>({
@@ -57,13 +74,95 @@ export function DataTable<TData>({
   onRowClick,
   sorting: controlledSorting,
   onSortingChange,
+  selection,
+  onSelectionChange,
+  getRowId,
 }: DataTableProps<TData>) {
   const [internalSorting, setInternalSorting] = React.useState<SortingState>([])
   const sorting = controlledSorting ?? internalSorting
 
+  const selectionEnabled =
+    selection !== undefined && onSelectionChange !== undefined && getRowId !== undefined
+
+  const selected = React.useMemo(() => new Set(selection ?? []), [selection])
+
+  const pageIds = React.useMemo(
+    () => (selectionEnabled ? data.map((row) => getRowId(row)) : []),
+    [data, getRowId, selectionEnabled],
+  )
+
+  // "All" means all of THIS page. Selection is deliberately page-scoped — see
+  // the caller, which clears it whenever the page or filter changes.
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id))
+  const someOnPageSelected = pageIds.some((id) => selected.has(id))
+
+  const toggleRow = (id: string) => {
+    if (!onSelectionChange) return
+    const next = new Set(selected)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    onSelectionChange([...next])
+  }
+
+  const togglePage = () => {
+    if (!onSelectionChange) return
+    const next = new Set(selected)
+    if (allOnPageSelected) pageIds.forEach((id) => next.delete(id))
+    else pageIds.forEach((id) => next.add(id))
+    onSelectionChange([...next])
+  }
+
+  /**
+   * The checkbox column, prepended only when selection is on.
+   *
+   * `stopPropagation` on the cell is the whole reason this is a hand-built
+   * column rather than a plain cell renderer: the orders list navigates on row
+   * click, so without it ticking a box opens the order and throws the selection
+   * away. It is the interaction most easily got wrong here.
+   */
+  const selectionColumn: ColumnDef<TData> = {
+    id: '__select',
+    enableSorting: false,
+    header: () => (
+      <span
+        onClick={(e) => e.stopPropagation()}
+        role="presentation"
+        className="flex items-center"
+      >
+        <Checkbox
+          checked={allOnPageSelected ? true : someOnPageSelected ? 'indeterminate' : false}
+          onCheckedChange={togglePage}
+          aria-label="Select all orders on this page"
+        />
+      </span>
+    ),
+    cell: ({ row }) => {
+      const id = getRowId!(row.original)
+      return (
+        <span
+          onClick={(e) => e.stopPropagation()}
+          role="presentation"
+          className="flex items-center"
+        >
+          <Checkbox
+            checked={selected.has(id)}
+            onCheckedChange={() => toggleRow(id)}
+            aria-label={`Select row ${id}`}
+          />
+        </span>
+      )
+    },
+  }
+
+  const tableColumns = React.useMemo(
+    () => (selectionEnabled ? [selectionColumn, ...columns] : columns),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [columns, selectionEnabled, selection, data],
+  )
+
   const table = useReactTable({
     data,
-    columns,
+    columns: tableColumns,
     state: { sorting },
     onSortingChange: (updater) => {
       const next = typeof updater === 'function' ? updater(sorting) : updater
@@ -104,26 +203,37 @@ export function DataTable<TData>({
                 const sortDir = header.column.getIsSorted()
                 return (
                   <TableHead key={header.id}>
-                    {header.isPlaceholder ? null : (
+                    {header.isPlaceholder ? null : canSort ? (
                       <button
                         type="button"
-                        className={cn(
-                          'inline-flex items-center gap-1',
-                          canSort ? 'cursor-pointer select-none hover:text-foreground' : 'cursor-default',
-                        )}
-                        onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                        disabled={!canSort}
+                        className="inline-flex items-center gap-1 cursor-pointer select-none hover:text-foreground"
+                        onClick={header.column.getToggleSortingHandler()}
                       >
                         {flexRender(header.column.columnDef.header, header.getContext())}
-                        {canSort &&
-                          (sortDir === 'asc' ? (
-                            <ArrowUp className="size-3" />
-                          ) : sortDir === 'desc' ? (
-                            <ArrowDown className="size-3" />
-                          ) : (
-                            <ArrowUpDown className="size-3 opacity-40" />
-                          ))}
+                        {sortDir === 'asc' ? (
+                          <ArrowUp className="size-3" />
+                        ) : sortDir === 'desc' ? (
+                          <ArrowDown className="size-3" />
+                        ) : (
+                          <ArrowUpDown className="size-3 opacity-40" />
+                        )}
                       </button>
+                    ) : (
+                      /*
+                       * An unsortable header renders as a plain span, NOT a
+                       * disabled button.
+                       *
+                       * A disabled <button> swallows every click on its
+                       * children, so the select-all checkbox nested in this
+                       * header silently did nothing while the per-row ones
+                       * worked. Wrapping non-interactive text in a disabled
+                       * button was never meaningful markup anyway; the classes
+                       * are carried across so layout is identical everywhere
+                       * else this component is used.
+                       */
+                      <span className="inline-flex items-center gap-1 cursor-default">
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                      </span>
                     )}
                   </TableHead>
                 )
@@ -135,7 +245,7 @@ export function DataTable<TData>({
           {isLoading ? (
             Array.from({ length: 6 }).map((_, i) => (
               <TableRow key={`skeleton-${i}`}>
-                {columns.map((_, ci) => (
+                {tableColumns.map((_, ci) => (
                   <TableCell key={ci}>
                     <Skeleton className="h-4 w-full max-w-32" />
                   </TableCell>
@@ -144,7 +254,7 @@ export function DataTable<TData>({
             ))
           ) : isError ? (
             <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={columns.length} className="py-8">
+              <TableCell colSpan={tableColumns.length} className="py-8">
                 <EmptyState
                   icon={AlertTriangle}
                   title="Couldn't load data"
@@ -165,7 +275,7 @@ export function DataTable<TData>({
             </TableRow>
           ) : table.getRowModel().rows.length === 0 ? (
             <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={columns.length} className="py-8">
+              <TableCell colSpan={tableColumns.length} className="py-8">
                 <EmptyState
                   title={emptyState?.title ?? 'No results'}
                   description={emptyState?.description ?? 'There is nothing here yet.'}

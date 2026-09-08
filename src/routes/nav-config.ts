@@ -26,6 +26,7 @@ import {
   ReceiptText,
   Undo2,
   Banknote,
+  Truck,
   Target,
   Image as ImageIcon,
   Contact,
@@ -121,6 +122,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Orders', path: '/sales/orders', icon: ReceiptText },
       { label: 'Returns', path: '/sales/returns', icon: Undo2 },
       { label: 'Refunds', path: '/sales/refunds', icon: Banknote },
+      { label: 'Courier', path: '/sales/courier', icon: Truck },
     ],
   },
   {

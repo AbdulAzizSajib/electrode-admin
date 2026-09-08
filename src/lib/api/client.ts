@@ -7,7 +7,28 @@
  * base URL, the error type, and the pagination shapes.
  */
 
-export const BASE_URL = 'http://localhost:5000/api/v1'
+/** Where the API lives when nothing says otherwise — the local dev server. */
+const DEFAULT_BASE_URL = 'http://localhost:5000/api/v1'
+
+/**
+ * Origin of the Ecom API, including the `/api/v1` path.
+ *
+ * Configured through `VITE_API_BASE_URL` because this panel is deployed
+ * separately from the API it talks to: hardcoding localhost shipped a build that
+ * asked every visitor's own machine for data, which fails for everyone but the
+ * developer who built it.
+ *
+ * Vite inlines this AT BUILD TIME, so a deployment that changes it must be
+ * rebuilt — setting it in a hosting dashboard and restarting does nothing.
+ *
+ * A trailing slash is stripped: every caller writes paths as `/products`, and
+ * `…/api/v1/` + `/products` would request `//products`, which is a different
+ * path and 404s.
+ */
+export const BASE_URL = (import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_URL).replace(
+  /\/+$/,
+  '',
+)
 
 export interface PaginationMeta {
   page: number
