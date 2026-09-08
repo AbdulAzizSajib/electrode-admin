@@ -174,6 +174,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Banners', path: '/ui/banners', icon: ImageIcon },
       { label: 'Header Links', path: '/ui/header-links', icon: PanelTop },
       { label: 'Footer Links', path: '/ui/footer-links', icon: PanelBottom },
+      { label: 'Catalog Setting', path: '/ui/catalog-settings', icon: Boxes },
       { label: 'Checkout Setting', path: '/ui/checkout-settings', icon: ShoppingCart },
       { label: 'Site Setting', path: '/ui/site-settings', icon: Globe },
     ],

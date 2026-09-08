@@ -87,6 +87,9 @@ const LandingPageFormPage = lazy(
 const HomeSliderPage = lazy(() => import('@/features/ui/home-slider/home-slider-page'))
 const HeaderLinksPage = lazy(() => import('@/features/ui/header-links/header-links-page'))
 const FooterLinksPage = lazy(() => import('@/features/ui/footer-links/footer-links-page'))
+const CatalogSettingsPage = lazy(
+  () => import('@/features/ui/catalog-settings/catalog-settings-page'),
+)
 const CheckoutSettingsPage = lazy(
   () => import('@/features/ui/checkout-settings/checkout-settings-page'),
 )
@@ -249,6 +252,7 @@ export function AppRouter() {
             <Route path="/ui/banners/:bannerId" element={<BannerFormPage />} />
             <Route path="/ui/header-links" element={<HeaderLinksPage />} />
             <Route path="/ui/footer-links" element={<FooterLinksPage />} />
+            <Route path="/ui/catalog-settings" element={<CatalogSettingsPage />} />
             <Route path="/ui/checkout-settings" element={<CheckoutSettingsPage />} />
             <Route path="/ui/site-settings" element={<SiteSettingsPage />} />
           </Route>

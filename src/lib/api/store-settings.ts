@@ -189,6 +189,39 @@ export interface CheckoutConfig {
 }
 
 /* ------------------------------------------------------------------ *
+ * Catalog display
+ * ------------------------------------------------------------------ */
+
+/**
+ * Which optional catalog features the storefront offers.
+ *
+ * Shop-wide and independent of one another — a wholesale catalogue may want
+ * comparison and no wishlist. Turning one off is a presentation decision only:
+ * the backend keeps whatever shoppers have already saved under it, so the switch
+ * is reversible without cost.
+ */
+export interface CatalogConfig {
+  showWishlist: boolean
+  showCompare: boolean
+  /** Off, a product with variants opens its own page instead of a preview. */
+  showQuickView: boolean
+}
+
+/**
+ * Mirrors the backend's `DEFAULT_CATALOG_CONFIG`.
+ *
+ * Seeds the editor for a store whose column has never been written, so the
+ * switches show what the storefront is actually doing rather than defaulting to
+ * off. Keep in step with the backend — same obligation `DEFAULT_CHECKOUT_CONFIG`
+ * already carries.
+ */
+export const DEFAULT_CATALOG_CONFIG: CatalogConfig = {
+  showWishlist: true,
+  showCompare: true,
+  showQuickView: true,
+}
+
+/* ------------------------------------------------------------------ *
  * Theme
  * ------------------------------------------------------------------ */
 
@@ -305,6 +338,8 @@ export interface StoreSettings {
    * "configured to the defaults" stay distinguishable in the stored row.
    */
   checkoutConfig: CheckoutConfig | null
+  /** Null until a merchant opens Catalog Setting — same "not configured" distinction as above. */
+  catalogConfig: CatalogConfig | null
   theme: Theme | null
   /**
    * The website ↔ single-landing-page toggle, and the page it points at.
@@ -368,6 +403,7 @@ export interface StoreSettingsInput {
   newsletter?: Newsletter
 
   checkoutConfig?: CheckoutConfig
+  catalogConfig?: CatalogConfig
   /** `font` goes up as pasted text; the backend parses it. See `ThemeInput`. */
   theme?: ThemeInput
 
