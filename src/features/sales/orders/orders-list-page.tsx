@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { CourierStatusBadge } from '@/features/sales/courier/courier-status-badge'
 import { courierNeedsAttention } from '@/features/sales/courier/courier-presentation'
 import { DispatchDialog } from '@/features/sales/courier/dispatch-preview'
+import { useConfiguredCourier } from '@/lib/api/courier'
 import { useOrders, type Order, type OrderStatus } from '@/lib/api/orders'
 import { formatCurrency, formatDate } from '@/lib/utils/format'
 
@@ -43,6 +44,16 @@ export default function OrdersListPage() {
 
   const [selection, setSelection] = React.useState<string[]>([])
   const [dispatchOpen, setDispatchOpen] = React.useState(false)
+
+  /*
+   * The courier this shop dispatches through. The bulk action names it and is
+   * hidden entirely where the configured courier creates no consignments —
+   * offering "send to a courier that cannot receive" is a button that exists
+   * only to be refused.
+   */
+  const courier = useConfiguredCourier()
+  const courierName = courier?.displayName ?? 'the courier'
+  const canDispatch = courier?.capabilities.dispatch ?? true
 
   const { data, isLoading, isError, refetch } = useOrders({
     search,
@@ -190,9 +201,11 @@ export default function OrdersListPage() {
           <span className="text-sm font-medium text-foreground">
             {selection.length} order{selection.length === 1 ? '' : 's'} selected
           </span>
-          <Button size="sm" onClick={() => setDispatchOpen(true)}>
-            <Truck /> Send to Steadfast
-          </Button>
+          {canDispatch && (
+            <Button size="sm" onClick={() => setDispatchOpen(true)}>
+              <Truck /> Send to {courierName}
+            </Button>
+          )}
           <Button size="sm" variant="ghost" onClick={() => setSelection([])}>
             Clear
           </Button>

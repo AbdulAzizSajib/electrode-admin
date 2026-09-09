@@ -27,6 +27,7 @@ import {
   Undo2,
   Banknote,
   Truck,
+  Type,
   Target,
   Image as ImageIcon,
   Contact,
@@ -183,6 +184,21 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Footer Links', path: '/ui/footer-links', icon: PanelBottom },
       { label: 'Catalog Setting', path: '/ui/catalog-settings', icon: Boxes },
       { label: 'Checkout Setting', path: '/ui/checkout-settings', icon: ShoppingCart },
+      /*
+       * Sits with the other settings editors rather than under Sales beside the
+       * Courier page: that one reports account state, this one decides which
+       * courier the shop uses. Both are gated to OWNER/ADMIN by this section,
+       * matching the RoleGuard in app-router.tsx — the two must be kept in step
+       * by hand.
+       */
+      { label: 'Courier Setting', path: '/ui/courier-settings', icon: Truck },
+      /*
+       * Directly above Site Setting, because that is where its fonts are
+       * chosen: a merchant who opens the font pickers and finds the face they
+       * want missing needs the library to be the next thing they see, not
+       * somewhere else in the section.
+       */
+      { label: 'Fonts', path: '/ui/fonts', icon: Type },
       { label: 'Site Setting', path: '/ui/site-settings', icon: Globe },
     ],
   },

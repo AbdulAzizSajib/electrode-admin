@@ -11,6 +11,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { request, requestData } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
+import type { CourierProvider } from '@/lib/api/store-settings'
 
 /** Why the server refused an order. A closed set, so the UI can group refusals. */
 export type CourierIneligibleReason =
@@ -21,6 +22,9 @@ export type CourierIneligibleReason =
   | 'NAME_TOO_LONG'
   | 'INVALID_PHONE'
   | 'ADDRESS_TOO_LONG'
+  /** The configured courier creates no consignments. Describes the shop's
+   *  setup, not the order — every other reason here describes the order. */
+  | 'PROVIDER_CANNOT_DISPATCH'
 
 /**
  * What happened to one order.
@@ -62,6 +66,71 @@ export interface CourierDispatchSummary {
 
 export interface CourierBalance {
   currentBalance: number
+}
+
+/**
+ * What one courier integration can do.
+ *
+ * Read from the server rather than mirrored as a constant here, because the
+ * answer depends on which adapter is registered — a fact only the server holds.
+ * The panel hides an action a provider does not declare; the server refuses it
+ * as well, so a stale client cannot produce a call that half-works.
+ */
+export interface CourierCapabilities {
+  dispatch: boolean
+  status: boolean
+  balance: boolean
+  returns: boolean
+  webhook: boolean
+}
+
+export interface CourierProviderInfo {
+  id: CourierProvider
+  displayName: string
+  capabilities: CourierCapabilities
+  /** Whether the API credentials are present. Never the credentials themselves. */
+  credentialsConfigured: boolean
+  webhookConfigured: boolean
+}
+
+export interface CourierConfiguration {
+  configured: CourierProvider
+  providers: CourierProviderInfo[]
+}
+
+async function getCourierConfig(): Promise<CourierConfiguration> {
+  return requestData<CourierConfiguration>('/courier/config')
+}
+
+/**
+ * Which courier is configured and what it supports.
+ *
+ * A plain query, unlike `useCourierBalance` below: this makes no outbound call
+ * to any courier, so it is cheap enough for every screen that renders a courier
+ * control to read it on mount. Every such control depends on it — an action
+ * shown for a provider that cannot perform it is a button that exists only to
+ * fail.
+ */
+export function useCourierConfig() {
+  return useQuery({
+    queryKey: queryKeys.courier.config,
+    queryFn: getCourierConfig,
+    // Credentials change by redeploy and the selection by an explicit save,
+    // which invalidates this key. Neither drifts on its own.
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+/**
+ * The configured provider's details, or undefined while loading.
+ *
+ * Every courier surface asks the same two questions — what is this courier
+ * called, and can it do the thing I am about to offer — so they are answered
+ * once here rather than re-derived per component.
+ */
+export function useConfiguredCourier(): CourierProviderInfo | undefined {
+  const { data } = useCourierConfig()
+  return data?.providers.find((provider) => provider.id === data.configured)
 }
 
 async function previewDispatch(orderIds: string[]): Promise<CourierEligibility[]> {

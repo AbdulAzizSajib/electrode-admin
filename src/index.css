@@ -8,6 +8,20 @@
  * so `p-4`/`gap-4`/etc. read as "compact" everywhere by default.
  */
 @theme {
+  /*
+   * The FALLBACK stack, not the panel's typeface.
+   *
+   * AdminFontProvider overwrites --font-sans on <html> at runtime with the
+   * merchant's chosen font followed by this same stack. What is written here
+   * is therefore what the panel renders before that setting resolves, and if
+   * the chosen font's stylesheet never loads.
+   *
+   * Roboto leads deliberately: it is what the panel was hardcoded to before the
+   * font became configurable, so the pre-resolution frame looks exactly as the
+   * panel always has rather than flashing something the merchant did not pick.
+   * Reordering this turns "the setting has not loaded yet" into a visible
+   * glitch on every page load.
+   */
   --font-sans: 'Roboto', 'Segoe UI', system-ui, -apple-system, sans-serif;
 
   /*

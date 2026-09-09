@@ -21,7 +21,12 @@ import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
 import { ORDER_STATUSES, useOrder, useUpdateOrderStatus, type OrderStatus } from '@/lib/api/orders'
 import { usePaymentsByOrder, useRecordPayment, type PaymentMethod, type PaymentStatus } from '@/lib/api/payments'
 import { useShipmentByOrder, useUpsertShipment, type ShipmentStatus } from '@/lib/api/shipments'
-import { useCreateCourierReturn, useDispatchSingleOrder } from '@/lib/api/courier'
+import {
+  useConfiguredCourier,
+  useCourierConfig,
+  useCreateCourierReturn,
+  useDispatchSingleOrder,
+} from '@/lib/api/courier'
 import { CourierStatusBadge } from '@/features/sales/courier/courier-status-badge'
 import { courierNeedsAttention, courierStatusLabel } from '@/features/sales/courier/courier-presentation'
 import { formatCurrency, formatDateTime } from '@/lib/utils/format'
@@ -107,6 +112,16 @@ export default function OrderDetailPage() {
   const upsertShipment = useUpsertShipment()
   const dispatchOne = useDispatchSingleOrder()
   const createReturn = useCreateCourierReturn()
+
+  /*
+   * The courier this shop dispatches through, and what it can do. Every control
+   * below reads from it rather than naming a courier outright: an operator
+   * dispatching through one courier while the buttons name another cannot trust
+   * anything else the panel says.
+   */
+  const { data: courierConfig } = useCourierConfig()
+  const courier = useConfiguredCourier()
+  const courierName = courier?.displayName ?? 'the courier'
   const confirmCancel = useConfirmDialog()
 
   const [statusOpen, setStatusOpen] = React.useState(false)
@@ -188,13 +203,29 @@ export default function OrderDetailPage() {
    */
   const isCourierOwned = Boolean(shipment?.consignmentId)
 
+  /*
+   * The courier carrying THIS parcel, which is not necessarily the one the shop
+   * dispatches through now. A merchant who switched couriers still has parcels
+   * out with the old one, and showing them the new courier's name against an old
+   * consignment would be a plain lie about who has the box.
+   *
+   * Falls back to the configured provider only for a shipment with no recorded
+   * provider — which cannot occur under the current schema default, but keeps
+   * the display honest rather than blank if it ever does.
+   */
+  const shipmentCourier = courierConfig?.providers.find(
+    (provider) => provider.id === shipment?.courierProvider,
+  )
+  const shipmentCourierName =
+    shipmentCourier?.displayName ?? shipment?.carrier ?? courierName
+
   const dispatchSingle = async () => {
     try {
       const summary = await dispatchOne.mutateAsync(order!.id)
       const result = summary.results[0]
 
       if (result?.outcome === 'dispatched') {
-        toast({ title: `Sent to Steadfast — consignment ${result.consignmentId}` })
+        toast({ title: `Sent to ${courierName} — consignment ${result.consignmentId}` })
         return
       }
 
@@ -204,7 +235,7 @@ export default function OrderDetailPage() {
       toast({
         title:
           result?.outcome === 'unconfirmed'
-            ? 'Outcome unknown — check Steadfast before sending again'
+            ? `Outcome unknown — check ${courierName} before sending again`
             : 'Not sent to the courier',
         description: result?.detail,
         variant: result?.outcome === 'unconfirmed' ? 'default' : 'destructive',
@@ -412,7 +443,7 @@ export default function OrderDetailPage() {
 
           {/*
            * Courier state, kept separate from the shipment card above: one is
-           * what this shop recorded, the other is what Steadfast reports, and
+           * what this shop recorded, the other is what the courier reports, and
            * merging them would hide which is which.
            */}
           <Card>
@@ -422,16 +453,19 @@ export default function OrderDetailPage() {
                 {/* Offered only for an order the server would actually accept.
                     Anything else states the reason instead of presenting a
                     control that will be refused. */}
-                {!isCourierOwned && order.status === 'PACKED' && (
+                {!isCourierOwned && order.status === 'PACKED' && courier?.capabilities.dispatch && (
                   <Button
                     size="sm"
                     disabled={dispatchOne.isPending}
                     onClick={() => void dispatchSingle()}
                   >
-                    <Truck /> {dispatchOne.isPending ? 'Sending…' : 'Send to Steadfast'}
+                    <Truck /> {dispatchOne.isPending ? 'Sending…' : `Send to ${courierName}`}
                   </Button>
                 )}
-                {isCourierOwned && (
+                {/* Hidden where the creating courier has no return API — a
+                    control that exists only to be refused teaches the operator
+                    the panel is unreliable. The server refuses it too. */}
+                {isCourierOwned && shipmentCourier?.capabilities.returns && (
                   <Button size="sm" variant="outline" onClick={() => setReturnOpen(true)}>
                     Raise return
                   </Button>
@@ -441,6 +475,7 @@ export default function OrderDetailPage() {
             <CardContent>
               {isCourierOwned ? (
                 <div className="flex flex-col gap-1 text-sm">
+                  <Row label="Courier" value={shipmentCourierName} />
                   <Row label="Consignment" value={shipment?.consignmentId ?? '—'} />
                   <Row label="Tracking code" value={shipment?.trackingNumber ?? '—'} />
                   <Row label="Invoice sent" value={shipment?.courierInvoice ?? '—'} />
@@ -468,9 +503,11 @@ export default function OrderDetailPage() {
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {order.status === 'PACKED'
-                    ? 'Not dispatched yet.'
-                    : `Not dispatched. Only a packed order can be sent to the courier — this one is ${STATUS_LABEL[order.status].toLowerCase()}.`}
+                  {!courier?.capabilities.dispatch
+                    ? `This shop is set to ${courierName}, which has no dispatch integration. Hand the parcel over and record the shipment above.`
+                    : order.status === 'PACKED'
+                      ? 'Not dispatched yet.'
+                      : `Not dispatched. Only a packed order can be sent to the courier — this one is ${STATUS_LABEL[order.status].toLowerCase()}.`}
                 </p>
               )}
             </CardContent>

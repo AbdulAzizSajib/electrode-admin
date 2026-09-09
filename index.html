@@ -4,12 +4,20 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Preconnects only. The panel's typeface is a SETTING now (UI → Site
+      Setting → Fonts), so the stylesheet link is injected at runtime by
+      AdminFontProvider once the setting is read — a hardcoded Roboto link here
+      would fetch a font the merchant may not have chosen, on every load.
+
+      These two stay because the runtime link still points at the same two
+      hosts, and warming the connections before the setting resolves is the
+      whole reason a preconnect exists. Roboto itself remains first in the
+      --font-sans fallback stack in index.css, so the panel looks exactly as it
+      always has until the chosen font arrives.
+    -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap"
-      rel="stylesheet"
-    />
     <title>Ecom Admin</title>
   </head>
   <body>

@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/use-toast'
 import {
   EditorActions,
@@ -17,16 +16,22 @@ import {
   useSettingsDraft,
   useUnsavedChangesGuard,
 } from '@/features/ui/components/settings-editor-utils'
+import { useAllFonts, type Font } from '@/lib/api/fonts'
+import { FontStylesheets } from '@/features/ui/fonts/font-stylesheets'
+import { FONTS_PATH } from '@/features/ui/fonts/fonts-list-page'
 import { useUploadImage } from '@/lib/api/uploads'
 import {
   useStoreSettings,
   useUpdateStoreSettings,
   nearestContentWidth,
+  DEFAULT_BRAND_DISPLAY,
   DEFAULT_SITE_CONTENT_WIDTH,
   DEFAULT_THEME,
   FULL_WIDTH,
+  LOGO_HEIGHT_LIMITS,
   SITE_CONTENT_WIDTHS,
   THEME_COLOR_FIELDS,
+  type BrandDisplayMode,
   type StoreSettingsInput,
   type Theme,
   type ThemeColorKey,
@@ -55,19 +60,31 @@ interface SiteDraft {
   siteNameAccent: string
   logoUrl: string
   footerLogoUrl: string
+  /**
+   * Which of the two things each brand slot shows.
+   *
+   * Held in the draft alongside the artwork rather than derived from it: the
+   * mode is what the storefront renders on, and a merchant may set a slot to
+   * text while keeping its image on file.
+   */
+  headerBrandMode: BrandDisplayMode
+  footerBrandMode: BrandDisplayMode
+  /** Pixels. Bounded by `LOGO_HEIGHT_LIMITS` before the save is attempted. */
+  headerLogoHeight: number
+  footerLogoHeight: number
   siteUrl: string
   metaTitle: string
   metaDescription: string
   copyrightText: string
-  theme: Theme
   /**
-   * The font as the merchant last typed it, separate from `theme.font` which is
-   * what the backend parsed. Seeded with the stored URL because a bare URL is a
-   * valid paste form — so an untouched field round-trips through exactly the
-   * same validation as a fresh paste, with no unchecked "keep what's there"
-   * path into the column.
+   * Both typefaces live in here as `theme.font` and `theme.adminFont`.
+   *
+   * There is no longer a raw-text companion field. Fonts used to be pasted on
+   * this page, which meant carrying the merchant's untouched keystrokes
+   * alongside the parsed pair; now a font is added once under UI → Fonts and
+   * chosen here, so the draft holds a selection and nothing needs parsing.
    */
-  fontInput: string
+  theme: Theme
 }
 
 const EMPTY_DRAFT: SiteDraft = {
@@ -75,21 +92,108 @@ const EMPTY_DRAFT: SiteDraft = {
   siteNameAccent: '',
   logoUrl: '',
   footerLogoUrl: '',
+  headerBrandMode: DEFAULT_BRAND_DISPLAY.headerBrandMode,
+  footerBrandMode: DEFAULT_BRAND_DISPLAY.footerBrandMode,
+  headerLogoHeight: LOGO_HEIGHT_LIMITS.headerDefault,
+  footerLogoHeight: LOGO_HEIGHT_LIMITS.footerDefault,
   siteUrl: '',
   metaTitle: '',
   metaDescription: '',
   copyrightText: '',
   theme: DEFAULT_THEME,
-  fontInput: DEFAULT_THEME.font.url,
 }
 
 /** WCAG AA for body text. Advisory here — a merchant owns their brand. */
 const AA_CONTRAST = 4.5
 
+/**
+ * One surface's typeface, as radio cards previewed in their own font.
+ *
+ * Native radio inputs rather than a custom widget: this is exactly what a radio
+ * group is for, and it gets keyboard navigation and screen-reader semantics
+ * without any work. The input is visually hidden but focusable, so the card's
+ * ring follows focus.
+ *
+ * The preview only renders in the right face if that font's stylesheet is
+ * loaded — `FontStylesheets`, mounted by the page, is what does that.
+ */
+function FontPicker({
+  name,
+  label,
+  hint,
+  fonts,
+  selected,
+  onSelect,
+}: {
+  name: string
+  label: string
+  hint: string
+  fonts: Font[]
+  selected: string
+  onSelect: (family: string) => void
+}) {
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="text-sm font-medium text-foreground">{label}</legend>
+      <p className="text-xs text-muted-foreground">{hint}</p>
+
+      <div className="mt-1 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {fonts.map((font) => {
+          const isSelected = font.family === selected
+
+          return (
+            <label
+              key={font.id}
+              className={`flex cursor-pointer flex-col gap-1 rounded-md border p-3 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 ${
+                isSelected
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border hover:border-muted-foreground/40'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name={name}
+                  className="sr-only"
+                  checked={isSelected}
+                  onChange={() => onSelect(font.family)}
+                />
+                <span
+                  aria-hidden
+                  className={`size-3.5 shrink-0 rounded-full border ${
+                    isSelected ? 'border-[5px] border-primary' : 'border-muted-foreground/50'
+                  }`}
+                />
+                <span className="text-xs font-medium text-foreground">{font.family}</span>
+              </span>
+
+              {/* Quoted family plus a fallback, so an unloaded stylesheet
+                  degrades to readable text rather than to nothing. */}
+              <span
+                className="text-xl leading-snug text-muted-foreground"
+                style={{ fontFamily: `"${font.family}", system-ui, sans-serif` }}
+              >
+                Aa Bb Cc
+              </span>
+            </label>
+          )
+        })}
+      </div>
+    </fieldset>
+  )
+}
+
 export default function SiteSettingsPage() {
   const { data, isLoading, error } = useStoreSettings()
   const updateMutation = useUpdateStoreSettings()
   const uploadMutation = useUploadImage()
+
+  /*
+   * The whole library, unpaginated — the pickers must offer every font, not
+   * page one of them.
+   */
+  const { data: fontsData, isLoading: fontsLoading, error: fontsError } = useAllFonts()
+  const fonts = fontsData ?? []
 
   const draft = useSettingsDraft<SiteDraft>(
     data && {
@@ -97,12 +201,20 @@ export default function SiteSettingsPage() {
       siteNameAccent: data.siteNameAccent ?? '',
       logoUrl: data.logoUrl ?? '',
       footerLogoUrl: data.footerLogoUrl ?? '',
+      /*
+       * Seeded from the mirrored defaults, because the admin read returns the
+       * row as-is: a store that has never chosen a mode sends null here, and
+       * null is not a state either control can display.
+       */
+      headerBrandMode: data.headerBrandMode ?? DEFAULT_BRAND_DISPLAY.headerBrandMode,
+      footerBrandMode: data.footerBrandMode ?? DEFAULT_BRAND_DISPLAY.footerBrandMode,
+      headerLogoHeight: data.headerLogoHeight ?? LOGO_HEIGHT_LIMITS.headerDefault,
+      footerLogoHeight: data.footerLogoHeight ?? LOGO_HEIGHT_LIMITS.footerDefault,
       siteUrl: data.siteUrl ?? '',
       metaTitle: data.metaTitle ?? '',
       metaDescription: data.metaDescription ?? '',
       copyrightText: data.copyrightText ?? '',
       theme: data.theme ?? DEFAULT_THEME,
-      fontInput: (data.theme ?? DEFAULT_THEME).font.url,
     },
     EMPTY_DRAFT,
   )
@@ -148,8 +260,35 @@ export default function SiteSettingsPage() {
      * `.nullable()`, so "leave this unset" is expressed by omitting the key —
      * sending an empty string would store one.
      */
+    /*
+     * Both fonts go up as selections — `{ family }` — not as pasted text. The
+     * backend looks each family up in the font library and stores its
+     * `{ family, url }`. Sending the family alone is what keeps the stylesheet
+     * URL something only the server's parser can produce.
+     */
+    /*
+     * The brand modes and heights go up UNCONDITIONALLY, unlike the string
+     * fields below which are omitted when blank.
+     *
+     * A mode always has one of two values, so there is no "blank" to omit. And
+     * omitting a height would make "put this back to the default" inexpressible
+     * — an omitted key means "leave unchanged" under the partial upsert, so the
+     * old value would simply stay. Both are always valid: the mode comes from a
+     * two-option control and the height is clamped to the permitted range
+     * before it reaches the draft.
+     */
     const input: StoreSettingsInput = {
-      theme: { ...value.theme, font: value.fontInput.trim() },
+      theme: {
+        ...value.theme,
+        font: { family: value.theme.font.family },
+        adminFont: {
+          family: value.theme.adminFont?.family ?? DEFAULT_THEME.adminFont!.family,
+        },
+      },
+      headerBrandMode: value.headerBrandMode,
+      footerBrandMode: value.footerBrandMode,
+      headerLogoHeight: value.headerLogoHeight,
+      footerLogoHeight: value.footerLogoHeight,
     }
     if (value.storeName.trim()) input.storeName = value.storeName.trim()
     if (value.siteNameAccent.trim()) input.siteNameAccent = value.siteNameAccent.trim()
@@ -168,14 +307,13 @@ export default function SiteSettingsPage() {
 
     try {
       const saved = await updateMutation.mutateAsync(input)
-      // Re-seed the font box from what the backend actually stored, so the
-      // field shows the canonical URL rather than the raw paste.
-      const savedTheme = saved.theme ?? value.theme
-      draft.markSaved({
-        ...value,
-        theme: savedTheme,
-        fontInput: savedTheme.font.url,
-      })
+      /*
+       * Re-seed from what the backend actually stored rather than from the
+       * draft: the selections went up as bare family names and come back as
+       * resolved `{ family, url }` pairs, and the pickers read the family off
+       * the theme.
+       */
+      draft.markSaved({ ...value, theme: saved.theme ?? value.theme })
       toast({ title: 'Site settings saved' })
     } catch (err) {
       toast({
@@ -208,6 +346,10 @@ export default function SiteSettingsPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Loads every library font so the pickers below can preview each one in
+          the face it names. Removed when this page unmounts. */}
+      <FontStylesheets fonts={fonts} />
+
       <PageHeader title={TITLE} description={DESCRIPTION} />
 
       <p className="text-xs text-muted-foreground">
@@ -235,27 +377,84 @@ export default function SiteSettingsPage() {
         </Link>
       </div>
 
+      {/*
+        The description states what the code actually does. It previously
+        promised a fallback chain the storefront never ran — both logos were
+        stored and served, and Header.tsx and Footer.tsx rendered the wordmark
+        regardless. Now that the fallback is real, the copy also has to say the
+        thing that surprises people: the CHOICE decides, not the upload.
+      */}
       <EditorSection
-        title="Logos"
-        description="Headers and footers usually sit on different backgrounds, so each takes its own artwork. With no footer logo set, the header's is used; with neither, the site name is shown as text."
+        title="Branding"
+        description="Choose what your header and footer each show — your site name as text, or a logo. They are set separately, so you can run a logo up top and the name below. Headers and footers usually sit on different backgrounds, so each takes its own artwork; a footer with no logo of its own uses the header's, and a slot set to Logo with no image falls back to showing your site name."
       >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <LogoField
-            label="Header logo"
-            url={value.logoUrl}
-            busy={uploading === 'logoUrl'}
-            onPick={(file) => handleUpload('logoUrl', file)}
-            onClear={() => set({ logoUrl: '' })}
-          />
-          <LogoField
-            label="Footer logo"
-            url={value.footerLogoUrl}
-            busy={uploading === 'footerLogoUrl'}
-            onPick={(file) => handleUpload('footerLogoUrl', file)}
-            onClear={() => set({ footerLogoUrl: '' })}
-            /* Shown on the dark footer, so the preview matches where it lands. */
-            dark
-          />
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div className="flex flex-col gap-3">
+            <BrandModeField
+              label="Header shows"
+              slot="header"
+              mode={value.headerBrandMode}
+              onChange={(headerBrandMode) => set({ headerBrandMode })}
+            />
+            <LogoField
+              label="Header logo"
+              url={value.logoUrl}
+              busy={uploading === 'logoUrl'}
+              onPick={(file) => handleUpload('logoUrl', file)}
+              onClear={() => set({ logoUrl: '' })}
+            />
+            {/* Only meaningful while the slot is actually showing a logo. */}
+            {value.headerBrandMode === 'LOGO' && (
+              <LogoHeightField
+                id="header-logo-height"
+                value={value.headerLogoHeight}
+                onChange={(headerLogoHeight) => set({ headerLogoHeight })}
+              />
+            )}
+            {value.headerBrandMode === 'LOGO' && !value.logoUrl && (
+              <NoArtworkNote />
+            )}
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <BrandModeField
+              label="Footer shows"
+              slot="footer"
+              mode={value.footerBrandMode}
+              onChange={(footerBrandMode) => set({ footerBrandMode })}
+            />
+            <LogoField
+              label="Footer logo"
+              url={value.footerLogoUrl}
+              busy={uploading === 'footerLogoUrl'}
+              onPick={(file) => handleUpload('footerLogoUrl', file)}
+              onClear={() => set({ footerLogoUrl: '' })}
+              /* Shown on the dark footer, so the preview matches where it lands. */
+              dark
+            />
+            {value.footerBrandMode === 'LOGO' && (
+              <LogoHeightField
+                id="footer-logo-height"
+                value={value.footerLogoHeight}
+                onChange={(footerLogoHeight) => set({ footerLogoHeight })}
+              />
+            )}
+            {/*
+              The footer borrows the header's artwork rather than going blank,
+              so "no footer logo" is only a problem when there is no header logo
+              either. Saying which of the two will happen beats leaving the
+              merchant to reload the storefront and find out.
+            */}
+            {value.footerBrandMode === 'LOGO' &&
+              !value.footerLogoUrl &&
+              (value.logoUrl ? (
+                <p className="text-xs text-muted-foreground">
+                  No footer logo set, so the footer will use the header logo.
+                </p>
+              ) : (
+                <NoArtworkNote />
+              ))}
+          </div>
         </div>
       </EditorSection>
 
@@ -318,22 +517,66 @@ export default function SiteSettingsPage() {
         </Link>
       </EditorSection>
 
+      {/*
+        Two independent selections from one library. Pasting an embed happens
+        under UI → Fonts, once per font; this page only chooses between what is
+        already there. Each option is rendered in the face it names, because a
+        list of font names set in the admin's own typeface tells a merchant
+        nothing about the decision they are making.
+      */}
       <EditorSection
-        title="Font"
-        description="Pick a font on fonts.google.com, then paste what it gives you — the @import rule, the <link> tag, or just the URL."
+        title="Fonts"
+        description="Choose a typeface for the storefront and one for this admin panel. They are independent. Add more under UI → Fonts."
       >
-        <Textarea
-          value={value.fontInput}
-          onChange={(e) => set({ fontInput: e.target.value })}
-          rows={3}
-          spellCheck={false}
-          className="font-mono text-xs"
-          placeholder={'@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap");'}
-        />
-        <p className="text-xs text-muted-foreground">
-          Currently using <span className="font-medium text-foreground">{value.theme.font.family}</span>. The
-          font is checked when you save; only Google Fonts addresses are accepted.
-        </p>
+        {fontsError ? (
+          <p className="text-sm text-destructive">
+            Could not load the font library.{' '}
+            <Link to={FONTS_PATH} className="underline underline-offset-4">
+              Open UI → Fonts
+            </Link>
+          </p>
+        ) : fontsLoading ? (
+          <Skeleton className="h-24 w-full" />
+        ) : fonts.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            The font library is empty.{' '}
+            <Link
+              to={`${FONTS_PATH}/new`}
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Add a font
+            </Link>{' '}
+            to choose one here.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-6">
+            <FontPicker
+              name="storefront-font"
+              label="Storefront"
+              hint="What customers see on every page of the shop."
+              fonts={fonts}
+              selected={value.theme.font.family}
+              onSelect={(family) =>
+                setTheme({ font: { ...value.theme.font, family } })
+              }
+            />
+            <FontPicker
+              name="admin-font"
+              label="Admin panel"
+              hint="What you see here. Takes effect as soon as you save."
+              fonts={fonts}
+              selected={value.theme.adminFont?.family ?? DEFAULT_THEME.adminFont!.family}
+              onSelect={(family) =>
+                setTheme({
+                  adminFont: {
+                    ...(value.theme.adminFont ?? DEFAULT_THEME.adminFont!),
+                    family,
+                  },
+                })
+              }
+            />
+          </div>
+        )}
       </EditorSection>
 
       <EditorSection
@@ -408,6 +651,130 @@ export default function SiteSettingsPage() {
 
       <UnsavedChangesDialog blocker={blocker} />
     </div>
+  )
+}
+
+/**
+ * Which of the two things one brand slot shows.
+ *
+ * Two buttons with `aria-pressed` rather than a select, matching how this page
+ * already expresses a chosen-one-of (see `WidthOption`). With only two options
+ * both are visible at once, so the merchant reads the choice instead of opening
+ * a list to discover it.
+ */
+function BrandModeField({
+  label,
+  slot,
+  mode,
+  onChange,
+}: {
+  label: string
+  slot: 'header' | 'footer'
+  mode: BrandDisplayMode
+  onChange: (next: BrandDisplayMode) => void
+}) {
+  const options: { value: BrandDisplayMode; label: string }[] = [
+    { value: 'TEXT', label: 'Site name' },
+    { value: 'LOGO', label: 'Logo' },
+  ]
+
+  return (
+    <fieldset className="flex flex-col gap-1.5">
+      <legend className="text-sm font-medium text-foreground">{label}</legend>
+      <div className="mt-1 flex gap-2">
+        {options.map((option) => {
+          const selected = mode === option.value
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={selected}
+              aria-label={`${slot} shows ${option.label}`}
+              onClick={() => onChange(option.value)}
+              className={
+                'flex-1 rounded-md border px-3 py-2 text-sm transition-colors ' +
+                (selected
+                  ? 'border-primary bg-primary/5 font-medium text-foreground ring-1 ring-primary'
+                  : 'border-border text-muted-foreground hover:border-primary/50 hover:bg-muted/40')
+              }
+            >
+              {option.label}
+            </button>
+          )
+        })}
+      </div>
+    </fieldset>
+  )
+}
+
+/**
+ * A logo's displayed height.
+ *
+ * Clamped to the permitted range on commit rather than validated on submit: the
+ * backend refuses anything outside it, and a toast after saving is a worse way
+ * to learn the limit than simply not being able to leave it.
+ *
+ * Clamping happens on blur, not on every keystroke — clamping as the merchant
+ * types rewrites "3" into "24" before they can reach "36".
+ */
+function LogoHeightField({
+  id,
+  value,
+  onChange,
+}: {
+  id: string
+  value: number
+  onChange: (next: number) => void
+}) {
+  /*
+   * The keystrokes in flight, or null when the field is showing the draft's
+   * value. Derived rather than synced with an effect: an effect that mirrors a
+   * prop into state runs a second render every time the draft changes, and
+   * `Reset` would briefly show the old text before correcting itself.
+   */
+  const [typed, setTyped] = React.useState<string | null>(null)
+  const text = typed ?? String(value)
+
+  const commit = () => {
+    setTyped(null)
+    const parsed = Number.parseInt(text, 10)
+    if (Number.isNaN(parsed)) return
+    onChange(Math.min(LOGO_HEIGHT_LIMITS.max, Math.max(LOGO_HEIGHT_LIMITS.min, parsed)))
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id}>Logo height</Label>
+      <div className="flex items-center gap-2">
+        <Input
+          id={id}
+          type="number"
+          inputMode="numeric"
+          min={LOGO_HEIGHT_LIMITS.min}
+          max={LOGO_HEIGHT_LIMITS.max}
+          value={text}
+          onChange={(e) => setTyped(e.target.value)}
+          onBlur={commit}
+          className="w-24"
+        />
+        <span className="text-xs text-muted-foreground">
+          px ({LOGO_HEIGHT_LIMITS.min}–{LOGO_HEIGHT_LIMITS.max})
+        </span>
+      </div>
+      <span className="text-xs text-muted-foreground">
+        The width adjusts to your artwork, so any shape works.
+      </span>
+    </div>
+  )
+}
+
+/** Shown when a slot is set to Logo but has no image to fall back on. */
+function NoArtworkNote() {
+  return (
+    <p className="flex items-start gap-1.5 text-xs text-amber-600">
+      <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+      No logo uploaded, so your site name is shown instead.
+    </p>
   )
 }
 

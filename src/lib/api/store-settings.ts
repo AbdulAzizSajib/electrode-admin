@@ -87,6 +87,29 @@ export const SITE_MODES = ['WEBSITE', 'LANDING_PAGE'] as const
 export type SiteMode = (typeof SITE_MODES)[number]
 
 /**
+ * Which courier the shop dispatches through.
+ *
+ * Mirrors the backend's `CourierProvider` enum and must be kept in step with
+ * it — a provider registered there but missing here is unselectable in the
+ * panel. The server is the authority on what each one can DO; this list is only
+ * what may be chosen.
+ *
+ * `MANUAL` is a real selection meaning "our courier has no integration here",
+ * not the absence of one. See openspec/changes/add-courier-provider-selection.
+ */
+export const COURIER_PROVIDERS = ['STEADFAST', 'MANUAL'] as const
+export type CourierProvider = (typeof COURIER_PROVIDERS)[number]
+
+/**
+ * What an unconfigured shop's courier form shows.
+ *
+ * Mirrors the column default, so the form displays what the backend is actually
+ * doing rather than a blank control — the same arrangement as
+ * `DEFAULT_CHECKOUT_CONFIG` below.
+ */
+export const DEFAULT_COURIER_SETTINGS = { courierProvider: 'STEADFAST' as CourierProvider }
+
+/**
  * Mirrors the backend's `MIN_CURRENCY_DECIMALS` / `MAX_CURRENCY_DECIMALS`.
  *
  * 0 covers currencies with no minor unit, 3 those with a thousandth unit, 4 is headroom. Repeated
@@ -94,6 +117,37 @@ export type SiteMode = (typeof SITE_MODES)[number]
  * same arrangement as `SETTINGS_LIMITS` below.
  */
 export const CURRENCY_DECIMALS_LIMITS = { min: 0, max: 4, default: 2 } as const
+
+/** How a brand slot presents the shop. Mirrors the backend's `BrandDisplayMode`. */
+export type BrandDisplayMode = 'TEXT' | 'LOGO'
+
+/**
+ * Mirrors the backend's `MIN_LOGO_HEIGHT` / `MAX_LOGO_HEIGHT` and the column
+ * defaults, so the height inputs can bound themselves rather than surfacing a
+ * 400 the merchant has to decode — the same arrangement as
+ * `CURRENCY_DECIMALS_LIMITS` above. Keep in step with
+ * store-setting.validation.ts.
+ */
+export const LOGO_HEIGHT_LIMITS = {
+  min: 24,
+  max: 96,
+  headerDefault: 40,
+  footerDefault: 36,
+} as const
+
+/**
+ * What a store that has never chosen a mode is showing.
+ *
+ * TEXT for both, mirroring the column defaults. The admin read returns the row
+ * as-is rather than merging defaults in — unlike the public endpoint — so
+ * without this the editor could not tell "never configured" from "configured to
+ * the default", which is the same reason every other settings editor here keeps
+ * a mirrored `DEFAULT_*`.
+ */
+export const DEFAULT_BRAND_DISPLAY = {
+  headerBrandMode: 'TEXT' as BrandDisplayMode,
+  footerBrandMode: 'TEXT' as BrandDisplayMode,
+}
 
 /** Mirrors the backend's `.max(...)` caps. A save past one of these is rejected there. */
 export const SETTINGS_LIMITS = {
@@ -417,15 +471,42 @@ export interface Theme {
   accent: string
   sale: string
   maxWidth: number | typeof FULL_WIDTH
+  /** The storefront's typeface. */
   font: ThemeFont
+  /**
+   * The ADMIN PANEL's typeface, chosen independently of the storefront's.
+   *
+   * Optional here because the admin read returns the stored row as-is: a theme
+   * saved before this key existed genuinely has no `adminFont`, and the editor
+   * needs to be able to tell that from "configured". The PUBLIC read resolves
+   * it from the default, so the panel itself never sees it missing.
+   */
+  adminFont?: ThemeFont
 }
 
 /**
- * What the PATCH accepts for `theme`. Identical to `Theme` except that `font` is
- * the text the merchant pasted — the backend parses it. A bare URL is one of the
- * accepted paste forms, so resending `theme.font.url` unchanged is valid.
+ * A font on the way IN, which is not the shape it comes out in.
+ *
+ * `{ family }` picks a font from the library — what both pickers send. The
+ * backend looks the family up and stores its `{ family, url }`; an unknown
+ * family is a 400. A bare string is also still accepted by the endpoint (a
+ * pasted `@import`, `<link>` or URL) but the admin no longer sends one: pasting
+ * moved to the font library, where a font is added once and then selected.
  */
-export type ThemeInput = Omit<Theme, 'font'> & { font: string }
+export type FontSelection = { family: string }
+
+/**
+ * What the PATCH accepts for `theme`.
+ *
+ * Both fonts go up as selections rather than pasted text. `adminFont` stays
+ * optional on the wire so an editor that has no opinion about the admin's
+ * typeface does not have to send one — the backend carries the stored value
+ * forward rather than blanking it.
+ */
+export type ThemeInput = Omit<Theme, 'font' | 'adminFont'> & {
+  font: FontSelection
+  adminFont?: FontSelection
+}
 
 export interface StoreSettings {
   id: string
@@ -442,6 +523,18 @@ export interface StoreSettings {
   address: string | null
   logoUrl: string | null
   footerLogoUrl: string | null
+  /**
+   * Which of the two things each brand slot shows, decided independently.
+   *
+   * Nullable here and not on the storefront's copy: the ADMIN read returns the
+   * row as-is while the public read merges defaults, so `null` means "this
+   * store has never chosen" — which is why the editor seeds from
+   * `DEFAULT_BRAND_DISPLAY` rather than assuming a value.
+   */
+  headerBrandMode: BrandDisplayMode | null
+  footerBrandMode: BrandDisplayMode | null
+  headerLogoHeight: number | null
+  footerLogoHeight: number | null
   siteNameAccent: string | null
   aboutText: string | null
   copyrightText: string | null
@@ -482,6 +575,19 @@ export interface StoreSettings {
    */
   siteMode: SiteMode
   activeLandingPageId: string | null
+
+  /**
+   * Which courier the shop dispatches through.
+   *
+   * The SELECTION only — credentials stay in the server's environment, because
+   * this row is served publicly. Never null: a shop using a courier with no
+   * integration selects `MANUAL`, which is a real provider declaring no
+   * capabilities rather than an absent choice.
+   *
+   * The backend refuses to change this while consignments are in flight with
+   * the current courier, and says how many.
+   */
+  courierProvider: CourierProvider
   updatedAt: string
 }
 
@@ -512,6 +618,12 @@ export interface StoreSettingsInput {
   address?: string
   logoUrl?: string
   footerLogoUrl?: string
+  /** Sent unconditionally by the site-settings editor — a mode always has a value. */
+  headerBrandMode?: BrandDisplayMode
+  footerBrandMode?: BrandDisplayMode
+  /** Pixels, bounded by `LOGO_HEIGHT_LIMITS`. Refused outside it by the backend. */
+  headerLogoHeight?: number
+  footerLogoHeight?: number
   siteNameAccent?: string
   aboutText?: string
   copyrightText?: string
@@ -545,7 +657,10 @@ export interface StoreSettingsInput {
    * keys would blank the other three.
    */
   seoConfig?: SeoConfig
-  /** `font` goes up as pasted text; the backend parses it. See `ThemeInput`. */
+  /**
+   * Both fonts go up as `{ family }` selections from the font library; the
+   * backend resolves each to its stored `{ family, url }`. See `ThemeInput`.
+   */
   theme?: ThemeInput
 
   /**
@@ -559,6 +674,15 @@ export interface StoreSettingsInput {
    */
   siteMode?: SiteMode
   activeLandingPageId?: string | null
+
+  /**
+   * Sent only by the Courier settings screen, which is the one place the
+   * consequences of the choice are shown.
+   *
+   * `.optional()` and never null — unlike `activeLandingPageId` above, there is
+   * no deselected state to express.
+   */
+  courierProvider?: CourierProvider
 }
 
 /**
@@ -591,6 +715,11 @@ export const DEFAULT_CHECKOUT_CONFIG: CheckoutConfig = {
   delivery: { offersPickup: false, options: [] },
 }
 
+/**
+ * Mirrors the backend's `DEFAULT_THEME` in
+ * `server/src/app/module/store-setting/store-setting.constant.ts` and carries
+ * the standing obligation to be kept in step with it.
+ */
 export const DEFAULT_THEME: Theme = {
   background: '#ffffff',
   foreground: '#1a1a1a',
@@ -602,6 +731,16 @@ export const DEFAULT_THEME: Theme = {
   font: {
     family: 'Outfit',
     url: 'https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap',
+  },
+  /**
+   * Roboto, not Outfit, and the difference is deliberate: Roboto is what the
+   * admin panel was hardcoded to before it became configurable. An install that
+   * never touches the setting therefore looks exactly as it did. Changing this
+   * silently restyles every panel that never opted in.
+   */
+  adminFont: {
+    family: 'Roboto',
+    url: 'https://fonts.googleapis.com/css2?family=Roboto:wght@100..900&display=swap',
   },
 }
 

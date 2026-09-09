@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/lib/api/client'
 import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
+import type { CourierProvider } from '@/lib/api/store-settings'
 
 export type ShipmentStatus =
   | 'PENDING'
@@ -33,6 +34,15 @@ export interface Shipment {
    * will accept.
    */
   consignmentId: string | null
+  /**
+   * Which courier created this consignment.
+   *
+   * Not the same question as "which courier does this shop use". A merchant who
+   * switched couriers still has parcels out with the old one, and every courier
+   * surface reads this rather than the setting so an old consignment is never
+   * shown under the new courier's name.
+   */
+  courierProvider: CourierProvider
   /** The invoice sent to the courier — the order number at dispatch time. */
   courierInvoice: string | null
   /**

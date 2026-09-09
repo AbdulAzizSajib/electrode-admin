@@ -76,6 +76,8 @@ const PagesListPage = lazy(() => import('@/features/ui/pages/pages-list-page'))
 const PageFormPage = lazy(() => import('@/features/ui/pages/page-form-page'))
 const BlogListPage = lazy(() => import('@/features/ui/blog/blog-list-page'))
 const BlogFormPage = lazy(() => import('@/features/ui/blog/blog-form-page'))
+const FontsListPage = lazy(() => import('@/features/ui/fonts/fonts-list-page'))
+const FontFormPage = lazy(() => import('@/features/ui/fonts/font-form-page'))
 const TestimonialsListPage = lazy(
   () => import('@/features/ui/testimonials/testimonials-list-page'),
 )
@@ -96,6 +98,9 @@ const CatalogSettingsPage = lazy(
 )
 const CheckoutSettingsPage = lazy(
   () => import('@/features/ui/checkout-settings/checkout-settings-page'),
+)
+const CourierSettingsPage = lazy(
+  () => import('@/features/ui/courier-settings/courier-settings-page'),
 )
 const SiteSettingsPage = lazy(() => import('@/features/ui/site-settings/site-settings-page'))
 const SeoGeneralPage = lazy(() => import('@/features/seo/general/seo-general-page'))
@@ -268,6 +273,10 @@ export function AppRouter() {
             <Route path="/ui/footer-links" element={<FooterLinksPage />} />
             <Route path="/ui/catalog-settings" element={<CatalogSettingsPage />} />
             <Route path="/ui/checkout-settings" element={<CheckoutSettingsPage />} />
+            <Route path="/ui/courier-settings" element={<CourierSettingsPage />} />
+            <Route path="/ui/fonts" element={<FontsListPage />} />
+            <Route path="/ui/fonts/new" element={<FontFormPage />} />
+            <Route path="/ui/fonts/:fontId" element={<FontFormPage />} />
             <Route path="/ui/site-settings" element={<SiteSettingsPage />} />
 
             {/* SEO. Inside the same OWNER/ADMIN guard as the UI screens — these

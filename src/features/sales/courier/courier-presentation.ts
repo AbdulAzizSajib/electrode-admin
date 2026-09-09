@@ -7,11 +7,16 @@ import type { CourierIneligibleReason } from '@/lib/api/courier'
 /**
  * How the courier's raw status reads to an operator.
  *
- * Keyed on Steadfast's own vocabulary rather than the panel's `ShipmentStatus`,
- * because that is what the backend stores verbatim and what actually
- * distinguishes the cases that matter — `delivered_approval_pending` means the
- * parcel arrived but the merchant has not been paid, which no `ShipmentStatus`
- * value can express.
+ * Keyed on the courier's own vocabulary rather than the panel's
+ * `ShipmentStatus`, because that is what the backend stores verbatim and what
+ * actually distinguishes the cases that matter — `delivered_approval_pending`
+ * means the parcel arrived but the merchant has not been paid, which no
+ * `ShipmentStatus` value can express.
+ *
+ * These keys are Steadfast's, the only integrated courier. A second courier
+ * with a different vocabulary adds its own entries here; an unrecognised status
+ * already falls through to a readable rendering of the raw string, so an
+ * unmapped value degrades rather than breaking.
  */
 const COURIER_STATUS_LABEL: Record<string, string> = {
   in_review: 'In review',
@@ -49,4 +54,7 @@ export const INELIGIBLE_LABEL: Record<CourierIneligibleReason, string> = {
   NAME_TOO_LONG: 'Recipient name too long',
   INVALID_PHONE: 'Phone the courier will not accept',
   ADDRESS_TOO_LONG: 'Address too long for the courier',
+  /* The only reason here describing the SHOP rather than the order. Worded so
+     an operator does not go looking for a fault in an order that has none. */
+  PROVIDER_CANNOT_DISPATCH: 'This shop has no courier integration',
 }

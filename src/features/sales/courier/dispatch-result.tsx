@@ -72,10 +72,19 @@ function Section({
 
 export function DispatchResult({
   summary,
+  courierName = 'the courier',
   onRetryFailed,
   isRetrying,
 }: {
   summary: CourierDispatchSummary
+  /**
+   * The courier these orders went to.
+   *
+   * Passed in rather than fetched, so this component stays pure and testable —
+   * and so a result rendered after a provider switch still names the courier
+   * that actually received the parcels.
+   */
+  courierName?: string
   /** Retries the definite failures only. Never offered for unconfirmed orders. */
   onRetryFailed?: (orderIds: string[]) => void
   isRetrying?: boolean
@@ -90,7 +99,7 @@ export function DispatchResult({
       <Section
         icon={CheckCircle2}
         tone="text-success"
-        title="Sent to Steadfast"
+        title={`Sent to ${courierName}`}
         rows={by('dispatched')}
       />
 
@@ -115,14 +124,14 @@ export function DispatchResult({
 
       {/*
        * No retry control here, deliberately. Aborting a request does not abort
-       * Steadfast's handler, so these consignments may exist and nobody has seen
-       * them yet. Sending again would create duplicates.
+       * the courier's handler, so these consignments may exist and nobody has
+       * seen them yet. Sending again would create duplicates.
        */}
       <Section
         icon={HelpCircle}
         tone="text-warning"
         title="Outcome unknown"
-        description="The courier did not confirm these, so they may already have been created. Check them in Steadfast before sending again — do not retry blindly."
+        description={`The courier did not confirm these, so they may already have been created. Check them in ${courierName} before sending again — do not retry blindly.`}
         rows={by('unconfirmed')}
       />
 

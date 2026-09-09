@@ -2,7 +2,7 @@
  * The one guarantee this screen exists to make: an UNCONFIRMED order is never
  * offered a retry.
  *
- * Aborting a dispatch request does not abort Steadfast's handler, so an
+ * Aborting a dispatch request does not abort the courier's handler, so an
  * unconfirmed consignment may already exist. Sending it again is how a merchant
  * pays for two pickups of one parcel — so the absence of that control is the
  * feature, and a refactor that "helpfully" adds a retry-all button would undo
@@ -48,6 +48,7 @@ describe('DispatchResult', () => {
   it('tells the operator to check before sending an unconfirmed order again', () => {
     render(
       <DispatchResult
+        courierName="Steadfast"
         summary={summary({
           unconfirmed: 1,
           results: [{ orderId: 'o1', orderNumber: 'ORD-1001', outcome: 'unconfirmed' }],
@@ -56,6 +57,34 @@ describe('DispatchResult', () => {
     )
 
     expect(screen.getByText(/check them in Steadfast before sending again/i)).toBeTruthy()
+  })
+
+  /*
+   * The courier is named from the prop, never hardcoded. A shop dispatching
+   * through one courier while the result screen names another has no way to
+   * know which portal to go and check — which is the single action the
+   * unconfirmed group exists to prompt.
+   */
+  it('names the courier it was given, not a fixed one', () => {
+    render(
+      <DispatchResult
+        courierName="Pathao"
+        summary={summary({
+          dispatched: 1,
+          unconfirmed: 1,
+          results: [
+            { orderId: 'o1', orderNumber: 'ORD-1001', outcome: 'dispatched' },
+            { orderId: 'o2', orderNumber: 'ORD-1002', outcome: 'unconfirmed' },
+          ],
+        })}
+      />,
+    )
+
+    // The heading carries a count after the name, so the text is split across
+    // nodes — matched on the element rather than an exact string.
+    expect(screen.getByRole('heading', { name: /Sent to Pathao/ })).toBeTruthy()
+    expect(screen.getByText(/check them in Pathao before sending again/i)).toBeTruthy()
+    expect(screen.queryByText(/Steadfast/)).toBeNull()
   })
 
   it('offers retry for a definite failure', () => {
@@ -127,7 +156,7 @@ describe('DispatchResult', () => {
   it('renders nothing for an outcome group with no orders', () => {
     render(<DispatchResult summary={summary()} />)
 
-    expect(screen.queryByText(/Sent to Steadfast/)).toBeNull()
+    expect(screen.queryByText(/Sent to/)).toBeNull()
     expect(screen.queryByText(/Outcome unknown/)).toBeNull()
   })
 })

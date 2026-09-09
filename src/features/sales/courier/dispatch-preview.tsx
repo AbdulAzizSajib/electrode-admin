@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { INELIGIBLE_LABEL } from '@/features/sales/courier/courier-presentation'
 import { DispatchResult } from '@/features/sales/courier/dispatch-result'
 import {
+  useConfiguredCourier,
   useDispatchOrders,
   usePreviewDispatch,
   type CourierDispatchSummary,
@@ -76,12 +77,15 @@ function DispatchBody({
    * The caller clears its selection on a successful dispatch — correctly, so the
    * operator cannot re-send the same parcels — which empties the incoming prop
    * while the result is still on screen. Reading the prop directly would then
-   * show "Send 0 orders to Steadfast" above a list of what was just sent.
+   * show "Send 0 orders" above a list of what was just sent.
    */
   const [orderIds] = React.useState(incomingIds)
 
   const preview = usePreviewDispatch()
   const dispatch = useDispatchOrders()
+
+  /** Named rather than assumed: the shop may not dispatch through Steadfast. */
+  const courierName = useConfiguredCourier()?.displayName ?? 'the courier'
 
   const [verdicts, setVerdicts] = React.useState<CourierEligibility[] | null>(null)
   const [summary, setSummary] = React.useState<CourierDispatchSummary | null>(null)
@@ -128,7 +132,9 @@ function DispatchBody({
     <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            {summary ? 'Dispatch result' : `Send ${orderIds.length} order${orderIds.length === 1 ? '' : 's'} to Steadfast`}
+            {summary
+              ? 'Dispatch result'
+              : `Send ${orderIds.length} order${orderIds.length === 1 ? '' : 's'} to ${courierName}`}
           </DialogTitle>
         </DialogHeader>
 
@@ -142,6 +148,7 @@ function DispatchBody({
           <>
             <DispatchResult
               summary={summary}
+              courierName={courierName}
               isRetrying={dispatch.isPending}
               onRetryFailed={(ids) => void run(ids)}
             />
@@ -217,7 +224,7 @@ function DispatchBody({
                   <Truck />
                   {dispatch.isPending
                     ? 'Sending…'
-                    : `Send ${eligible.length} to Steadfast`}
+                    : `Send ${eligible.length} to ${courierName}`}
                 </Button>
               ) : (
                 <p className="text-sm text-muted-foreground">

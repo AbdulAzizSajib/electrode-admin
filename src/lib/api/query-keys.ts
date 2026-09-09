@@ -30,7 +30,11 @@ export const queryKeys = {
   // Only `balance` is cached. Dispatch and its preview are mutations — both take
   // a body, both are asked for on demand, and caching eligibility would be wrong
   // the moment someone packs an order.
-  courier: { all: ['courier'] as const, balance: ['courier', 'balance'] as const },
+  courier: {
+    all: ['courier'] as const,
+    balance: ['courier', 'balance'] as const,
+    config: ['courier', 'config'] as const,
+  },
   returns: { all: ['returns'] as const, list: (p?: object) => ['returns', 'list', p] as const, detail: (id: string) => ['returns', 'detail', id] as const },
   refunds: { all: ['refunds'] as const, list: (p?: object) => ['refunds', 'list', p] as const, detail: (id: string) => ['refunds', 'detail', id] as const },
 
@@ -58,6 +62,19 @@ export const queryKeys = {
     all: ['testimonials'] as const,
     list: (p?: object) => ['testimonials', 'list', p] as const,
     detail: (id: string) => ['testimonials', 'detail', id] as const,
+  },
+
+  /**
+   * `all` here is a genuine second query, not a filtered `list`: it feeds the
+   * font pickers, which must show every library font at once. A picker reading
+   * page one of the paginated list would hide the merchant's own fonts behind a
+   * control that has no next page.
+   */
+  fonts: {
+    all: ['fonts'] as const,
+    list: (p?: object) => ['fonts', 'list', p] as const,
+    detail: (id: string) => ['fonts', 'detail', id] as const,
+    every: () => ['fonts', 'every'] as const,
   },
 
   /**
