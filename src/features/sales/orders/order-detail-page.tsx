@@ -3,11 +3,10 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { ArrowLeft, Ban, CheckCircle2, CreditCard, Printer, Truck } from 'lucide-react'
+import { ArrowLeft, Ban, CheckCircle2, CreditCard, PackageCheck, Printer, Truck } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -18,7 +17,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
 import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
-import { ORDER_STATUSES, useOrder, useUpdateOrderStatus, type OrderStatus } from '@/lib/api/orders'
+import { useOrder, useUpdateOrderStatus, type OrderStatus } from '@/lib/api/orders'
 import { usePaymentsByOrder, useRecordPayment, type PaymentMethod, type PaymentStatus } from '@/lib/api/payments'
 import { useShipmentByOrder, useUpsertShipment, type ShipmentStatus } from '@/lib/api/shipments'
 import {
@@ -30,6 +29,7 @@ import {
 import { CourierStatusBadge } from '@/features/sales/courier/courier-status-badge'
 import { courierNeedsAttention, courierStatusLabel } from '@/features/sales/courier/courier-presentation'
 import { formatCurrency, formatDateTime } from '@/lib/utils/format'
+import { cn } from '@/lib/utils/cn'
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
   PENDING: 'Pending',
@@ -41,20 +41,71 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
   CANCELLED: 'Cancelled',
   COMPLETED: 'Completed',
 }
-const STATUS_VARIANT: Record<OrderStatus, 'secondary' | 'info' | 'warning' | 'default' | 'success' | 'destructive'> = {
-  PENDING: 'secondary',
-  CONFIRMED: 'info',
-  PROCESSING: 'warning',
-  PACKED: 'info',
-  SHIPPED: 'default',
-  DELIVERED: 'success',
-  CANCELLED: 'destructive',
-  COMPLETED: 'success',
+/**
+ * The colour carried by each status, as a dot beside its label.
+ *
+ * This replaces a `<Badge variant>` map that coloured a read-only badge in the
+ * header. The badge went when the status became editable in place — the select
+ * trigger shows the current status already, and two things saying it side by
+ * side is one of them going stale. The colour was worth keeping though: it is
+ * what makes the status readable at a glance across a shift, so it moves onto
+ * the trigger rather than being dropped with the badge.
+ *
+ * Deliberately a background colour, not a text colour: the label beside it
+ * keeps the foreground contrast, so the hue is never the only thing carrying
+ * the meaning.
+ */
+const STATUS_DOT: Record<OrderStatus, string> = {
+  PENDING: 'bg-muted-foreground',
+  CONFIRMED: 'bg-info',
+  PROCESSING: 'bg-warning',
+  PACKED: 'bg-info',
+  SHIPPED: 'bg-foreground',
+  DELIVERED: 'bg-success',
+  CANCELLED: 'bg-destructive',
+  COMPLETED: 'bg-success',
 }
 
 const PAYMENT_METHOD_OPTIONS: PaymentMethod[] = ['COD', 'CARD', 'BKASH', 'NAGAD', 'ROCKET', 'STRIPE', 'PAYPAL', 'BANK_TRANSFER', 'OTHER']
 const PAYMENT_STATUS_OPTIONS: PaymentStatus[] = ['PENDING', 'PROCESSING', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED', 'PARTIALLY_REFUNDED']
+
+/**
+ * Payment statuses in the panel's own voice.
+ *
+ * The wire values are shouted enum constants, and rendering them raw put
+ * `PARTIALLY_REFUNDED` in a sentence beside a human date. Every other status on
+ * this page is sentence case (`STATUS_LABEL`, the shipment statuses); payments
+ * were the one surface still reading as a database dump.
+ */
+const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
+  PENDING: 'Pending',
+  PROCESSING: 'Processing',
+  PAID: 'Paid',
+  FAILED: 'Failed',
+  CANCELLED: 'Cancelled',
+  REFUNDED: 'Refunded',
+  PARTIALLY_REFUNDED: 'Partially refunded',
+}
 const SHIPMENT_STATUS_OPTIONS: ShipmentStatus[] = ['PENDING', 'PROCESSING', 'SHIPPED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED', 'RETURNED']
+
+/**
+ * Shipment statuses in sentence case, for the same reason as
+ * `PAYMENT_STATUS_LABEL`.
+ *
+ * This replaces a `.replace(/_/g, ' ')` that ran at three call sites and left
+ * `OUT FOR DELIVERY` shouting in the middle of ordinary prose. A map also means
+ * a status can be worded rather than merely de-underscored.
+ */
+const SHIPMENT_STATUS_LABEL: Record<ShipmentStatus, string> = {
+  PENDING: 'Pending',
+  PROCESSING: 'Processing',
+  SHIPPED: 'Shipped',
+  IN_TRANSIT: 'In transit',
+  OUT_FOR_DELIVERY: 'Out for delivery',
+  DELIVERED: 'Delivered',
+  FAILED: 'Failed',
+  RETURNED: 'Returned',
+}
 
 const paymentSchema = z.object({
   amount: z.coerce.number().min(0.01, 'Amount must be greater than zero'),
@@ -87,19 +138,19 @@ const PRINTABLE_DOCUMENTS = [
 ] as const
 
 /*
- * Derived from ORDER_STATUSES rather than re-listed, so adding a status to the
- * API module cannot leave this behind. A hand-written copy silently rejected
- * PACKED here while every other surface accepted it — which is a validation
- * error on a status the server supports, and reads as a bug in the server.
+ * There is no local schema for the status change, and deliberately so.
  *
- * This is shape only. Which transitions are legal comes from the order's own
- * `allowedTransitions`, computed server-side; see `nextStatusOptions` below.
+ * There was one — a zod enum over ORDER_STATUSES with an optional note, for the
+ * dialog this control replaced. With the status set directly from a select
+ * whose options come from the order's own server-computed
+ * `allowedTransitions`, there is no free-form input left to validate: the only
+ * values reachable are ones the server has already said it will accept.
+ *
+ * If a field is ever added back here, derive its status enum from
+ * `ORDER_STATUSES` rather than re-listing the statuses. A hand-written copy
+ * once silently rejected PACKED while every other surface accepted it, which
+ * reads as a bug in the server.
  */
-const statusUpdateSchema = z.object({
-  status: z.enum(ORDER_STATUSES as [OrderStatus, ...OrderStatus[]]),
-  note: z.string().optional(),
-})
-type StatusUpdateValues = z.infer<typeof statusUpdateSchema>
 
 export default function OrderDetailPage() {
   const { orderId } = useParams()
@@ -124,7 +175,6 @@ export default function OrderDetailPage() {
   const courierName = courier?.displayName ?? 'the courier'
   const confirmCancel = useConfirmDialog()
 
-  const [statusOpen, setStatusOpen] = React.useState(false)
   const [paymentOpen, setPaymentOpen] = React.useState(false)
   const [shipmentOpen, setShipmentOpen] = React.useState(false)
   const [returnOpen, setReturnOpen] = React.useState(false)
@@ -132,10 +182,6 @@ export default function OrderDetailPage() {
 
   useBreadcrumbLabel(order?.orderNumber)
 
-  const statusForm = useForm<StatusUpdateValues>({
-    resolver: zodResolver(statusUpdateSchema),
-    values: { status: order?.status ?? 'PENDING', note: '' },
-  })
   const paymentForm = useForm<PaymentValues, unknown, PaymentOutput>({
     resolver: zodResolver(paymentSchema),
     defaultValues: { amount: 0, method: 'CARD', status: 'PAID' },
@@ -164,19 +210,30 @@ export default function OrderDetailPage() {
   const balanceDue = Math.max(0, Number(order.totalAmount) - paidTotal)
 
   /*
-   * What the backend will accept from here. `CANCELLED` and `COMPLETED` are
-   * terminal, and a delivered order cannot be cancelled — goods already with
-   * the customer come back through a return, not a cancellation that would
-   * credit stock nobody has.
+   * What the backend will accept from here: every status except the one the
+   * order is already at. The server used to return a forward-only subset, and
+   * this list is still read from it rather than assumed — the restriction was
+   * lifted on the merchant's instruction so a mis-clicked status could be
+   * walked back, and reinstating it is a server-side edit that this page must
+   * follow rather than duplicate.
    */
   const allowedStatuses = order.allowedTransitions ?? []
 
-  const submitStatus = async (values: StatusUpdateValues) => {
+  /**
+   * Writes a status, from either of the two controls that set one — the header
+   * select for routine changes, the Cancel order button for the one that is
+   * not. Shared so the toast, the error handling and the mutation cannot drift
+   * between them.
+   *
+   * A failure needs no local state to recover from: the select is driven by
+   * `order.status` rather than its own state, so a refused change leaves the
+   * query's value in place and the trigger stays on where the order actually
+   * is, with the server's reason in the toast.
+   */
+  const runStatusUpdate = async (next: OrderStatus) => {
     try {
-      await updateStatus.mutateAsync({ id: order.id, input: values })
-      toast({ title: `Order status updated to ${STATUS_LABEL[values.status]}` })
-      setStatusOpen(false)
-      statusForm.reset({ status: values.status, note: '' })
+      await updateStatus.mutateAsync({ id: order.id, input: { status: next } })
+      toast({ title: `Order status updated to ${STATUS_LABEL[next]}` })
     } catch (err) {
       toast({ title: 'Could not update status', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
     }
@@ -218,6 +275,18 @@ export default function OrderDetailPage() {
   )
   const shipmentCourierName =
     shipmentCourier?.displayName ?? shipment?.carrier ?? courierName
+
+  /*
+   * Whether the dispatch button is offered for this order right now — the exact
+   * condition the server accepts, named once.
+   *
+   * Read by the Courier card that renders the button and by the Shipment card
+   * above it, which uses it to say who is about to fill that card in. Written
+   * out twice, the two would eventually disagree and the page would advise
+   * against a button it was simultaneously showing.
+   */
+  const canDispatchHere =
+    !isCourierOwned && order.status === 'PACKED' && Boolean(courier?.capabilities.dispatch)
 
   const dispatchSingle = async () => {
     try {
@@ -298,39 +367,112 @@ export default function OrderDetailPage() {
           description={`${order.customer.firstName} ${order.customer.lastName ?? ''}`}
           actions={
             <>
-              <Badge variant={STATUS_VARIANT[order.status]} className="mr-1">{STATUS_LABEL[order.status]}</Badge>
               {/* Print targets open in a new tab so the order stays put behind
                   them — a packer prints a slip, prints a label, and is still on
                   the order when they come back. Each route renders outside the
-                  app shell so the printed page carries no chrome. */}
-              {PRINTABLE_DOCUMENTS.map((doc) => (
-                <Button key={doc.kind} variant="outline" size="lg" asChild>
-                  <Link to={`/sales/orders/${order.id}/print/${doc.kind}`} target="_blank" rel="noreferrer">
-                    <Printer /> {doc.label}
-                  </Link>
-                </Button>
-              ))}
-              {/* Hidden at a terminal status: there is nothing to set, and
-                  offering the control invites the operator to try. */}
+                  app shell so the printed page carries no chrome.
+
+                  Grouped into one segmented control and given a single icon.
+                  Three separate outline buttons, each repeating a printer
+                  glyph, read as three unrelated decisions at the same weight as
+                  setting the status — when they are one decision (which
+                  document?) taken far less often. The seams are the group's own
+                  dividers, so the set reads as one object. */}
+              <div className="flex shrink-0 items-center divide-x divide-border overflow-hidden rounded-md border border-input">
+                {/* Self-stretching rather than relying on the row's baseline:
+                    the icon is the only child that is not an h-9 button, and a
+                    bare inline span would sit optically high against them. */}
+                <span className="flex h-9 shrink-0 items-center pl-3 pr-1.5 text-muted-foreground">
+                  <Printer className="size-4" />
+                </span>
+                {PRINTABLE_DOCUMENTS.map((doc) => (
+                  <Button
+                    key={doc.kind}
+                    variant="ghost"
+                    size="lg"
+                    className="rounded-none border-0"
+                    asChild
+                  >
+                    <Link to={`/sales/orders/${order.id}/print/${doc.kind}`} target="_blank" rel="noreferrer">
+                      {doc.label}
+                    </Link>
+                  </Button>
+                ))}
+              </div>
+              {/*
+                The status is edited in place rather than through a dialog. It
+                was an "Update status" button opening a modal with a status
+                select, an optional note and a Save — three interactions and a
+                context switch to set one field, on the control an operator
+                touches more than any other on this page. The note went with the
+                dialog: it was optional, almost always left blank, and not worth
+                a modal on its own. `OrderStatusHistory.note` still accepts one,
+                so a future control can fill it without a schema change.
+
+                Picking a status saves immediately. There is no second field to
+                fill in and nothing to review, so a confirm step would only be a
+                second click on a decision already made — and every status
+                reachable from here is one the next pick can undo, since the
+                server stopped restricting transitions. CANCELLED is the
+                exception and is not in this list; see below.
+
+                The trigger doubles as the current-status display — it shows the
+                order's status when idle, so the badge that used to sit here
+                would now be repeating it.
+              */}
               {allowedStatuses.length > 0 && (
-                <Button size="sm" onClick={() => setStatusOpen(true)}>
-                  Update status
-                </Button>
+                <Select
+                  value={order.status}
+                  onValueChange={(next) => void runStatusUpdate(next as OrderStatus)}
+                  disabled={updateStatus.isPending}
+                >
+                  <SelectTrigger className="h-9 w-44" aria-label="Order status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  {/* Matched to the trigger rather than sized to its longest
+                      label, so the panel opens as a continuation of the box it
+                      came from instead of a narrower one floating under it.
+                      `min-w` on the primitive would otherwise let it shrink to
+                      the content. */}
+                  <SelectContent className="w-(--radix-select-trigger-width)">
+                    {/* The current status is listed and marked, so the dropdown
+                        reads as "where this order is, among the others" rather
+                        than a list the order is mysteriously absent from. It is
+                        non-selectable: the server rejects a no-op, and offering
+                        it would produce an error toast for a click that means
+                        "leave it alone". */}
+                    <SelectItem value={order.status} disabled>
+                      <StatusOption status={order.status} />
+                    </SelectItem>
+                    {/* CANCELLED is filtered out, not listed: it keeps its own
+                        button beside this, where a destructive action is
+                        visible as one rather than sitting a click deep in a
+                        dropdown between two routine statuses. Both paths run
+                        the same confirmation, so which one an operator reaches
+                        for does not change what happens. */}
+                    {allowedStatuses
+                      .filter((value) => value !== 'CANCELLED')
+                      .map((value) => (
+                        <SelectItem key={value} value={value}>
+                          <StatusOption status={value} />
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               )}
+              {/* Outline, not solid destructive. A filled red button sitting
+                  permanently in the header is the loudest thing on a page whose
+                  routine action is the status select beside it — it draws the
+                  eye to the one control an operator almost never wants. The
+                  destructive intent is carried by colour and confirmed in a
+                  dialog; it does not also need the heaviest fill on screen. */}
               {allowedStatuses.includes('CANCELLED') && (
                 <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() =>
-                    confirmCancel.confirm(async () => {
-                      try {
-                        await updateStatus.mutateAsync({ id: order.id, input: { status: 'CANCELLED' } })
-                        toast({ title: 'Order cancelled' })
-                      } catch (err) {
-                        toast({ title: 'Could not cancel order', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
-                      }
-                    })
-                  }
+                  variant="outline"
+                  size="lg"
+                  className="border-destructive/30 text-destructive hover:bg-destructive/5 hover:text-destructive"
+                  disabled={updateStatus.isPending}
+                  onClick={() => confirmCancel.confirm(() => runStatusUpdate('CANCELLED'))}
                 >
                   <Ban /> Cancel order
                 </Button>
@@ -349,9 +491,13 @@ export default function OrderDetailPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Product</TableHead>
-                    <TableHead>Qty</TableHead>
-                    <TableHead>Unit price</TableHead>
-                    <TableHead>Subtotal</TableHead>
+                    {/* Quantities and money are read down the column, not across
+                        the row: an operator checking a picked box against the
+                        order compares digits in the same place. Right-aligned
+                        so the units line up whatever the magnitude. */}
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Unit price</TableHead>
+                    <TableHead className="text-right">Subtotal</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -361,29 +507,49 @@ export default function OrderDetailPage() {
                         {item.productName}
                         <div className="text-xs font-normal text-muted-foreground">{item.sku}</div>
                       </TableCell>
-                      <TableCell>{item.quantity}</TableCell>
-                      <TableCell>{formatCurrency(Number(item.unitPrice))}</TableCell>
-                      <TableCell>{formatCurrency(Number(item.totalPrice))}</TableCell>
+                      {/* `tabular-nums` throughout: the default proportional
+                          figures give `1` a narrower advance than `0`, so
+                          ৳1,050.00 and ৳120.00 do not align on the decimal even
+                          when the cell is right-aligned. */}
+                      <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(Number(item.unitPrice))}</TableCell>
+                      <TableCell className="text-right font-medium tabular-nums text-foreground">{formatCurrency(Number(item.totalPrice))}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </CardContent>
-            <div className="flex flex-col gap-1 border-t border-border px-4 py-3 text-sm">
-              <Row label="Subtotal" value={formatCurrency(Number(order.subtotal))} />
-              {Number(order.discountAmount) > 0 && <Row label="Discount" value={`-${formatCurrency(Number(order.discountAmount))}`} />}
-              {/* The option's captured name, so this line reads as the choice
-                  the shopper made rather than a bare "Shipping" — and keeps
-                  reading that way after the option is renamed or deleted. */}
-              <Row
-                label={
-                  order.deliveryOptionLabel ??
-                  (order.deliveryMethod === 'PICKUP' ? 'Collection' : 'Shipping')
-                }
-                value={formatCurrency(Number(order.shippingAmount))}
-              />
-              <Row label="Tax" value={formatCurrency(Number(order.taxAmount))} />
-              <Row label="Total" value={formatCurrency(Number(order.totalAmount))} bold />
+            {/*
+              The money summary. Constrained and pushed right so the labels sit
+              beside their figures rather than at opposite ends of a full-width
+              card — a "Tax" three hundred pixels from its amount is two facts,
+              not one line.
+            */}
+            <div className="flex justify-end border-t border-border px-4 py-3 text-sm">
+              <div className="flex w-full max-w-xs flex-col gap-1">
+                <Row label="Subtotal" value={formatCurrency(Number(order.subtotal))} />
+                {Number(order.discountAmount) > 0 && <Row label="Discount" value={`-${formatCurrency(Number(order.discountAmount))}`} />}
+                {/* The option's captured name, so this line reads as the choice
+                    the shopper made rather than a bare "Shipping" — and keeps
+                    reading that way after the option is renamed or deleted. */}
+                <Row
+                  label={
+                    order.deliveryOptionLabel ??
+                    (order.deliveryMethod === 'PICKUP' ? 'Collection' : 'Shipping')
+                  }
+                  value={formatCurrency(Number(order.shippingAmount))}
+                />
+                <Row label="Tax" value={formatCurrency(Number(order.taxAmount))} />
+                {/* Ruled off and stepped up a size: the total is the figure the
+                    other four exist to explain, and weight alone did not carry
+                    that when every line shared one type size. */}
+                <Row
+                  label="Total"
+                  value={formatCurrency(Number(order.totalAmount))}
+                  bold
+                  className="mt-1 border-t border-border pt-2 text-base"
+                />
+              </div>
             </div>
           </Card>
 
@@ -391,21 +557,54 @@ export default function OrderDetailPage() {
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <CardTitle>Payments</CardTitle>
               {balanceDue > 0 && order.status !== 'CANCELLED' && (
-                <Button size="sm" variant="outline" onClick={() => setPaymentOpen(true)}>
+                <Button size="lg" variant="outline" onClick={() => setPaymentOpen(true)}>
                   <CreditCard /> Record payment
                 </Button>
               )}
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
               {!payments || payments.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No payments recorded yet. Balance due: {formatCurrency(balanceDue)}</p>
+                <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
               ) : (
                 payments.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">{p.method.replace('_', ' ')} · {p.status} · {formatDateTime(p.createdAt)}</span>
-                    <span className="font-medium text-foreground">{formatCurrency(Number(p.amount))}</span>
+                  <div key={p.id} className="flex items-baseline justify-between gap-4 text-sm">
+                    <span className="text-muted-foreground">
+                      {p.method.replace('_', ' ')} · {PAYMENT_STATUS_LABEL[p.status] ?? p.status} · {formatDateTime(p.createdAt)}
+                    </span>
+                    <span className="shrink-0 font-medium tabular-nums text-foreground">{formatCurrency(Number(p.amount))}</span>
                   </div>
                 ))
+              )}
+
+              {/*
+                What is still owed, stated on every unsettled order rather than
+                only on one with no payments at all.
+
+                It used to be a tail on the empty-state sentence, which meant a
+                COD order carrying a PENDING payment showed the payment and the
+                total and left the operator to subtract: the row reads
+                "COD · Pending · ৳1,170.00" beside a ৳1,170.00 total, and
+                nothing on the card says the money has not arrived. On a
+                cash-on-delivery shop that is the question the card exists to
+                answer, so it is a line of its own — ruled off, in the warning
+                hue, and never silently absent.
+
+                Settled orders say so instead of showing ৳0.00 due: zero is a
+                figure to read and check, "Paid in full" is not.
+              */}
+              {order.status !== 'CANCELLED' && (
+                <div className="mt-1 flex items-baseline justify-between gap-4 border-t border-border pt-2 text-sm">
+                  <span className="shrink-0 text-muted-foreground">Balance due</span>
+                  {balanceDue > 0 ? (
+                    <span className="shrink-0 font-semibold tabular-nums text-warning">
+                      {formatCurrency(balanceDue)}
+                    </span>
+                  ) : (
+                    <span className="flex shrink-0 items-center gap-1.5 font-medium text-success">
+                      <CheckCircle2 className="size-3.5" /> Paid in full
+                    </span>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>
@@ -417,7 +616,7 @@ export default function OrderDetailPage() {
                   is where the fields are shown disabled and Steadfast is named
                   as their source. Hiding it would leave the operator with no
                   explanation of why they cannot edit. */}
-              <Button size="sm" variant="outline" onClick={() => setShipmentOpen(true)}>
+              <Button size="lg" variant="outline" onClick={() => setShipmentOpen(true)}>
                 <Truck />{' '}
                 {isCourierOwned ? 'View shipment' : shipment ? 'Update shipment' : 'Create shipment'}
               </Button>
@@ -427,16 +626,33 @@ export default function OrderDetailPage() {
                 <div className="flex flex-col gap-1 text-sm">
                   <Row label="Carrier" value={shipment.carrier ?? '—'} />
                   <Row label="Tracking #" value={shipment.trackingNumber ?? '—'} />
-                  <Row label="Status" value={shipment.status.replace(/_/g, ' ')} />
+                  <Row label="Status" value={SHIPMENT_STATUS_LABEL[shipment.status] ?? shipment.status} />
                   {isCourierOwned && (
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Managed by Steadfast — these values come from the courier and
-                      are not edited here.
+                      Managed by {shipmentCourierName} — these values come from the courier
+                      and are not edited here.
                     </p>
                   )}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No shipment created yet.</p>
+                /*
+                 * The empty state says who fills this in, not just that it is
+                 * empty.
+                 *
+                 * "No shipment created yet." beside a "Create shipment" button
+                 * reads as an instruction, and on a shop that dispatches through
+                 * an integrated courier it is the wrong one: dispatching writes
+                 * this card itself, and a shipment entered by hand first is
+                 * overwritten by the consignment. An operator who follows the
+                 * button does harmless but wasted work and reasonably concludes
+                 * the panel is confusing. So the sentence names the courier that
+                 * is about to do it.
+                 */
+                <p className="text-sm text-muted-foreground">
+                  {canDispatchHere
+                    ? `No shipment yet. Sending this order to ${courierName} fills this in automatically — you only need to enter one by hand if you are shipping it yourself.`
+                    : 'No shipment created yet.'}
+                </p>
               )}
             </CardContent>
           </Card>
@@ -453,20 +669,21 @@ export default function OrderDetailPage() {
                 {/* Offered only for an order the server would actually accept.
                     Anything else states the reason instead of presenting a
                     control that will be refused. */}
-                {!isCourierOwned && order.status === 'PACKED' && courier?.capabilities.dispatch && (
+                {canDispatchHere && (
                   <Button
-                    size="sm"
-                    disabled={dispatchOne.isPending}
+                    size="lg"
+                    loading={dispatchOne.isPending}
                     onClick={() => void dispatchSingle()}
                   >
-                    <Truck /> {dispatchOne.isPending ? 'Sending…' : `Send to ${courierName}`}
+                    {!dispatchOne.isPending && <Truck />}
+                    {dispatchOne.isPending ? 'Sending…' : `Send to ${courierName}`}
                   </Button>
                 )}
                 {/* Hidden where the creating courier has no return API — a
                     control that exists only to be refused teaches the operator
                     the panel is unreliable. The server refuses it too. */}
                 {isCourierOwned && shipmentCourier?.capabilities.returns && (
-                  <Button size="sm" variant="outline" onClick={() => setReturnOpen(true)}>
+                  <Button size="lg" variant="outline" onClick={() => setReturnOpen(true)}>
                     Raise return
                   </Button>
                 )}
@@ -476,11 +693,16 @@ export default function OrderDetailPage() {
               {isCourierOwned ? (
                 <div className="flex flex-col gap-1 text-sm">
                   <Row label="Courier" value={shipmentCourierName} />
-                  <Row label="Consignment" value={shipment?.consignmentId ?? '—'} />
-                  <Row label="Tracking code" value={shipment?.trackingNumber ?? '—'} />
-                  <Row label="Invoice sent" value={shipment?.courierInvoice ?? '—'} />
-                  <div className="flex items-center justify-between gap-2 py-0.5">
-                    <span className="text-muted-foreground">Courier status</span>
+                  {/* Identifiers, monospaced — these are the three values an
+                      operator reads aloud on the phone or pastes into the
+                      courier's own portal, and a proportional face makes a
+                      transposed digit invisible. Monospace for data, which is
+                      what it is for. */}
+                  <Row label="Consignment" value={shipment?.consignmentId ?? '—'} mono />
+                  <Row label="Tracking code" value={shipment?.trackingNumber ?? '—'} mono />
+                  <Row label="Invoice sent" value={shipment?.courierInvoice ?? '—'} mono />
+                  <div className="flex items-baseline justify-between gap-4 py-0.5">
+                    <span className="shrink-0 text-muted-foreground">Courier status</span>
                     <CourierStatusBadge status={shipment?.courierStatus} />
                   </div>
                   <Row
@@ -519,7 +741,24 @@ export default function OrderDetailPage() {
             <CardHeader><CardTitle>Customer</CardTitle></CardHeader>
             <CardContent className="flex flex-col gap-1 text-sm">
               <span className="font-medium text-foreground">{order.customer.firstName} {order.customer.lastName ?? ''}</span>
-              <span className="text-muted-foreground">{order.customer.email ?? '—'}</span>
+              {/*
+                An address, not a dash. A guest checkout genuinely has no email
+                on the customer record, and "—" makes that look like data the
+                panel failed to load — the operator's next move is to go
+                looking for it. Saying "No email on file" ends the question,
+                and a real address becomes a mailto so contacting the customer
+                does not mean retyping it.
+              */}
+              {order.customer.email ? (
+                <a
+                  href={`mailto:${order.customer.email}`}
+                  className="w-fit break-all text-primary underline-offset-4 hover:underline"
+                >
+                  {order.customer.email}
+                </a>
+              ) : (
+                <span className="text-muted-foreground">No email on file</span>
+              )}
             </CardContent>
           </Card>
 
@@ -564,9 +803,17 @@ export default function OrderDetailPage() {
             The address card below still renders whatever was captured, but this
             says plainly that nothing is being delivered.
           */}
+          {/* Warning tokens, not raw amber-*. The palette defines --color-warning
+              and --color-warning-bg for exactly this, and the hardcoded pair
+              also carried a dark: variant on a panel that ships light only. */}
           {order.deliveryMethod === 'PICKUP' && (
-            <Card className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
-              <CardHeader><CardTitle>Collection — do not dispatch</CardTitle></CardHeader>
+            <Card className="border-warning/40 bg-warning-bg">
+              <CardHeader className="border-warning/25">
+                <CardTitle className="flex items-center gap-2 text-warning">
+                  <PackageCheck className="size-4 shrink-0" />
+                  Collection — do not dispatch
+                </CardTitle>
+              </CardHeader>
               <CardContent className="flex flex-col gap-1 text-sm">
                 <span className="font-medium text-foreground">
                   {order.deliveryOptionLabel ?? 'Collection in person'}
@@ -610,61 +857,69 @@ export default function OrderDetailPage() {
 
           <Card>
             <CardHeader><CardTitle>Status history</CardTitle></CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              {(order.statusHistory ?? []).map((event, i) => (
-                <div key={i} className="flex items-start gap-2 text-sm">
-                  <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-success" />
-                  <div className="flex flex-col">
-                    <span className="font-medium text-foreground">{STATUS_LABEL[event.toStatus]}</span>
-                    <span className="text-xs text-muted-foreground">{formatDateTime(event.createdAt)}</span>
-                    {event.note && <span className="text-xs text-muted-foreground">{event.note}</span>}
-                  </div>
-                </div>
-              ))}
+            <CardContent>
+              {(order.statusHistory ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">No status changes recorded yet.</p>
+              ) : (
+                /*
+                 * A timeline, not a list of ticks.
+                 *
+                 * Every entry used to carry the same green CheckCircle2 — so a
+                 * cancellation and a delivery were drawn identically, and the
+                 * one status that means the order stopped read as another
+                 * success. The dot now carries the status's own colour, from
+                 * the same STATUS_DOT map the header select uses, so a status
+                 * looks the same wherever this page shows it.
+                 *
+                 * The newest entry sits at the top (the API's own order) and is
+                 * the only one at full strength; the rest recede. An operator
+                 * opening this card is asking "where is it now", and answering
+                 * that took scanning to the end of an evenly-weighted list.
+                 */
+                <ol className="flex flex-col">
+                  {(order.statusHistory ?? []).map((event, i, all) => {
+                    const isCurrent = i === 0
+                    const isLast = i === all.length - 1
+
+                    return (
+                      <li key={i} className="flex gap-3 text-sm">
+                        {/* The rail: dot plus the line down to the next entry.
+                            The line is omitted on the last row rather than
+                            drawn and hidden, so nothing dangles past the final
+                            dot. */}
+                        <div className="flex flex-col items-center">
+                          <span
+                            className={cn(
+                              'mt-1 size-2 shrink-0 rounded-full',
+                              STATUS_DOT[event.toStatus],
+                              !isCurrent && 'opacity-60',
+                            )}
+                          />
+                          {!isLast && <span className="w-px flex-1 bg-border" />}
+                        </div>
+                        <div className={cn('flex flex-col', !isLast && 'pb-3')}>
+                          <span
+                            className={cn(
+                              'font-medium',
+                              isCurrent ? 'text-foreground' : 'text-muted-foreground',
+                            )}
+                          >
+                            {STATUS_LABEL[event.toStatus]}
+                          </span>
+                          <span className="text-xs tabular-nums text-muted-foreground">
+                            {formatDateTime(event.createdAt)}
+                          </span>
+                          {event.note && <span className="text-xs text-muted-foreground">{event.note}</span>}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ol>
+              )}
             </CardContent>
           </Card>
         </div>
       </div>
-
-      <Dialog open={statusOpen} onOpenChange={setStatusOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Update order status</DialogTitle></DialogHeader>
-          <Form {...statusForm}>
-            <form onSubmit={statusForm.handleSubmit(submitStatus)} className="flex flex-col gap-3.5">
-              <FormField control={statusForm.control} name="status" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Status</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                    {/* Only the transitions legal from here. Offering the full
-                        list let an order be moved from CANCELLED to DELIVERED,
-                        and cancelling now returns stock to the shelf — a
-                        transition that cannot happen physically produces side
-                        effects nothing can reconcile. */}
-                    <SelectContent>
-                      {allowedStatuses.map((value) => (
-                        <SelectItem key={value} value={value}>{STATUS_LABEL[value]}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <FormField control={statusForm.control} name="note" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Note (optional)</FormLabel>
-                  <FormControl><Input {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setStatusOpen(false)}>Cancel</Button>
-                <Button type="submit" loading={statusForm.formState.isSubmitting}>Save</Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>
         <DialogContent>
@@ -696,7 +951,7 @@ export default function OrderDetailPage() {
                   <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {PAYMENT_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      {PAYMENT_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{PAYMENT_STATUS_LABEL[s]}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -722,11 +977,16 @@ export default function OrderDetailPage() {
            * cannot offer a control the server will reject.
            * See design.md Decision 6.
            */}
+          {/* Names the courier that actually created this consignment, not a
+              hardcoded one. A parcel dispatched before the shop switched
+              couriers is still carried by the old one, and telling the operator
+              otherwise is the same lie the Courier card is careful not to
+              tell. */}
           {isCourierOwned && (
             <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-              This shipment is managed by Steadfast (consignment {shipment?.consignmentId}).
-              Its carrier, tracking number, status and timestamps come from the courier and
-              cannot be edited here.
+              This shipment is managed by {shipmentCourierName} (consignment{' '}
+              {shipment?.consignmentId}). Its carrier, tracking number, status and
+              timestamps come from the courier and cannot be edited here.
             </p>
           )}
           <Form {...shipmentForm}>
@@ -743,7 +1003,7 @@ export default function OrderDetailPage() {
                   <Select value={field.value} onValueChange={field.onChange} disabled={isCourierOwned}>
                     <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {SHIPMENT_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>)}
+                      {SHIPMENT_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{SHIPMENT_STATUS_LABEL[s]}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -765,7 +1025,7 @@ export default function OrderDetailPage() {
       <Dialog open={returnOpen} onOpenChange={setReturnOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Raise a return with Steadfast</DialogTitle>
+            <DialogTitle>Raise a return with {shipmentCourierName}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3.5">
             <p className="text-sm text-muted-foreground">
@@ -815,11 +1075,61 @@ export default function OrderDetailPage() {
   )
 }
 
-function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+/**
+ * A status as it appears in the header select — its colour, then its name.
+ *
+ * Used for the options AND for the current value, because Radix renders the
+ * selected item's children into the trigger: writing the trigger separately
+ * would let the two drift, which on this control means the dot beside a status
+ * disagreeing with the dot beside that same status one row down.
+ */
+function StatusOption({ status }: { status: OrderStatus }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={bold ? 'font-semibold text-foreground' : 'text-foreground'}>{value}</span>
+    <span className="flex items-center gap-2">
+      <span className={cn('size-2 shrink-0 rounded-full', STATUS_DOT[status])} />
+      {STATUS_LABEL[status]}
+    </span>
+  )
+}
+
+/**
+ * A label and its value on one line, the page's unit of read-only detail.
+ *
+ * `gap-4` rather than pure `justify-between`: a long value (a courier's
+ * consignment id, a tracking code) would otherwise run up against its label
+ * with nothing between them. The value is allowed to wrap and stays
+ * right-aligned when it does, so a two-line value still reads as one field.
+ *
+ * Values carry `tabular-nums` unconditionally. Most are money, ids or
+ * timestamps — all figures meant to be compared down a column — and the ones
+ * that are not contain no digits for it to affect.
+ */
+function Row({
+  label,
+  value,
+  bold,
+  mono,
+  className,
+}: {
+  label: string
+  value: string
+  bold?: boolean
+  /** For identifiers that get read aloud or pasted — see the Courier card. */
+  mono?: boolean
+  className?: string
+}) {
+  return (
+    <div className={cn('flex items-baseline justify-between gap-4', className)}>
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span
+        className={cn(
+          'text-right tabular-nums',
+          mono && 'break-all font-mono text-xs',
+          bold ? 'font-semibold text-foreground' : 'text-foreground',
+        )}
+      >
+        {value}
+      </span>
     </div>
   )
 }

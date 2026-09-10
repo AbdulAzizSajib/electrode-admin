@@ -18,6 +18,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { SingleImageField } from '@/components/forms/single-image-field'
+import { FormSection } from '@/components/forms/form-section'
 import { CategoryParentPicker } from '@/features/catalog/categories/category-parent-picker'
 import { CATEGORIES_PATH } from '@/features/catalog/categories/categories-page'
 import { SUB_CATEGORIES_PATH } from '@/features/catalog/sub-categories/sub-categories-page'
@@ -171,153 +172,202 @@ export default function CategoryFormPage() {
       toValues={toValues}
       onSave={save}
     >
-      <FormField
-        control={form.control}
-        name="name"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Name</FormLabel>
-            <FormControl>
-              <Input {...field} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      <FormField
-        control={form.control}
-        name="parentId"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Parent category</FormLabel>
-            <CategoryParentPicker
-              tree={categoryTree}
-              excludeId={categoryId}
-              value={field.value}
-              onChange={field.onChange}
-            />
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      <FormField
-        control={form.control}
-        name="description"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Description</FormLabel>
-            <FormControl>
-              <Textarea rows={3} {...field} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      {/* Upload and URL are alternatives, not a pair — the backend accepts
-          either. Not form fields: the files never enter the schema. */}
-      <div className="flex flex-col gap-1.5">
-        <Label>Image</Label>
-        <SingleImageField
-          value={imageFile}
-          onChange={setImageFile}
-          currentUrl={data?.image}
-          label="Upload image"
+      <FormSection title="Details">
+        <FormField
+          control={form.control}
+          name="name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Name</FormLabel>
+              <FormControl>
+                <Input {...field} />
+              </FormControl>
+              {/* The slug is derived from this by the backend and never entered
+                  here, so without saying so the merchant has no way to know the
+                  storefront URL follows the name they are typing. */}
+              <FormDescription>
+                The storefront web address is built from this name automatically.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
         />
-      </div>
 
-      <FormField
-        control={form.control}
-        name="image"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Image URL</FormLabel>
-            <FormControl>
-              <Input
-                placeholder="https://example.com/image.jpg"
-                disabled={!!imageFile}
-                {...field}
+        <FormField
+          control={form.control}
+          name="parentId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Parent category</FormLabel>
+              <CategoryParentPicker
+                tree={categoryTree}
+                excludeId={categoryId}
+                value={field.value}
+                onChange={field.onChange}
               />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      <div className="flex flex-col gap-1.5">
-        <Label>Banner</Label>
-        <SingleImageField
-          value={bannerFile}
-          onChange={setBannerFile}
-          currentUrl={data?.banner}
-          label="Upload banner"
+              <FormMessage />
+            </FormItem>
+          )}
         />
-      </div>
 
-      <FormField
-        control={form.control}
-        name="sortOrder"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Sort order</FormLabel>
-            <FormControl>
-              <NumberInput className="w-full" {...field} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Description</FormLabel>
+              <FormControl>
+                <Textarea rows={3} {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </FormSection>
 
-      <FormField
-        control={form.control}
-        name="status"
-        render={({ field }) => (
-          <FormItem className="flex flex-row items-center justify-between gap-2">
-            <FormLabel className="text-sm font-normal text-foreground">Active</FormLabel>
-            <FormControl>
-              <Switch checked={field.value} onCheckedChange={field.onChange} />
-            </FormControl>
-          </FormItem>
-        )}
-      />
+      <FormSection
+        title="Artwork"
+        description="The image represents the category in listings; the banner runs across the top of its page."
+      >
+        {/*
+         * Upload and URL are two routes to the same artwork, not two fields, so
+         * they are grouped and the URL box is disabled while a file is picked.
+         * Neither is a form field on the file side: the files never enter the
+         * schema.
+         */}
+        <div className="flex flex-col gap-3">
+          <Label>Image</Label>
+          <SingleImageField
+            value={imageFile}
+            onChange={setImageFile}
+            currentUrl={data?.image}
+            label="Upload image"
+          />
+          <FormField
+            control={form.control}
+            name="image"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-xs font-normal text-muted-foreground">
+                  Or paste an image address
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="https://example.com/image.jpg"
+                    disabled={!!imageFile}
+                    {...field}
+                  />
+                </FormControl>
+                {imageFile && (
+                  <FormDescription>
+                    Not used while a file is selected. Remove the file to paste an address instead.
+                  </FormDescription>
+                )}
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <Label>Banner</Label>
+          <SingleImageField
+            value={bannerFile}
+            onChange={setBannerFile}
+            currentUrl={data?.banner}
+            label="Upload banner"
+          />
+        </div>
+      </FormSection>
+
+      <FormSection
+        title="Placement"
+        description="Where this category sits in the storefront, and whether shoppers can see it at all."
+      >
+        <FormField
+          control={form.control}
+          name="sortOrder"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Sort order</FormLabel>
+              <FormControl>
+                {/* A position is two or three digits. Full width put a
+                    three-character value in a box the width of the page. */}
+                <NumberInput className="w-32" {...field} />
+              </FormControl>
+              <FormDescription>Lower numbers appear first. May be negative.</FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="status"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Visibility</FormLabel>
+              {/*
+               * The switch sits beside its own label in a bounded row rather
+               * than being pushed to the far edge of the card: `justify-between`
+               * on a full-width form left the word "Active" and its control at
+               * opposite ends of the page with nothing between them, and no
+               * clear reading order at a glance.
+               */}
+              <FormControl>
+                <label className="flex w-fit cursor-pointer items-center gap-2.5 rounded-md border border-border px-3 py-2">
+                  <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  <span className="text-sm text-foreground">
+                    {field.value ? 'Visible in the storefront' : 'Hidden from the storefront'}
+                  </span>
+                </label>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </FormSection>
 
       {/* Editable here AND from SEO → Page SEO. Both write these same two
           columns through this same endpoint, so there is no copy to sync. */}
-      <FormField
-        control={form.control}
-        name="seoTitle"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Search result title</FormLabel>
-            <FormControl>
-              <Input maxLength={200} {...field} />
-            </FormControl>
-            <FormDescription>
-              Shown as the heading in Google. Leave blank to use the category name.
-            </FormDescription>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      <FormSection
+        title="Search engine listing"
+        description="How this category appears in Google results."
+      >
+        <FormField
+          control={form.control}
+          name="seoTitle"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Search result title</FormLabel>
+              <FormControl>
+                <Input maxLength={200} {...field} />
+              </FormControl>
+              <FormDescription>
+                Shown as the heading in Google. Leave blank to use the category name.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
-      <FormField
-        control={form.control}
-        name="seoDescription"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Search result description</FormLabel>
-            <FormControl>
-              <Textarea rows={3} maxLength={500} {...field} />
-            </FormControl>
-            <FormDescription>
-              The sentence under the link in search results. Around 160 characters.
-            </FormDescription>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+        <FormField
+          control={form.control}
+          name="seoDescription"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Search result description</FormLabel>
+              <FormControl>
+                <Textarea rows={3} maxLength={500} {...field} />
+              </FormControl>
+              <FormDescription>
+                The sentence under the link in search results. Around 160 characters.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </FormSection>
     </ResourceFormPage>
   )
 }

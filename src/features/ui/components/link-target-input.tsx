@@ -40,6 +40,11 @@ export interface LinkTargetInputProps {
   placeholder?: string
   'aria-label'?: string
   className?: string
+  /** Mirrors the backend's cap on `href`, so a long paste never leaves the browser. */
+  maxLength?: number
+  /** Set when this target is the field a row-level error is about. */
+  'aria-invalid'?: boolean
+  'aria-describedby'?: string
 }
 
 export function LinkTargetInput({
@@ -47,6 +52,7 @@ export function LinkTargetInput({
   onChange,
   placeholder = '/about',
   className,
+  maxLength,
   ...rest
 }: LinkTargetInputProps) {
   const [open, setOpen] = React.useState(false)
@@ -65,7 +71,10 @@ export function LinkTargetInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        maxLength={maxLength}
         aria-label={rest['aria-label']}
+        aria-invalid={rest['aria-invalid']}
+        aria-describedby={rest['aria-describedby']}
       />
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>

@@ -167,7 +167,7 @@ export default function CampaignDetailPage() {
               <Badge variant={CAMPAIGN_STATUS_VARIANT[campaign.status]}>{campaign.status}</Badge>
               <Button
                 variant="destructive"
-                size="sm"
+                size="lg"
                 onClick={() =>
                   confirmDialog.confirm(async () => {
                     try {

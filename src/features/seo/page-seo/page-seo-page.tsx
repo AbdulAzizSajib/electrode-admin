@@ -132,11 +132,11 @@ function RowEditor({
       </div>
 
       <div className="flex gap-2">
-        <Button size="sm" onClick={handleSave} disabled={mutation.isPending}>
+        <Button size="lg" onClick={handleSave} disabled={mutation.isPending}>
           <Check className="mr-1.5 size-4" aria-hidden />
           {mutation.isPending ? 'Saving…' : 'Save'}
         </Button>
-        <Button size="sm" variant="ghost" onClick={onDone} disabled={mutation.isPending}>
+        <Button size="lg" variant="ghost" onClick={onDone} disabled={mutation.isPending}>
           <X className="mr-1.5 size-4" aria-hidden />
           Cancel
         </Button>
@@ -290,7 +290,7 @@ export default function PageSeoPage() {
           <div className="flex gap-2">
             <Button
               variant="outline"
-              size="sm"
+              size="lg"
               disabled={meta.page <= 1}
               onClick={() => setPage((p) => p - 1)}
             >
@@ -298,7 +298,7 @@ export default function PageSeoPage() {
             </Button>
             <Button
               variant="outline"
-              size="sm"
+              size="lg"
               disabled={meta.page >= meta.totalPages}
               onClick={() => setPage((p) => p + 1)}
             >

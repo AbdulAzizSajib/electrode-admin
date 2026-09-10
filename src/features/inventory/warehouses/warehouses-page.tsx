@@ -72,7 +72,7 @@ export default function WarehousesPage() {
         title="Warehouses"
         description="Locations that hold and ship your inventory."
         actions={
-          <Button size="sm" onClick={() => navigate(`${WAREHOUSES_PATH}/new`)}>
+          <Button size="lg" onClick={() => navigate(`${WAREHOUSES_PATH}/new`)}>
             <Plus /> New warehouse
           </Button>
         }

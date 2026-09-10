@@ -149,7 +149,15 @@ export const DEFAULT_BRAND_DISPLAY = {
   footerBrandMode: 'TEXT' as BrandDisplayMode,
 }
 
-/** Mirrors the backend's `.max(...)` caps. A save past one of these is rejected there. */
+/**
+ * Mirrors the backend's `.max(...)` caps. A save past one of these is rejected there.
+ *
+ * The `*Length` entries are the per-string caps from the same schemas. They were missing while the
+ * count caps were present, which meant the editors bounded how MANY rows a merchant could add but
+ * not how long any field could be — so a pasted label sailed past the client and came back as a 400
+ * naming a Zod path. That is the exact outcome the block comment at the top of this file says these
+ * constants exist to prevent.
+ */
 export const SETTINGS_LIMITS = {
   mainNavItems: 20,
   navChildren: 20,
@@ -158,6 +166,14 @@ export const SETTINGS_LIMITS = {
   announcementLinks: 6,
   socialLinks: 10,
   checkoutNotice: 300,
+  /** `navChildSchema.label`, `footerColumnsSchema.title`, and the announcement link label. */
+  labelLength: 100,
+  /** `navChildSchema.href` — every nav, footer, and announcement target. */
+  hrefLength: 500,
+  /** The announcement link's Iconify name. */
+  iconLength: 100,
+  /** `announcementBarSchema.text`. */
+  announcementTextLength: 300,
 } as const
 
 /* ------------------------------------------------------------------ *
@@ -758,10 +774,32 @@ export function useStoreSettings() {
   return useQuery({ queryKey: queryKeys.storeSettings.detail, queryFn: getStoreSettings })
 }
 
+/**
+ * Writes a partial settings patch and refreshes what it invalidated.
+ *
+ * `courierProvider` is the one field on this row that a SECOND cache also
+ * answers for: `/courier/config` reports the selected courier alongside the
+ * capabilities of each adapter, and five surfaces read the selection from there
+ * rather than from here — the Orders list and order detail (whether to offer
+ * dispatch at all, and under whose name), the Courier page, its balance card,
+ * and the dispatch preview. That query holds for five minutes, so refreshing
+ * only `storeSettings.detail` leaves every one of them naming the previous
+ * courier, with dispatch still offered for a provider the shop has just
+ * switched away from.
+ *
+ * Conditioned on the payload because these editors send disjoint key sets: a
+ * save from Header Links has no bearing on the courier cache and should not
+ * cost a refetch of it.
+ */
 export function useUpdateStoreSettings() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: updateStoreSettings,
-    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.storeSettings.detail }),
+    onSuccess: (_data, input) => {
+      client.invalidateQueries({ queryKey: queryKeys.storeSettings.detail })
+      if (input.courierProvider !== undefined) {
+        client.invalidateQueries({ queryKey: queryKeys.courier.config })
+      }
+    },
   })
 }

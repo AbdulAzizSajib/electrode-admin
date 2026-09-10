@@ -128,7 +128,7 @@ export default function VouchersPage() {
         title="Vouchers"
         description="Discount codes customers can apply at checkout."
         actions={
-          <Button size="sm" onClick={() => navigate(`${VOUCHERS_PATH}/new`)}>
+          <Button size="lg" onClick={() => navigate(`${VOUCHERS_PATH}/new`)}>
             <Plus /> New voucher
           </Button>
         }

@@ -15,7 +15,7 @@
  * order-status-breakdown, payment-breakdown, returns-refunds) still exist server-side but the
  * dashboard no longer surfaces them; deeper breakdowns live under `/reports` (`reports.ts`).
  */
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
 
@@ -58,10 +58,26 @@ async function getTopProducts(range: DashboardRange): Promise<TopProduct[]> {
   return res.data
 }
 
+/*
+ * `keepPreviousData` on both: the range tabs are the only control on the dashboard, so
+ * without it every 7d↔30d↔90d switch tears the whole page down to skeletons and rebuilds
+ * it — the KPI row, both charts and three lists all jump at once, for a request that
+ * usually resolves in well under a second. Holding the previous range's render (dimmed
+ * by `isPlaceholderData` at the call site) keeps the layout still and makes the switch
+ * read as the data changing rather than the page reloading.
+ */
 export function useDashboardSummary(range: DashboardRange) {
-  return useQuery({ queryKey: queryKeys.dashboard.summary(range), queryFn: () => getDashboardSummary(range) })
+  return useQuery({
+    queryKey: queryKeys.dashboard.summary(range),
+    queryFn: () => getDashboardSummary(range),
+    placeholderData: keepPreviousData,
+  })
 }
 
 export function useTopProducts(range: DashboardRange) {
-  return useQuery({ queryKey: queryKeys.dashboard.topProducts(range), queryFn: () => getTopProducts(range) })
+  return useQuery({
+    queryKey: queryKeys.dashboard.topProducts(range),
+    queryFn: () => getTopProducts(range),
+    placeholderData: keepPreviousData,
+  })
 }

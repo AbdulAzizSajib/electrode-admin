@@ -112,7 +112,7 @@ export function DispatchResult({
       >
         {onRetryFailed ? (
           <Button
-            size="sm"
+            size="lg"
             variant="outline"
             disabled={isRetrying}
             onClick={() => onRetryFailed(failed.map((r) => r.orderId))}

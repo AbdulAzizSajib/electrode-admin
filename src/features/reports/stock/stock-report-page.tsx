@@ -264,7 +264,7 @@ export default function StockReportPage() {
           options={(brands?.data ?? []).map((b) => ({ value: b.id, label: b.name }))}
         />
         <Button
-          size="sm"
+          size="lg"
           variant={lowStockOnly ? 'default' : 'outline'}
           onClick={() => {
             setLowStockOnly((current) => !current)
@@ -275,7 +275,7 @@ export default function StockReportPage() {
         </Button>
         {showsMismatch && (
           <Button
-            size="sm"
+            size="lg"
             variant={mismatchedOnly ? 'default' : 'outline'}
             onClick={() => {
               setMismatchedOnly((current) => !current)

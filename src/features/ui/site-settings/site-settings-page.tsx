@@ -3,6 +3,8 @@ import { Link } from 'react-router'
 import { Loader2, TriangleAlert } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Button } from '@/components/ui/button'
+import { ColorInput } from '@/components/ui/color-input'
+import { ErrorState } from '@/components/ui/error-state'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -133,9 +135,11 @@ function FontPicker({
   onSelect: (family: string) => void
 }) {
   return (
-    <fieldset className="flex flex-col gap-2">
+    <fieldset className="flex flex-col gap-2" aria-describedby={`${name}-hint`}>
       <legend className="text-sm font-medium text-foreground">{label}</legend>
-      <p className="text-xs text-muted-foreground">{hint}</p>
+      <p id={`${name}-hint`} className="text-xs text-muted-foreground">
+        {hint}
+      </p>
 
       <div className="mt-1 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {fonts.map((font) => {
@@ -160,10 +164,17 @@ function FontPicker({
                * scrolled content, where it is already in view and nothing needs
                * to scroll at all.
                */
+              /*
+               * `ring-1 ring-primary` on the selected card matches how
+               * `WidthOption` and `BrandModeField` already mark a chosen-one-of
+               * on this page — a 1px border tint alone was the weakest selected
+               * state of the three, and this grid is the one place with up to
+               * three columns of candidates to scan.
+               */
               className={`relative flex cursor-pointer flex-col gap-1 rounded-md border p-3 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 ${
                 isSelected
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-muted-foreground/40'
+                  ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                  : 'border-border hover:border-primary/50 hover:bg-muted/40'
               }`}
             >
               <span className="flex items-center gap-2">
@@ -183,10 +194,18 @@ function FontPicker({
                 <span className="text-xs font-medium text-foreground">{font.family}</span>
               </span>
 
-              {/* Quoted family plus a fallback, so an unloaded stylesheet
-                  degrades to readable text rather than to nothing. */}
+              {/*
+                Quoted family plus a fallback, so an unloaded stylesheet
+                degrades to readable text rather than to nothing.
+
+                Full-strength foreground, not muted: this specimen IS the
+                content of the control — it is the only thing here a merchant
+                can actually judge a typeface on — and grey text misrepresents
+                the face's weight and colour, which is the specific question
+                being asked. Muted was treating the specimen as a caption.
+              */}
               <span
-                className="text-xl leading-snug text-muted-foreground"
+                className="text-xl leading-snug text-foreground"
                 style={{ fontFamily: `"${font.family}", system-ui, sans-serif` }}
               >
                 Aa Bb Cc
@@ -200,7 +219,7 @@ function FontPicker({
 }
 
 export default function SiteSettingsPage() {
-  const { data, isLoading, error } = useStoreSettings()
+  const { data, isLoading, error, refetch } = useStoreSettings()
   const updateMutation = useUpdateStoreSettings()
   const uploadMutation = useUploadImage()
 
@@ -350,12 +369,22 @@ export default function SiteSettingsPage() {
   }
 
   if (error) {
+    /*
+     * The panel's shared failure block rather than a bare red line, for the
+     * `Try again` alone: a settings read that failed on a dropped connection
+     * left the merchant on a dead end whose only exit was a full page reload,
+     * which on a dirty draft also meant losing it. Same component the dashboard
+     * uses, so a failed settings page and a failed card read as one event.
+     */
     return (
       <div className="flex flex-col gap-4">
         <PageHeader title={TITLE} description={DESCRIPTION} />
-        <p className="text-sm text-destructive">
-          {error instanceof Error ? error.message : 'Could not load the site settings.'}
-        </p>
+        <ErrorState
+          description={
+            error instanceof Error ? error.message : 'Could not load the site settings.'
+          }
+          onRetry={() => void refetch()}
+        />
       </div>
     )
   }
@@ -366,12 +395,18 @@ export default function SiteSettingsPage() {
           the face it names. Removed when this page unmounts. */}
       <FontStylesheets fonts={fonts} />
 
-      <PageHeader title={TITLE} description={DESCRIPTION} />
-
-      <p className="text-xs text-muted-foreground">
-        Storefront pages are cached briefly, so changes here appear on the site within a few
-        minutes.
-      </p>
+      {/*
+        The cache caveat rides in the header's own description rather than as a
+        third line under it. It qualifies the whole page — everything saved here
+        is delayed — and as a separate paragraph it was a second full-width band
+        of small grey text stacked directly above a third, none of them
+        outranking the others, so the eye had to read all three to find where
+        the page actually starts.
+      */}
+      <PageHeader
+        title={TITLE}
+        description={`${DESCRIPTION} Pages are cached briefly, so changes appear on the site within a few minutes.`}
+      />
 
       {/*
         Read-only, and deliberately so. The toggle and the "which page" selector
@@ -380,7 +415,7 @@ export default function SiteSettingsPage() {
         the wrong page live. This line exists so the setting is still findable
         by someone who came looking for it here.
       */}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
         <span className="text-muted-foreground">Your home page currently shows</span>
         <strong className="text-foreground">
           {data?.siteMode === 'LANDING_PAGE' ? 'a single landing page' : 'the full website'}
@@ -603,6 +638,7 @@ export default function SiteSettingsPage() {
           {THEME_COLOR_FIELDS.map((field) => (
             <ColorField
               key={field.key}
+              id={`theme-${field.key}`}
               label={field.label}
               hint={field.hint}
               value={value.theme[field.key as ThemeColorKey]}
@@ -771,7 +807,21 @@ function LogoHeightField({
           value={text}
           onChange={(e) => setTyped(e.target.value)}
           onBlur={commit}
-          className="w-24"
+          /*
+           * Enter commits as well as blur. Clamping only on blur means a height
+           * typed and then saved by keyboard — Enter, or tabbing straight to
+           * Save — reaches `save()` with the draft still holding the OLD number,
+           * so the merchant watches a value they typed vanish on a successful
+           * save. Committing here closes that path; blur still covers the mouse
+           * one.
+           */
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commit()
+            }
+          }}
+          className="w-24 tabular-nums"
         />
         <span className="text-xs text-muted-foreground">
           px ({LOGO_HEIGHT_LIMITS.min}–{LOGO_HEIGHT_LIMITS.max})
@@ -787,8 +837,8 @@ function LogoHeightField({
 /** Shown when a slot is set to Logo but has no image to fall back on. */
 function NoArtworkNote() {
   return (
-    <p className="flex items-start gap-1.5 text-xs text-amber-600">
-      <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+    <p className="flex items-start gap-1.5 text-xs text-warning">
+      <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
       No logo uploaded, so your site name is shown instead.
     </p>
   )
@@ -815,38 +865,48 @@ function Labelled({
   )
 }
 
-/** Native colour picker beside a hex box — the picker for choosing, the text for pasting a brand value. */
+/**
+ * One theme colour, on the panel's shared `ColorInput`.
+ *
+ * Was a local picker-plus-text pair, which is what `ColorInput` already is —
+ * with the one behaviour the local copy lacked: it reports upward only when the
+ * text PARSES as a colour. The local version committed every keystroke, so
+ * clearing the box to paste a brand code wrote `""` into the theme and the
+ * advisory contrast readings below blanked out mid-edit. Keeping the draft
+ * inside the primitive is what stops a half-typed `#f` from becoming the
+ * storefront's brand colour.
+ *
+ * `?? ''` on the way back out: the primitive models "no colour" as undefined,
+ * while every theme key here is a required string the backend will not take a
+ * null for.
+ */
 function ColorField({
+  id,
   label,
   hint,
   value,
   onChange,
 }: {
+  id: string
   label: string
   hint: string
   value: string
   onChange: (next: string) => void
 }) {
+  const hintId = `${id}-hint`
+
   return (
     <div className="flex flex-col gap-1.5">
-      <Label>{label}</Label>
-      <div className="flex items-center gap-2">
-        <input
-          type="color"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="size-9 shrink-0 cursor-pointer rounded-md border border-border bg-transparent p-0.5"
-          aria-label={`${label} colour picker`}
-        />
-        <Input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          spellCheck={false}
-          className="font-mono text-xs"
-          aria-label={`${label} hex value`}
-        />
-      </div>
-      <span className="text-xs text-muted-foreground">{hint}</span>
+      <Label htmlFor={id}>{label}</Label>
+      <ColorInput
+        id={id}
+        value={value}
+        onChange={(next) => onChange(next ?? '')}
+        aria-describedby={hintId}
+      />
+      <span id={hintId} className="text-xs text-muted-foreground">
+        {hint}
+      </span>
     </div>
   )
 }
@@ -893,14 +953,39 @@ function WidthOption({
   )
 }
 
+/**
+ * One advisory readability reading.
+ *
+ * A null ratio renders as "—" rather than disappearing. The row vanishing
+ * mid-keystroke is worse than it looking unresolved: the pair of readings is a
+ * fixed two-line block, so removing one reflows the other upward every time a
+ * merchant selects a hex code and retypes it, and a warning that flickers away
+ * while you edit the very value it judges is the one moment it needed to hold
+ * still. `tabular-nums` keeps the digits from shifting as the ratio changes.
+ */
 function ContrastNote({ label, ratio }: { label: string; ratio: number | null }) {
-  if (ratio === null) return null
+  if (ratio === null) {
+    return (
+      <span className="flex items-center gap-1.5 text-muted-foreground">
+        {label}: <span className="tabular-nums">—</span>
+      </span>
+    )
+  }
+
   const passes = ratio >= AA_CONTRAST
   return (
-    <span className={passes ? 'text-muted-foreground' : 'flex items-center gap-1.5 text-amber-600'}>
-      {!passes && <TriangleAlert className="size-3.5 shrink-0" />}
-      {label}: {ratio.toFixed(1)}:1
-      {passes ? ' — meets AA for body text' : ` — below the ${AA_CONTRAST}:1 AA guideline`}
+    <span
+      className={
+        passes
+          ? 'flex items-center gap-1.5 text-muted-foreground'
+          : 'flex items-center gap-1.5 text-warning'
+      }
+    >
+      {!passes && <TriangleAlert aria-hidden className="size-3.5 shrink-0" />}
+      <span>
+        {label}: <span className="tabular-nums">{ratio.toFixed(1)}:1</span>
+        {passes ? ' — meets AA for body text' : ` — below the ${AA_CONTRAST}:1 AA guideline`}
+      </span>
     </span>
   )
 }
@@ -927,26 +1012,39 @@ function LogoField({
     <div className="flex flex-col gap-2">
       <Label>{label}</Label>
       <div
+        /*
+         * The dark swatch is the sidebar token, not a raw neutral: it is
+         * standing in for the storefront's dark footer, and the panel already
+         * owns one "this is a dark surface" colour. A hardcoded `neutral-900`
+         * drifts from it the moment either is retuned.
+         */
         className={`flex h-24 items-center justify-center rounded-md border border-border p-2 ${
-          dark ? 'bg-neutral-900' : 'bg-muted'
+          dark ? 'bg-sidebar' : 'bg-muted'
         }`}
       >
         {busy ? (
-          <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          <Loader2 aria-hidden className="size-5 animate-spin text-muted-foreground" />
         ) : url ? (
-          <img src={url} alt={label} className="max-h-full max-w-full object-contain" />
+          /*
+           * `alt` is the empty string deliberately. The slot is already named by
+           * its `<Label>` directly above, so a filled one announces "Header
+           * logo, Header logo" — and the artwork carries no information the
+           * merchant who just uploaded it does not have. Decorative here, unlike
+           * on the storefront where the same image IS the brand's name.
+           */
+          <img src={url} alt="" className="max-h-full max-w-full object-contain" />
         ) : (
-          <span className={`text-xs ${dark ? 'text-neutral-400' : 'text-muted-foreground'}`}>
+          <span className={`text-xs ${dark ? 'text-sidebar-foreground' : 'text-muted-foreground'}`}>
             Not set
           </span>
         )}
       </div>
       <div className="flex gap-2">
-        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => inputRef.current?.click()}>
+        <Button type="button" variant="outline" disabled={busy} onClick={() => inputRef.current?.click()}>
           {url ? 'Replace' : 'Upload'}
         </Button>
         {url && (
-          <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={onClear}>
+          <Button type="button" variant="ghost" className="text-destructive hover:bg-destructive/10" disabled={busy} onClick={onClear}>
             Remove
           </Button>
         )}

@@ -202,11 +202,11 @@ export default function OrdersListPage() {
             {selection.length} order{selection.length === 1 ? '' : 's'} selected
           </span>
           {canDispatch && (
-            <Button size="sm" onClick={() => setDispatchOpen(true)}>
+            <Button size="lg" onClick={() => setDispatchOpen(true)}>
               <Truck /> Send to {courierName}
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={() => setSelection([])}>
+          <Button size="lg" variant="ghost" onClick={() => setSelection([])}>
             Clear
           </Button>
         </div>

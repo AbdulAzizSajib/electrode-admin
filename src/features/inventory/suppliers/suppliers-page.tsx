@@ -73,7 +73,7 @@ export default function SuppliersPage() {
         title="Suppliers"
         description="Vendors you purchase inventory from."
         actions={
-          <Button size="sm" onClick={() => navigate(`${SUPPLIERS_PATH}/new`)}>
+          <Button size="lg" onClick={() => navigate(`${SUPPLIERS_PATH}/new`)}>
             <Plus /> New supplier
           </Button>
         }

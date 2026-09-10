@@ -77,7 +77,7 @@ export default function PurchaseOrdersListPage() {
         title="Purchase Orders"
         description="Replenish inventory from your suppliers."
         actions={
-          <Button size="sm" onClick={() => navigate('/inventory/purchase-orders/new')}>
+          <Button size="lg" onClick={() => navigate('/inventory/purchase-orders/new')}>
             <Plus /> New purchase order
           </Button>
         }
@@ -108,7 +108,7 @@ export default function PurchaseOrdersListPage() {
               </SelectContent>
             </Select>
             <Button
-              size="sm"
+              size="lg"
               variant={owingOnly ? 'default' : 'outline'}
               className="h-8"
               onClick={() => { setOwingOnly((current) => !current); setPage(1) }}

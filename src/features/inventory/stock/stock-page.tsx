@@ -267,11 +267,11 @@ export default function StockPage() {
           {/* Offered on any row with stock to move, but led with on the stranded
               ones — for those it is the only thing that makes the stock sellable. */}
           {strandedById[row.original.id] && (
-            <Button variant="default" size="sm" onClick={() => setReassigning(row.original)}>
+            <Button variant="default" size="lg" onClick={() => setReassigning(row.original)}>
               <Shuffle /> Fix variant
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={() => setAdjusting(row.original)}>
+          <Button variant="outline" size="lg" onClick={() => setAdjusting(row.original)}>
             <SlidersHorizontal /> Adjust
           </Button>
         </div>

@@ -96,13 +96,13 @@ export default function ReturnDetailPage() {
             <>
               <Badge variant={STATUS_VARIANT[ret.status]} className="mr-1">{STATUS_LABEL[ret.status]}</Badge>
               {allowed.includes('APPROVED') && (
-                <Button size="sm" variant="outline" onClick={() => setStatus('APPROVED')}><CheckCircle2 /> Approve</Button>
+                <Button size="lg" variant="outline" onClick={() => setStatus('APPROVED')}><CheckCircle2 /> Approve</Button>
               )}
               {allowed.includes('REJECTED') && (
-                <Button size="sm" variant="destructive" onClick={() => setStatus('REJECTED')}><XCircle /> Reject</Button>
+                <Button size="lg" variant="destructive" onClick={() => setStatus('REJECTED')}><XCircle /> Reject</Button>
               )}
               {canComplete && (
-                <Button size="sm" onClick={() => setCompleteOpen(true)}>
+                <Button size="lg" onClick={() => setCompleteOpen(true)}>
                   <CheckCircle2 /> Complete & restock
                 </Button>
               )}
@@ -110,7 +110,7 @@ export default function ReturnDetailPage() {
                   and offering the control invites the operator to try. */}
               {allowed.length > 0 && (
                 <Button
-                  size="sm"
+                  size="lg"
                   variant="outline"
                   onClick={() => { setPickedStatus(allowed[0]); setStatusOpen(true) }}
                 >

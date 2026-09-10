@@ -2,6 +2,7 @@ import { Suspense, useEffect } from 'react'
 import { Outlet } from 'react-router'
 import { Loader2 } from 'lucide-react'
 import { SidebarNav } from '@/components/layout/sidebar-nav'
+import { ShellBrand } from '@/components/layout/shell-brand'
 import { Topbar } from '@/components/layout/topbar'
 import { BreadcrumbLabelProvider } from '@/components/layout/breadcrumb-context'
 import { useCurrencyFormatSync } from '@/components/providers/currency-format-provider'
@@ -103,11 +104,16 @@ export function ShellLayout() {
             sidebarCollapsed ? 'w-16' : 'w-76',
           )}
         >
-          <div className="flex h-14 shrink-0 items-center gap-2 border-b border-sidebar-border px-3">
-            <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
-              E
-            </div>
-            {!sidebarCollapsed && <span className="text-sm font-semibold text-white">Ecom Admin</span>}
+          {/* No `gap` — the lockup is one text node now that the monogram tile
+              is gone. Collapsed, the padding comes off so the initial centres in
+              the 4rem rail rather than sitting left of centre. */}
+          <div
+            className={cn(
+              'flex h-14 shrink-0 items-center border-b border-sidebar-border',
+              sidebarCollapsed ? 'px-0' : 'px-3',
+            )}
+          >
+            <ShellBrand collapsed={sidebarCollapsed} />
           </div>
           <div
             ref={sidebarScrollRef}
@@ -119,11 +125,8 @@ export function ShellLayout() {
 
         <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
           <SheetContent side="left" className="w-76 max-w-[80vw] bg-sidebar p-0">
-            <div className="flex h-12 shrink-0 items-center gap-2 border-b border-sidebar-border px-3">
-              <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
-                E
-              </div>
-              <span className="text-sm font-semibold text-white">Ecom Admin</span>
+            <div className="flex h-12 shrink-0 items-center border-b border-sidebar-border px-3">
+              <ShellBrand />
             </div>
             <div
               ref={mobileNavScrollRef}

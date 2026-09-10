@@ -32,7 +32,7 @@ export function ExportButton({ onExport }: { onExport: () => Promise<void> }) {
   }
 
   return (
-    <Button size="sm" variant="outline" onClick={handleClick} disabled={isExporting}>
+    <Button size="lg" variant="outline" onClick={handleClick} disabled={isExporting}>
       {isExporting ? <Loader2 className="animate-spin" /> : <Download />}
       {isExporting ? 'Exporting…' : 'Export CSV'}
     </Button>

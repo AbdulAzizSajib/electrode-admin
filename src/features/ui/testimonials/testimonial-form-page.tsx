@@ -241,7 +241,7 @@ function TestimonialFields({
 
           <Button
             type="button"
-            size="sm"
+            size="lg"
             variant="outline"
             disabled={uploading}
             onClick={() => inputRef.current?.click()}
@@ -253,7 +253,7 @@ function TestimonialFields({
           {photoUrl && (
             <Button
               type="button"
-              size="sm"
+              size="lg"
               variant="ghost"
               onClick={() => form.setValue('photoUrl', '')}
             >

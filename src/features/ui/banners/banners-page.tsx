@@ -65,10 +65,10 @@ export default function BannersPage() {
         description="Promotional banners outside the homepage hero — header, mid-page, footer, sidebar and popup."
         actions={
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => navigate('/ui/home-slider')}>
+            <Button size="lg" variant="outline" onClick={() => navigate('/ui/home-slider')}>
               <GalleryHorizontal /> Home slider
             </Button>
-            <Button size="sm" onClick={() => navigate(`${BANNERS_PATH}/new`)}>
+            <Button size="lg" onClick={() => navigate(`${BANNERS_PATH}/new`)}>
               <Plus /> New banner
             </Button>
           </div>

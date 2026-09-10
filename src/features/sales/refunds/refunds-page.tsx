@@ -125,7 +125,7 @@ export default function RefundsPage() {
         title="Refunds"
         description="Refunds issued against customer orders."
         actions={
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
+          <Button size="lg" onClick={() => setCreateOpen(true)}>
             <Plus /> New refund
           </Button>
         }
@@ -224,7 +224,7 @@ export default function RefundsPage() {
                       }}
                     />
                     <Button
-                      size="sm"
+                      size="lg"
                       variant="outline"
                       loading={updateMutation.isPending}
                       onClick={submitAmend}

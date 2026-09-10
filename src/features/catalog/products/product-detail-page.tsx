@@ -60,14 +60,14 @@ export default function ProductDetailPage() {
           description={product.sku ?? undefined}
           actions={
             <>
-              <Button variant="outline" size="sm" asChild>
+              <Button variant="outline" size="lg" asChild>
                 <Link to={`/catalog/products/${product.id}/edit`}>
                   <Pencil /> Edit
                 </Link>
               </Button>
               <Button
                 variant="destructive"
-                size="sm"
+                size="lg"
                 onClick={() =>
                   confirmDialog.confirm(async () => {
                     try {

@@ -129,31 +129,31 @@ export default function PurchaseOrderDetailPage() {
             <>
               <Badge variant={STATUS_VARIANT[po.status]} className="mr-1">{STATUS_LABEL[po.status]}</Badge>
               {po.status === 'DRAFT' && (
-                <Button variant="outline" size="sm" onClick={() => setStatus('ORDERED')} loading={updateMutation.isPending}>
+                <Button variant="outline" size="lg" onClick={() => setStatus('ORDERED')} loading={updateMutation.isPending}>
                   <Send /> Mark as ordered
                 </Button>
               )}
               {canReceive && (
-                <Button size="sm" onClick={openReceiveDialog}>
+                <Button size="lg" onClick={openReceiveDialog}>
                   <PackageCheck /> Receive
                 </Button>
               )}
               {canEdit && (
-                <Button variant="outline" size="sm" asChild>
+                <Button variant="outline" size="lg" asChild>
                   <Link to={`/inventory/purchase-orders/${po.id}/edit`}>
                     <Pencil /> Edit
                   </Link>
                 </Button>
               )}
               {canEdit && (
-                <Button variant="outline" size="sm" onClick={() => setStatus('CANCELLED')} loading={updateMutation.isPending}>
+                <Button variant="outline" size="lg" onClick={() => setStatus('CANCELLED')} loading={updateMutation.isPending}>
                   <Ban /> Cancel
                 </Button>
               )}
               {!hasReceived && (
                 <Button
                   variant="destructive"
-                  size="sm"
+                  size="lg"
                   onClick={() =>
                     confirmDialog.confirm(async () => {
                       try {

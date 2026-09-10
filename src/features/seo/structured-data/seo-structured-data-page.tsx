@@ -163,7 +163,7 @@ export default function SeoStructuredDataPage() {
           <Button
             type="button"
             variant="outline"
-            size="sm"
+            size="lg"
             className="self-start"
             onClick={() => setOrg({ sameAs: [...org.sameAs, ''] })}
           >

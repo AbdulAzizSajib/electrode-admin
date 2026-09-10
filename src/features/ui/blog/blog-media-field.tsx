@@ -96,7 +96,7 @@ export function BlogMediaField({
             <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
               <ImageIcon className="size-3.5" aria-hidden /> Image
             </span>
-            <Button type="button" variant="ghost" size="sm" className="self-start" onClick={clear}>
+            <Button type="button" variant="ghost" size="lg" className="self-start" onClick={clear}>
               <Trash2 className="size-4" /> Remove
             </Button>
           </div>
@@ -119,7 +119,7 @@ export function BlogMediaField({
             <span className="text-xs text-muted-foreground">
               Listings show this frame; the video plays on the post&apos;s own page.
             </span>
-            <Button type="button" variant="ghost" size="sm" className="self-start" onClick={clear}>
+            <Button type="button" variant="ghost" size="lg" className="self-start" onClick={clear}>
               <Trash2 className="size-4" /> Remove
             </Button>
           </div>
@@ -164,7 +164,7 @@ export function BlogMediaField({
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
-          size="sm"
+          size="lg"
           variant="outline"
           disabled={busy !== null}
           onClick={() => imageInputRef.current?.click()}
@@ -175,7 +175,7 @@ export function BlogMediaField({
 
         <Button
           type="button"
-          size="sm"
+          size="lg"
           variant="outline"
           disabled={busy !== null}
           onClick={() => videoInputRef.current?.click()}
@@ -186,7 +186,7 @@ export function BlogMediaField({
 
         <Button
           type="button"
-          size="sm"
+          size="lg"
           variant="ghost"
           disabled={busy !== null}
           onClick={() => posterInputRef.current?.click()}

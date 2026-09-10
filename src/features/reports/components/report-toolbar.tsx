@@ -96,7 +96,7 @@ export function ReportToolbar({
               </button>
             </Badge>
           ))}
-          <Button size="sm" variant="ghost" onClick={onClearAll} className="h-6 px-2 text-xs">
+          <Button size="lg" variant="ghost" onClick={onClearAll} className="h-6 px-2 text-xs">
             Clear all
           </Button>
         </div>

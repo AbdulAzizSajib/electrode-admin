@@ -89,10 +89,10 @@ export default function BrandsPage() {
         description="Manage the brands carried in your store."
         actions={
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => navigate(`${BRANDS_PATH}/bulk`)}>
+            <Button size="lg" variant="outline" onClick={() => navigate(`${BRANDS_PATH}/bulk`)}>
               <ListPlus /> Bulk add
             </Button>
-            <Button size="sm" onClick={() => navigate(`${BRANDS_PATH}/new`)}>
+            <Button size="lg" onClick={() => navigate(`${BRANDS_PATH}/new`)}>
               <Plus /> New brand
             </Button>
           </div>

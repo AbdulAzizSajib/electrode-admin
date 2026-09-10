@@ -205,7 +205,7 @@ export default function ProductsListPage() {
         title="Products"
         description="Manage the products available in your store."
         actions={
-          <Button size="sm" onClick={() => navigate('/catalog/products/new')}>
+          <Button size="lg" onClick={() => navigate('/catalog/products/new')}>
             <Plus /> New product
           </Button>
         }

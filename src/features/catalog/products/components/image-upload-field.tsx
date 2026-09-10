@@ -188,7 +188,7 @@ export function ImageUploadField({
       />
       <Button
         type="button"
-        size="sm"
+        size="lg"
         variant="outline"
         className="self-start"
         onClick={() => inputRef.current?.click()}

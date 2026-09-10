@@ -7,10 +7,11 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table'
-import { ArrowDown, ArrowUp, ArrowUpDown, AlertTriangle } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { DataPagination } from '@/components/ui/pagination'
 import { EmptyState, type EmptyStateProps } from '@/components/ui/empty-state'
+import { ErrorState } from '@/components/ui/error-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -52,6 +53,16 @@ export interface DataTableProps<TData> {
   onSelectionChange?: (selection: string[]) => void
   /** Stable id per row. Required for selection; ignored without it. */
   getRowId?: (row: TData) => string
+  /**
+   * Hides the pager while everything fits on one page.
+   *
+   * Opt-in rather than the default: for most of the panel's lists the row of
+   * "Showing 1–7 of 7" and a rows-per-page select is useful furniture even when
+   * it has nothing to page, and removing it everywhere would make short and long
+   * lists look like different components. The categories table asks for it
+   * because its rows are a hierarchy — see that page's `PAGINATE_ABOVE`.
+   */
+  hidePagerWhenSinglePage?: boolean
 }
 
 export function DataTable<TData>({
@@ -77,6 +88,7 @@ export function DataTable<TData>({
   selection,
   onSelectionChange,
   getRowId,
+  hidePagerWhenSinglePage = false,
 }: DataTableProps<TData>) {
   const [internalSorting, setInternalSorting] = React.useState<SortingState>([])
   const sorting = controlledSorting ?? internalSorting
@@ -255,22 +267,7 @@ export function DataTable<TData>({
           ) : isError ? (
             <TableRow className="hover:bg-transparent">
               <TableCell colSpan={tableColumns.length} className="py-8">
-                <EmptyState
-                  icon={AlertTriangle}
-                  title="Couldn't load data"
-                  description={errorMessage}
-                  action={
-                    onRetry && (
-                      <button
-                        type="button"
-                        onClick={onRetry}
-                        className="text-xs font-medium text-primary hover:underline"
-                      >
-                        Try again
-                      </button>
-                    )
-                  }
-                />
+                <ErrorState description={errorMessage} onRetry={onRetry} />
               </TableCell>
             </TableRow>
           ) : table.getRowModel().rows.length === 0 ? (
@@ -300,7 +297,7 @@ export function DataTable<TData>({
         </TableBody>
       </Table>
 
-      {!isError && (
+      {!isError && !(hidePagerWhenSinglePage && pageCount <= 1) && (
         <DataPagination
           page={page}
           pageCount={pageCount}

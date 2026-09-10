@@ -288,7 +288,7 @@ export default function PurchasesReportPage() {
           options={GROUP_OPTIONS}
         />
         <Button
-          size="sm"
+          size="lg"
           variant={owingOnly ? 'default' : 'outline'}
           onClick={() => {
             setOwingOnly((current) => !current)
@@ -298,7 +298,7 @@ export default function PurchasesReportPage() {
           Owing only
         </Button>
         <Button
-          size="sm"
+          size="lg"
           variant={includeDrafts ? 'default' : 'outline'}
           onClick={() => {
             setIncludeDrafts((current) => !current)

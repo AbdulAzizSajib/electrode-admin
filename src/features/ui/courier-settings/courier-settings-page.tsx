@@ -55,6 +55,16 @@ const CAPABILITY_LABELS: { key: keyof CourierProviderInfo['capabilities']; label
   { key: 'returns', label: 'Return requests' },
 ]
 
+/**
+ * What this courier can and cannot do.
+ *
+ * Three separate carriers for one distinction, because each fails a different
+ * reader: the icon and the tint go to whoever is scanning, and the
+ * visually-hidden word goes to whoever is listening. Strikethrough alone said
+ * it in CSS, which is exactly the channel a screen reader does not receive —
+ * "Send orders" and "Send orders" read identically whether or not the courier
+ * can do it, and this is the list a merchant picks a courier from.
+ */
 function CapabilityList({ provider }: { provider: CourierProviderInfo }) {
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -64,10 +74,15 @@ function CapabilityList({ provider }: { provider: CourierProviderInfo }) {
           <Badge
             key={key}
             variant={supported ? 'secondary' : 'outline'}
-            className={supported ? '' : 'text-muted-foreground line-through'}
+            className={supported ? '' : 'text-muted-foreground'}
           >
-            {supported ? <Check className="size-3" /> : <X className="size-3" />}
+            {supported ? (
+              <Check className="size-3 text-success" aria-hidden />
+            ) : (
+              <X className="size-3" aria-hidden />
+            )}
             {label}
+            <span className="sr-only">{supported ? ' supported' : ' not supported'}</span>
           </Badge>
         )
       })}
@@ -85,10 +100,10 @@ function CapabilityList({ provider }: { provider: CourierProviderInfo }) {
  * itself configured because there is nothing to configure, and saying otherwise
  * would show a working setup as broken.
  */
-function ConfigurationNote({ provider }: { provider: CourierProviderInfo }) {
+function ConfigurationNote({ id, provider }: { id: string; provider: CourierProviderInfo }) {
   if (!provider.capabilities.dispatch) {
     return (
-      <p className="text-xs text-muted-foreground">
+      <p id={id} className="text-xs text-muted-foreground">
         Orders are handed over by hand. Record each shipment on its order.
       </p>
     )
@@ -96,9 +111,10 @@ function ConfigurationNote({ provider }: { provider: CourierProviderInfo }) {
 
   if (!provider.credentialsConfigured) {
     return (
-      <p className="flex items-start gap-1.5 text-xs text-destructive">
-        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+      <p id={id} className="flex items-start gap-1.5 text-xs text-destructive">
+        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         <span>
+          <span className="sr-only">Warning: </span>
           API credentials are not set on the server, so dispatch will be refused. Add them to the
           server environment before selecting this courier.
         </span>
@@ -108,8 +124,8 @@ function ConfigurationNote({ provider }: { provider: CourierProviderInfo }) {
 
   if (provider.capabilities.webhook && !provider.webhookConfigured) {
     return (
-      <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+      <p id={id} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         <span>
           Credentials are set, but no webhook token is configured. Dispatch works; delivery
           statuses will only refresh on the scheduled sync rather than the moment they change.
@@ -119,13 +135,15 @@ function ConfigurationNote({ provider }: { provider: CourierProviderInfo }) {
   }
 
   return (
-    <p className="text-xs text-muted-foreground">Configured and ready to dispatch.</p>
+    <p id={id} className="text-xs text-muted-foreground">
+      Configured and ready to dispatch.
+    </p>
   )
 }
 
 export default function CourierSettingsPage() {
-  const { data: settings, isLoading } = useStoreSettings()
-  const { data: config, isLoading: configLoading } = useCourierConfig()
+  const { data: settings, isLoading, error } = useStoreSettings()
+  const { data: config, isLoading: configLoading, error: configError } = useCourierConfig()
   const updateSettings = useUpdateStoreSettings()
 
   const draft = useSettingsDraft<{ courierProvider: CourierProvider }>(
@@ -163,7 +181,37 @@ export default function CourierSettingsPage() {
     )
   }
 
+  /*
+   * A failed load is said, not rendered around.
+   *
+   * Both queries resolve to undefined on failure, which without this branch left
+   * the page drawing an empty courier card over a live Save bar — a card that
+   * claims this shop has no couriers to choose from, which is a different and
+   * wrong statement. The draft would meanwhile be seeded from
+   * DEFAULT_COURIER_SETTINGS, showing STEADFAST selected on a shop that may be
+   * set to something else entirely.
+   */
+  if (error || configError) {
+    const failure = error ?? configError
+    return (
+      <div className="flex flex-col gap-4">
+        <PageHeader title={TITLE} description={DESCRIPTION} />
+        <p className="text-sm text-destructive">
+          {failure instanceof Error ? failure.message : 'Could not load the courier settings.'}
+        </p>
+      </div>
+    )
+  }
+
   const providers = config?.providers ?? []
+  /*
+   * The courier the SERVER is on, which is not the same as the one the radio
+   * shows. Once someone changes the selection, the ring has moved to their
+   * intent and nothing marks what orders are still dispatching through — the
+   * one fact they need when the save is about to be refused for parcels in
+   * transit.
+   */
+  const activeProvider = config?.configured
 
   return (
     <div className="flex flex-col gap-4">
@@ -172,7 +220,7 @@ export default function CourierSettingsPage() {
       <Card className="flex flex-col gap-4 p-4">
         <div className="flex flex-col gap-0.5">
           <span className="flex items-center gap-1.5 font-medium text-foreground">
-            <Truck className="size-4" /> Courier service
+            <Truck className="size-4" aria-hidden /> Courier service
           </span>
           <span className="text-xs text-muted-foreground">
             Orders you dispatch go to the courier selected here. Parcels already on their way stay
@@ -180,6 +228,18 @@ export default function CourierSettingsPage() {
           </span>
         </div>
 
+        {/*
+          * A server that reports no providers at all is a deployment fault, not
+          * an empty list to render a bare card around. Saying so beats an
+          * apparently-working page with nothing in it, which reads as "this shop
+          * has no couriers" — something that is never true.
+          */}
+        {providers.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            The server reported no courier integrations. Check that the courier providers are
+            registered on the server before dispatching orders.
+          </p>
+        ) : (
         <RadioGroup
           value={draft.value.courierProvider}
           onValueChange={(value) =>
@@ -187,29 +247,39 @@ export default function CourierSettingsPage() {
           }
           className="flex flex-col gap-2"
         >
-          {providers.map((provider) => (
-            <Label
-              key={provider.id}
-              htmlFor={`courier-${provider.id}`}
-              className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${
-                draft.value.courierProvider === provider.id
-                  ? 'border-primary bg-accent/40'
-                  : 'border-border'
-              }`}
-            >
-              <RadioGroupItem
-                id={`courier-${provider.id}`}
-                value={provider.id}
-                className="mt-1"
-              />
-              <div className="flex flex-col gap-1.5">
-                <span className="font-medium text-foreground">{provider.displayName}</span>
-                <CapabilityList provider={provider} />
-                <ConfigurationNote provider={provider} />
-              </div>
-            </Label>
-          ))}
+          {providers.map((provider) => {
+            const noteId = `courier-${provider.id}-note`
+            const isActive = provider.id === activeProvider
+            return (
+              <Label
+                key={provider.id}
+                htmlFor={`courier-${provider.id}`}
+                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${
+                  draft.value.courierProvider === provider.id
+                    ? 'border-primary bg-accent/40'
+                    : 'border-border hover:border-input hover:bg-accent/20'
+                }`}
+              >
+                <RadioGroupItem
+                  id={`courier-${provider.id}`}
+                  value={provider.id}
+                  className="mt-1"
+                  aria-describedby={noteId}
+                />
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-foreground">{provider.displayName}</span>
+                    {/* Marks the server's answer, so it survives changing the selection. */}
+                    {isActive && <Badge variant="secondary">Current</Badge>}
+                  </span>
+                  <CapabilityList provider={provider} />
+                  <ConfigurationNote id={noteId} provider={provider} />
+                </div>
+              </Label>
+            )
+          })}
         </RadioGroup>
+        )}
 
         {/*
           * Stated up front rather than only on the refusal. A merchant who reads

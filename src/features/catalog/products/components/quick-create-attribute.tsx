@@ -143,7 +143,7 @@ export function QuickCreateAttribute({
           <Button
             type="button"
             variant="outline"
-            size="sm"
+            size="lg"
             className="self-start"
             onClick={() =>
               setRows((current) => [...current, emptyRow(Number(current.at(-1)?.key.slice(1)) + 1)])

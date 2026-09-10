@@ -11,7 +11,7 @@ export default function NotFoundPage() {
         title="Page not found"
         description="The page you're looking for doesn't exist or has moved."
         action={
-          <Button asChild size="sm" className="mt-1">
+          <Button asChild size="lg" className="mt-1">
             <Link to="/dashboard">Back to Dashboard</Link>
           </Button>
         }

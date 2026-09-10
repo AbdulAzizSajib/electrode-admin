@@ -130,7 +130,7 @@ export function SupplierPaymentsCard({
             )}
           </CardTitle>
           {canPay && balanceDue > 0 && (
-            <Button size="sm" variant="outline" onClick={openDialog}>
+            <Button size="lg" variant="outline" onClick={openDialog}>
               <CreditCard /> Record payment
             </Button>
           )}

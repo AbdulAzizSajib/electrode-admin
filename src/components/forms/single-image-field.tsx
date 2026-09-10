@@ -51,7 +51,7 @@ export function SingleImageField({ value, onChange, currentUrl, label = 'Upload 
               {value ? value.name : 'Current image'}
             </span>
             {value && (
-              <Button type="button" variant="ghost" size="sm" className="self-start" onClick={clear}>
+              <Button type="button" variant="ghost" size="lg" className="self-start" onClick={clear}>
                 <Trash2 className="size-4" /> Remove
               </Button>
             )}
@@ -66,7 +66,7 @@ export function SingleImageField({ value, onChange, currentUrl, label = 'Upload 
         className="hidden"
         onChange={(e) => onChange(e.target.files?.[0] ?? null)}
       />
-      <Button type="button" size="sm" variant="outline" className="self-start" onClick={() => inputRef.current?.click()}>
+      <Button type="button" size="lg" variant="outline" className="self-start" onClick={() => inputRef.current?.click()}>
         <ImagePlus /> {value ? 'Change file' : label}
       </Button>
     </div>

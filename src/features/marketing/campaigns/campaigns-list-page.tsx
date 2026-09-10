@@ -64,7 +64,7 @@ export default function CampaignsListPage() {
         title="Campaigns"
         description="Time-boxed promotions that discount a set of products."
         actions={
-          <Button size="sm" onClick={() => navigate(`${CAMPAIGNS_PATH}/new`)}>
+          <Button size="lg" onClick={() => navigate(`${CAMPAIGNS_PATH}/new`)}>
             <Plus /> New campaign
           </Button>
         }

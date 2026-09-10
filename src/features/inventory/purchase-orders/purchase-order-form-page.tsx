@@ -520,7 +520,7 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
               {isEdit && !canAmendItems ? (
                 <CardDescription>A cancelled purchase order's line items can't be changed.</CardDescription>
               ) : (
-                <Button type="button" size="sm" variant="outline" onClick={addItem}>
+                <Button type="button" size="lg" variant="outline" onClick={addItem}>
                   <Plus /> Add item
                 </Button>
               )}

@@ -116,7 +116,10 @@ export function useCourierConfig() {
     queryKey: queryKeys.courier.config,
     queryFn: getCourierConfig,
     // Credentials change by redeploy and the selection by an explicit save,
-    // which invalidates this key. Neither drifts on its own.
+    // which invalidates this key from `useUpdateStoreSettings`. Neither drifts
+    // on its own — but note that this hold is long enough that if that
+    // invalidation is ever dropped, every courier surface keeps naming the
+    // previous courier for five minutes rather than visibly breaking.
     staleTime: 5 * 60 * 1000,
   })
 }

@@ -162,7 +162,7 @@ export function MediaSidebar({
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
+                size="lg"
                 onClick={() => onVideoChange({ url: null, thumbnailUrl: null })}
               >
                 <Trash2 className="size-4" /> Remove video
@@ -197,7 +197,7 @@ export function MediaSidebar({
                 <Button
                   type="button"
                   variant="outline"
-                  size="sm"
+                  size="lg"
                   onClick={() => posterInputRef.current?.click()}
                   disabled={uploadMutation.isPending}
                 >
@@ -205,7 +205,7 @@ export function MediaSidebar({
                 </Button>
                 <Button
                   type="button"
-                  size="sm"
+                  size="lg"
                   onClick={() => videoInputRef.current?.click()}
                   disabled={uploadMutation.isPending}
                 >
@@ -322,7 +322,7 @@ export function MediaSidebar({
                 <Button
                   type="button"
                   variant="outline"
-                  size="sm"
+                  size="lg"
                   className="self-start"
                   onClick={() =>
                     onImagesChange([

@@ -64,7 +64,7 @@ export function ImageUrlField({
         <Button
           type="button"
           variant="outline"
-          size="sm"
+          size="lg"
           disabled={busy}
           onClick={() => inputRef.current?.click()}
         >
@@ -79,7 +79,7 @@ export function ImageUrlField({
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="lg"
             onClick={() => onChange('')}
             aria-label="Clear image"
           >

@@ -84,7 +84,7 @@ export default function NotificationsPage() {
         title="Notifications"
         description="Recent activity across your store."
         actions={
-          <Button variant="outline" size="sm" disabled={!hasUnread} onClick={() => markAllRead.mutate()} loading={markAllRead.isPending}>
+          <Button variant="outline" size="lg" disabled={!hasUnread} onClick={() => markAllRead.mutate()} loading={markAllRead.isPending}>
             <CheckCheck /> Mark all as read
           </Button>
         }

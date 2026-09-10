@@ -5,7 +5,6 @@ import {
   ImageOff,
   Pencil,
   Plus,
-  RefreshCw,
   Trash2,
   TriangleAlert,
 } from 'lucide-react'
@@ -14,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ErrorState } from '@/components/ui/error-state'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
 import {
@@ -27,10 +27,8 @@ import { SlotEditorDialog } from '@/features/ui/home-slider/slot-editor-dialog'
 import { moveItem } from '@/features/ui/components/settings-editor-utils'
 import {
   HERO_SLOTS,
-  formatRatio,
   formatSize,
   getHeroSlot,
-  renderedSize,
   type HeroSlot,
 } from '@/features/ui/home-slider/hero-slots'
 import {
@@ -58,11 +56,19 @@ import { cn } from '@/lib/utils/cn'
  * empty promo tile looks like the wide strip it will become rather than like
  * another row in a table.
  */
+/**
+ * One copy of three that had drifted: the loading and error headers promised
+ * "as the storefront lays it out" while the loaded one added a second sentence
+ * about artwork sizes — a sentence that is no longer true of this page, since
+ * the sizes now live in the editor dialog beside the upload control.
+ */
+const PAGE_DESCRIPTION = 'The homepage hero, laid out as the storefront renders it.'
+
 export default function HomeSliderPage() {
   // One request for all three placements: `GET /banners/admin` returns every
   // region, and three filtered calls would be three round trips for the same
   // rows.
-  const { data, isLoading, error } = useBanners({ limit: 100 })
+  const { data, isLoading, error, refetch } = useBanners({ limit: 100 })
   const updateMutation = useUpdateBanner()
   const deleteMutation = useDeleteBanner()
   const confirmDialog = useConfirmDialog()
@@ -188,7 +194,7 @@ export default function HomeSliderPage() {
   if (isLoading) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader title="Home slider" description="The homepage hero, as the storefront lays it out." />
+        <PageHeader title="Home slider" description={PAGE_DESCRIPTION} />
         <Skeleton className="h-136 w-full" />
       </div>
     )
@@ -197,20 +203,18 @@ export default function HomeSliderPage() {
   if (error) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader title="Home slider" description="The homepage hero, as the storefront lays it out." />
-        <p className="text-sm text-destructive">
-          {error instanceof Error ? error.message : 'Could not load the hero.'}
-        </p>
+        <PageHeader title="Home slider" description={PAGE_DESCRIPTION} />
+        <ErrorState
+          description={error instanceof Error ? error.message : 'Could not load the hero.'}
+          onRetry={() => void refetch()}
+        />
       </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Home slider"
-        description="The homepage hero, laid out as the storefront renders it. Each slot shows the artwork size it needs."
-      />
+      <PageHeader title="Home slider" description={PAGE_DESCRIPTION} />
 
       {/*
         Mirrors `Hero.tsx`: a flexible slider on the left and a fixed-width
@@ -223,7 +227,6 @@ export default function HomeSliderPage() {
           <SlotSection
             slot={sliderSlot}
             count={slides.length}
-            contentWidth={contentWidth}
             onAdd={() => setEditing({ slot: sliderSlot, banner: null })}
           >
             {slides.length === 0 ? (
@@ -254,13 +257,11 @@ export default function HomeSliderPage() {
           <SlotSection
             slot={sideSlot}
             count={sideTiles.length}
-            contentWidth={contentWidth}
             onAdd={
               sideTiles.length < (sideSlot.capacity ?? Infinity)
                 ? () => setEditing({ slot: sideSlot, banner: null })
                 : undefined
             }
-            atCapacityNote="The layout has exactly two side positions. Remove one to add another."
           >
             <ReorderableRow
               items={sideTiles}
@@ -286,9 +287,7 @@ export default function HomeSliderPage() {
           <SlotSection
             slot={promoSlot}
             count={promoTile ? 1 : 0}
-            contentWidth={contentWidth}
             onAdd={promoTile ? undefined : () => setEditing({ slot: promoSlot, banner: null })}
-            atCapacityNote="The layout has one promo position. Edit or remove it to change what is shown."
           >
             {promoTile ? (
               <SlotTile
@@ -335,54 +334,51 @@ export default function HomeSliderPage() {
   )
 }
 
-/** A titled region for one slot type, carrying its size guidance and add action. */
+/**
+ * A titled region for one slot type, carrying its count and add action.
+ *
+ * No longer prints the size guidance. `SlotEditorDialog` prints the identical
+ * three-part string — recommended size, ratio, rendered size — directly above
+ * the file input, WITH the content width named, which this could not fit. The
+ * spec's requirement is that the size appear beside the control that uploads
+ * it, and the dialog is that control; the copy here sat beside a heading
+ * instead, restating it before the merchant had decided to add anything.
+ *
+ * It was also the densest line on the page — three figures per section, nine
+ * across a hero with nothing in it yet — competing with the artwork the page
+ * exists to show. `EmptySlot` still carries the size where a merchant is
+ * actually about to act.
+ */
 function SlotSection({
   slot,
   count,
-  contentWidth,
   onAdd,
-  atCapacityNote,
   children,
 }: {
   slot: HeroSlot
   count: number
-  contentWidth: number | 'full'
   /** Undefined means the slot is full — the add action is not offered. */
   onAdd?: () => void
-  atCapacityNote?: string
   children: React.ReactNode
 }) {
   return (
     <Card className="flex flex-col gap-3 p-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-sm font-medium text-foreground">
-            {slot.label}
-            {slot.capacity !== null && (
-              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                {count} of {slot.capacity}
-              </span>
-            )}
-          </span>
-          {/* The spec's exact requirement: the pixel size, beside the control
-              that uploads it, before the merchant picks a file. The ratio holds
-              at every content width; only the "renders at" figure moves. */}
-          <span className="text-xs text-muted-foreground">
-            Upload <span className="font-medium text-foreground">{formatSize(slot.recommended)}</span>
-            {' · '}
-            {formatRatio(slot.recommended)}
-            {' · shows at '}
-            {formatSize(renderedSize(slot.placement, contentWidth))}
-          </span>
-        </div>
-        {onAdd ? (
-          <Button size="sm" variant="outline" onClick={onAdd}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm font-medium text-foreground">
+          {slot.label}
+          {slot.capacity !== null && (
+            <span className="ml-1.5 text-xs font-normal tabular-nums text-muted-foreground">
+              {count} of {slot.capacity}
+            </span>
+          )}
+        </span>
+        {/* At capacity the count above already says so — "2 of 2" beside a
+            missing Add button is the same sentence as "The layout has exactly
+            two side positions", in three characters instead of forty-eight. */}
+        {onAdd && (
+          <Button size="lg" variant="outline" onClick={onAdd}>
             <Plus /> Add
           </Button>
-        ) : (
-          atCapacityNote && (
-            <span className="max-w-56 text-right text-xs text-muted-foreground">{atCapacityNote}</span>
-          )
         )}
       </div>
       {children}
@@ -554,15 +550,16 @@ function OverflowStrip({
 }) {
   return (
     <Card className="flex flex-col gap-3 border-warning/40 p-3">
-      <div className="flex items-start gap-2">
-        <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
-        <div className="flex flex-col gap-0.5">
-          <span className="text-sm font-medium text-foreground">Not shown on the storefront</span>
-          <span className="text-xs text-muted-foreground">
-            These are assigned to a hero slot that is already full, so the homepage skips them. Move one
-            into a different slot or remove it.
-          </span>
-        </div>
+      {/* One sentence, not a heading plus a paragraph that restated it. The
+          controls on each row already say what to do about it — a closing
+          "Move one into a different slot or remove it" narrated the two
+          affordances sitting directly beneath. */}
+      <div className="flex items-center gap-2">
+        <TriangleAlert className="size-4 shrink-0 text-warning" />
+        <span className="text-sm text-foreground">
+          <span className="font-medium">Not shown on the storefront.</span>{' '}
+          <span className="text-muted-foreground">Their slot is already full.</span>
+        </span>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -579,11 +576,18 @@ function OverflowStrip({
               )}
               <div className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-sm text-foreground">{banner.title ?? 'Untitled'}</span>
+                {/* Slot only. `order {sortOrder}` was the row's stored sort
+                    index — a number a merchant cannot act on, and a misleading
+                    one here, since these banners are not in any order the
+                    storefront reads. */}
                 <span className="text-xs text-muted-foreground">
-                  {slot?.label ?? banner.placement} · order {banner.sortOrder}
+                  {slot?.label ?? banner.placement}
                 </span>
               </div>
 
+              {/* No icon per option: the same glyph on every row of a three-row
+                  menu distinguishes nothing, and the trigger already says
+                  "Move to…". */}
               <Select value="" onValueChange={(v) => onReslot(banner, v as BannerPlacement)}>
                 <SelectTrigger className="h-8 w-40">
                   <SelectValue placeholder="Move to…" />
@@ -591,9 +595,7 @@ function OverflowStrip({
                 <SelectContent>
                   {HERO_SLOTS.map((s) => (
                     <SelectItem key={s.placement} value={s.placement}>
-                      <span className="flex items-center gap-1.5">
-                        <RefreshCw className="size-3" /> {s.label}
-                      </span>
+                      {s.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

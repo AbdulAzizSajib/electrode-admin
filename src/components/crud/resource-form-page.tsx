@@ -28,6 +28,49 @@ import { toast } from '@/components/ui/use-toast'
  * reason above the fields.
  */
 
+/**
+ * Brings the first failing control into view and focuses it.
+ *
+ * The banner says "the problems are marked below", which on a short form is
+ * enough and on a long one is not: the campaign page carries roughly forty
+ * fields across seven sections, so a merchant who mistypes a slug is told to go
+ * looking. Nothing moved on a refused save, which also reads as "the button did
+ * nothing".
+ *
+ * Found by `aria-invalid` rather than by react-hook-form's own
+ * `shouldFocusError`, which only reaches fields it registered as native inputs
+ * — the Radix `Select`, the `Combobox` and the rich-text editor are none of
+ * those, so on this form the built-in silently skips exactly the controls a
+ * merchant is most likely to miss. `FormControl` stamps the attribute on every
+ * failing control whatever it is, so DOM order here is the visual order the
+ * merchant scans.
+ *
+ * `block: 'center'` rather than the default `'start'`: a field scrolled to the
+ * very top of the region sits under the sticky header on a short viewport.
+ */
+function revealFirstInvalidField() {
+  // After paint — the messages and their `aria-invalid` flags are set by the
+  // same render this is called from.
+  requestAnimationFrame(() => {
+    const field = document.querySelector<HTMLElement>('[aria-invalid="true"]')
+    if (!field) return
+    // Reduced motion keeps the arrival, drops the travel — the field still
+    // comes into view and takes focus, it just does not glide there.
+    //
+    // Feature-checked because this runs inside a rAF: jsdom implements no
+    // `scrollIntoView` at all, and a throw from here escapes as an unhandled
+    // exception rather than a caught render error. Focus is the part that
+    // matters and it still happens either way.
+    if (typeof field.scrollIntoView === 'function') {
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+      field.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' })
+    }
+    // `preventScroll`: focus would otherwise jump the element into view
+    // instantly and fight the smooth scroll just started.
+    field.focus({ preventScroll: true })
+  })
+}
+
 export interface ResourceFormPageProps<
   TValues extends FieldValues,
   TRecord,
@@ -149,9 +192,10 @@ export function ResourceFormPage<
 
   const submit = (andReturn: boolean) => {
     returnAfterSave.current = andReturn
-    void form.handleSubmit(handleValid, () =>
-      setError('Some fields need attention. The problems are marked below.'),
-    )()
+    void form.handleSubmit(handleValid, () => {
+      setError('Some fields need attention. The problems are marked below.')
+      revealFirstInvalidField()
+    })()
   }
 
   return (

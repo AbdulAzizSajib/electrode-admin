@@ -93,7 +93,7 @@ export default function RolesPermissionsPage() {
         title="Roles & Permissions"
         description="Define what each role can access."
         actions={
-          <Button size="sm" onClick={() => navigate(`${ROLES_PATH}/new`)}>
+          <Button size="lg" onClick={() => navigate(`${ROLES_PATH}/new`)}>
             <Plus /> New role
           </Button>
         }
@@ -136,14 +136,14 @@ export default function RolesPermissionsPage() {
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
-                    size="sm"
+                    size="lg"
                     onClick={() => navigate(`${ROLES_PATH}/${selected.id}`)}
                   >
                     <Pencil /> Edit
                   </Button>
                   <Button
                     variant="destructive"
-                    size="sm"
+                    size="lg"
                     onClick={() =>
                       confirmDialog.confirm(async () => {
                         try {

@@ -105,13 +105,13 @@ export function ResourceFormLayout({
         description={description}
         actions={
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={cancel} disabled={saving}>
+            <Button size="lg" variant="ghost" onClick={cancel} disabled={saving}>
               Cancel
             </Button>
-            <Button size="sm" variant="outline" onClick={() => onSubmit(false)} loading={saving}>
+            <Button size="lg" variant="outline" onClick={() => onSubmit(false)} loading={saving}>
               Save and continue editing
             </Button>
-            <Button size="sm" onClick={() => onSubmit(true)} loading={saving}>
+            <Button size="lg" onClick={() => onSubmit(true)} loading={saving}>
               Save and return
             </Button>
           </div>

@@ -44,7 +44,14 @@ export function useSettingsDraft<T>(loaded: T | undefined, fallback: T): Setting
   // Structural comparison, not identity: every keystroke rebuilds the row
   // array, so reference equality would report "dirty" the moment a field was
   // edited and then typed back to its original text.
-  const isDirty = loaded !== undefined && JSON.stringify(value) !== JSON.stringify(base)
+  //
+  // Memoized because this runs on every render of a page whose documented caps
+  // are 20 nav items each holding 20 children — serializing ~420 objects twice
+  // per keystroke, at exactly the size the product advertises as supported.
+  const isDirty = React.useMemo(
+    () => loaded !== undefined && JSON.stringify(value) !== JSON.stringify(base),
+    [loaded, value, base],
+  )
 
   return {
     value,

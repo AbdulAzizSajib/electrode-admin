@@ -415,7 +415,7 @@ export function EditAttributeValues({
                     <Button
                       type="button"
                       variant="outline"
-                      size="sm"
+                      size="lg"
                       className="shrink-0"
                       disabled={busy || !newLabel.trim()}
                       onClick={() => void addValue()}

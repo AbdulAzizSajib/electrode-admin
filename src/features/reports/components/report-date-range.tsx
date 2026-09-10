@@ -54,7 +54,7 @@ export function ReportDateRange({ value, onChange, resolvedNote }: ReportDateRan
           return (
             <Button
               key={preset.label}
-              size="sm"
+              size="lg"
               variant={isActive ? 'default' : 'outline'}
               className="h-8"
               onClick={() => onChange(preset.value)}

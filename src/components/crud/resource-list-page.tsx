@@ -233,7 +233,7 @@ export function ResourceListPage<T>({
         description={description}
         actions={
           onCreate && (
-            <Button size="sm" onClick={onCreate}>
+            <Button size="lg" onClick={onCreate}>
               <Plus /> {createLabel ?? `New ${noun}`}
             </Button>
           )

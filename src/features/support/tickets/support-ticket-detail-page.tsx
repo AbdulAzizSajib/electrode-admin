@@ -121,7 +121,7 @@ export default function SupportTicketDetailPage() {
             <div className="flex flex-col gap-2 border-t border-border p-3">
               <Textarea rows={3} placeholder="Write a reply…" value={message} onChange={(e) => setMessage(e.target.value)} />
               <div className="flex justify-end">
-                <Button size="sm" onClick={sendReply} loading={replyMutation.isPending} disabled={!message.trim()}>
+                <Button size="lg" onClick={sendReply} loading={replyMutation.isPending} disabled={!message.trim()}>
                   <Send /> Send reply
                 </Button>
               </div>

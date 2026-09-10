@@ -43,7 +43,7 @@ export function CourierBalanceCard() {
         <CardTitle className="flex items-center gap-2">
           <Wallet className="size-4" /> Courier balance
         </CardTitle>
-        <Button size="sm" variant="outline" disabled={isFetching} onClick={() => void refetch()}>
+        <Button size="lg" variant="outline" disabled={isFetching} onClick={() => void refetch()}>
           <RefreshCw className={isFetching ? 'animate-spin' : undefined} />
           {data === undefined ? 'Check' : 'Refresh'}
         </Button>

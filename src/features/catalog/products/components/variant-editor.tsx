@@ -249,7 +249,7 @@ export function VariantEditor({
                     <Button
                       type="button"
                       variant="ghost"
-                      size="sm"
+                      size="lg"
                       className="ml-auto text-muted-foreground"
                       aria-label={`Edit ${attribute.name} values`}
                       onClick={() => onEditAttribute(attribute)}
@@ -297,7 +297,7 @@ export function VariantEditor({
           <Button
             type="button"
             variant="outline"
-            size="sm"
+            size="lg"
             className="self-start"
             onClick={onCreateAttribute}
           >

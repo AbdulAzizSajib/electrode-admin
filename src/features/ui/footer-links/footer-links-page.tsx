@@ -277,7 +277,7 @@ export default function FooterLinksPage() {
               {column.links.length < SETTINGS_LIMITS.footerLinksPerColumn && (
                 <Button
                   type="button"
-                  size="sm"
+                  size="lg"
                   variant="ghost"
                   className="self-start text-xs"
                   onClick={() =>

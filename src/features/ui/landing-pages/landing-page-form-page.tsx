@@ -6,7 +6,6 @@ import { ExternalLink, Info } from 'lucide-react'
 import { ResourceFormPage } from '@/components/crud/resource-form-page'
 import { Combobox } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { NumberInput } from '@/components/ui/number-input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
@@ -165,6 +164,42 @@ export default function LandingPageFormPage() {
   )
 }
 
+/**
+ * One of the repeatable lists, under its heading.
+ *
+ * The heading was a `<Label>`, which renders a real `<label>` with nothing to
+ * point at: a list of gallery rows has no single control to be the label FOR,
+ * and the comment beside the first one said as much while still using one. An
+ * unassociated label is invalid markup, and a screen reader reaching it
+ * announces a label whose control it cannot find.
+ *
+ * A `role="group"` named by the heading is the fix that also gains something:
+ * the rows are now announced as being inside "Gallery" rather than as a run of
+ * loose fields, which on a page with six of these lists is the difference
+ * between structure and a wall of inputs. `<fieldset>`/`<legend>` would say the
+ * same thing, but its default box and legend placement would have to be
+ * unstyled back out of every list.
+ */
+function FieldGroup({
+  label,
+  children,
+}: {
+  label: React.ReactNode
+  children: React.ReactNode
+}) {
+  const headingId = `${React.useId()}-heading`
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span id={headingId} className="text-xs font-medium text-foreground">
+        {label}
+      </span>
+      <div role="group" aria-labelledby={headingId} className="flex flex-col gap-1.5">
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function LandingPageFields({
   form,
   isEdit,
@@ -233,18 +268,29 @@ function LandingPageFields({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Address</FormLabel>
-                {/* The leading "/lp/" is antd's `addonBefore`: a joined,
-                    non-editable prefix that says the value is a path segment,
-                    not a full URL. It sits outside `FormControl` so the label
-                    still points at the input rather than at the wrapper. */}
+                {/* The leading "/lp/" is a joined, non-editable prefix saying
+                    the value is a path segment, not a full URL. It sits outside
+                    `FormControl` so the label still points at the input rather
+                    than at the wrapper.
+
+                    `aria-hidden`: the label already reads "Address", and a
+                    screen reader announcing "/lp/" as a separate stop before it
+                    is noise, not context — the FormDescription carries the
+                    meaning in words. */}
                 <div className="flex w-full">
-                  <span className="inline-flex shrink-0 items-center rounded-l-md border border-r-0 border-input bg-muted px-2.5 text-sm text-muted-foreground">
+                  <span
+                    aria-hidden
+                    className="inline-flex shrink-0 items-center rounded-l-md border border-r-0 border-input bg-muted px-2.5 text-sm text-muted-foreground"
+                  >
                     /lp/
                   </span>
                   <FormControl>
+                    {/* `-ml-px` with `focus:z-10`: the two borders would
+                        otherwise stack into a 2px seam, and the focus ring drew
+                        UNDER the prefix on the left edge. */}
                     <Input
                       placeholder="winter-hoodie-offer"
-                      className="rounded-l-none"
+                      className="-ml-px rounded-l-none focus-visible:z-10"
                       {...field}
                       onChange={(event) => {
                         field.onChange(event)
@@ -344,11 +390,22 @@ function LandingPageFields({
             <span className="text-muted-foreground">
               The price comes from the product — edit it there.
             </span>
+            {/*
+              Opens in a new tab, and is a real anchor rather than a `Link`.
+              Both deliberate, for the same reason: this sits inside an unsaved
+              form. A router `Link` would navigate this tab away and take every
+              entered value with it, and the merchant clicked it to CHECK a
+              price, not to abandon a campaign they are halfway through writing.
+            */}
             <a
               href={`/catalog/products/${selectedProduct.id}`}
-              className="font-medium text-primary underline-offset-4 hover:underline"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 font-medium text-primary underline-offset-4 hover:underline"
             >
               Open product
+              <ExternalLink className="size-3.5" aria-hidden />
+              <span className="sr-only">(opens in a new tab)</span>
             </a>
           </div>
         )}
@@ -367,8 +424,11 @@ function LandingPageFields({
           >
             <ExternalLink className="size-4" aria-hidden />
             Preview /lp/{record.slug}
+            <span className="sr-only">(opens in a new tab)</span>
             {record.status === 'DRAFT' && (
-              <span className="text-muted-foreground">(signed in as you — visitors get a 404)</span>
+              <span className="font-normal text-muted-foreground">
+                (signed in as you — visitors get a 404)
+              </span>
             )}
           </a>
         )}
@@ -426,12 +486,9 @@ function LandingPageFields({
           />
         </div>
 
-        {/* A plain label, not a `FormLabel`: "Gallery" names the whole list and
-            has no single field to point at. */}
-        <div className="flex flex-col gap-1.5">
-          <Label>Gallery</Label>
+        <FieldGroup label="Gallery">
           <MediaListField form={form} />
-        </div>
+        </FieldGroup>
       </EditorSection>
 
       <EditorSection
@@ -452,30 +509,26 @@ function LandingPageFields({
           )}
         />
 
-        <div className="flex flex-col gap-1.5">
-          <Label>Why buy this</Label>
+        <FieldGroup label="Why buy this">
           <HighlightsListField form={form} />
-        </div>
+        </FieldGroup>
 
-        <div className="flex flex-col gap-1.5">
-          <Label>Questions &amp; answers</Label>
+        <FieldGroup label="Questions & answers">
           <FaqsListField form={form} />
-        </div>
+        </FieldGroup>
       </EditorSection>
 
       <EditorSection
         title="Social proof"
         description="Quotes and badges. Each section is left off the page entirely when it is empty."
       >
-        <div className="flex flex-col gap-1.5">
-          <Label>Customer quotes</Label>
+        <FieldGroup label="Customer quotes">
           <QuotesListField form={form} />
-        </div>
+        </FieldGroup>
 
-        <div className="flex flex-col gap-1.5">
-          <Label>Trust badges</Label>
+        <FieldGroup label="Trust badges">
           <TrustBadgesListField form={form} />
-        </div>
+        </FieldGroup>
       </EditorSection>
 
       <EditorSection
@@ -538,15 +591,22 @@ function LandingPageFields({
               </FormItem>
             )}
           />
+          {/* The switch is not a third text field, so it does not pretend to be
+              one. In the grid it inherited a stacked label and sat as a 20px
+              control floating in a cell sized for an input; here the label is
+              beside it, at the same height as the two inputs' boxes, and the
+              row reads as one setting rather than a short third column. */}
           <FormField
             control={form.control}
             name="orderForm.fields.fullName.required"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>Name required</FormLabel>
-                <FormControl>
-                  <Switch checked={field.value} onCheckedChange={field.onChange} />
-                </FormControl>
+              <FormItem className="flex flex-col justify-end">
+                <div className="flex h-8 items-center gap-2">
+                  <FormControl>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                  <FormLabel>Ask for a name</FormLabel>
+                </div>
                 <FormDescription>The only field you can make optional.</FormDescription>
                 <FormMessage />
               </FormItem>
@@ -626,7 +686,10 @@ function LandingPageFields({
               <FormItem>
                 <FormLabel>Address hint</FormLabel>
                 <FormControl>
-                  <Input {...field} />
+                  {/* The one input on the page that had no placeholder, which
+                      read as an unfinished field beside its two siblings rather
+                      than as the optional one it is. */}
+                  <Input placeholder="বিস্তারিত ঠিকানা দিলে ডেলিভারি দ্রুত হয়।" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -646,14 +709,13 @@ function LandingPageFields({
           keyed on the phone.
         </p>
 
-        <div className="flex flex-col gap-1.5">
-          <Label>Delivery areas</Label>
+        <FieldGroup label="Delivery areas">
           <DeliveryZonesField form={form} />
           <p className="text-xs text-muted-foreground">
             What you charge for delivery to each area. This is what the customer is charged — your
             product&apos;s shipping rule and any free-delivery threshold do not apply here.
           </p>
-        </div>
+        </FieldGroup>
 
         <div className="grid gap-x-6 gap-y-4 md:grid-cols-2">
           <FormField

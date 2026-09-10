@@ -154,7 +154,7 @@ export default function AttributeFormPage() {
               <span>{removalWarning}</span>
               <Button
                 variant="destructive"
-                size="sm"
+                size="lg"
                 onClick={async () => {
                   if (!pendingValues.current) return
                   await save(pendingValues.current, true)
