@@ -1,7 +1,25 @@
 import * as React from 'react'
 import { useParams } from 'react-router'
-import { Form, Input, Select, type FormInstance } from 'antd'
+import { useForm, type UseFormReturn } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { ResourceFormPage } from '@/components/crud/resource-form-page'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form'
 import { RichTextEditor } from '@/components/forms/rich-text-editor'
 import { PAGES_PATH } from '@/features/ui/pages/pages-list-page'
 import {
@@ -9,27 +27,9 @@ import {
   useCreatePage,
   useReservedSlugs,
   useUpdatePage,
+  PAGE_STATUSES,
   type Page,
-  type PageStatus,
 } from '@/lib/api/pages'
-
-interface FormValues {
-  title: string
-  slug?: string
-  body: string
-  metaTitle?: string
-  metaDescription?: string
-  status: PageStatus
-}
-
-const EMPTY: FormValues = {
-  title: '',
-  slug: '',
-  body: '',
-  metaTitle: '',
-  metaDescription: '',
-  status: 'DRAFT',
-}
 
 /** Mirrors the backend's `slugifyTitle`, so the preview matches what gets stored. */
 const slugify = (title: string) =>
@@ -42,6 +42,56 @@ const slugify = (title: string) =>
 /** Mirrors the backend's `slugPattern`. */
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
+/**
+ * Built per render of the reserved list rather than at module scope: which slugs
+ * the storefront has claimed is server data, and the rule has to close over the
+ * current answer. react-hook-form re-reads `resolver` off its options on every
+ * render, so a new schema takes effect on the next validation.
+ */
+const makeSchema = (reservedSlugs: string[]) =>
+  z.object({
+    title: z.string().min(1, 'Give this page a title'),
+    slug: z
+      .string()
+      .optional()
+      .superRefine((value, ctx) => {
+        const slug = value?.trim()
+        if (!slug) return
+        if (!SLUG_PATTERN.test(slug)) {
+          ctx.addIssue({ code: 'custom', message: 'Use lowercase words separated by single hyphens' })
+          return
+        }
+        // Checked as the merchant types rather than left to the save, because a
+        // 409 after writing a whole page is a bad time to find out the address
+        // was never available. The server checks it too — this is the early
+        // warning, not the guarantee.
+        if (reservedSlugs.includes(slug)) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `"/${slug}" is reserved by the storefront — pick another address`,
+          })
+        }
+      }),
+    body: z.string().min(1, 'A page needs some content'),
+    metaTitle: z.string().optional(),
+    metaDescription: z.string().optional(),
+    status: z.enum(PAGE_STATUSES),
+  })
+
+type FormValues = z.infer<ReturnType<typeof makeSchema>>
+
+const EMPTY: FormValues = {
+  title: '',
+  slug: '',
+  body: '',
+  metaTitle: '',
+  metaDescription: '',
+  status: 'DRAFT',
+}
+
+/** Stable while the list is still loading, so the schema is not rebuilt every render. */
+const NO_RESERVED_SLUGS: string[] = []
+
 export default function PageFormPage() {
   const { pageId } = useParams()
   const isEdit = Boolean(pageId)
@@ -49,17 +99,21 @@ export default function PageFormPage() {
   const { data, isLoading, error } = usePage(pageId)
   const createMutation = useCreatePage()
   const updateMutation = useUpdatePage()
-  const { data: reservedSlugs = [] } = useReservedSlugs()
+  const { data: reservedSlugs = NO_RESERVED_SLUGS } = useReservedSlugs()
+
+  const schema = React.useMemo(() => makeSchema(reservedSlugs), [reservedSlugs])
+
+  const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: EMPTY })
 
   return (
     <ResourceFormPage<FormValues, Page>
       noun="Page"
       listPath={PAGES_PATH}
       recordId={pageId}
+      form={form}
       record={data}
       isLoading={isLoading}
       loadError={error}
-      emptyValues={EMPTY}
       toValues={(page) => ({
         title: page.title,
         slug: page.slug,
@@ -88,7 +142,7 @@ export default function PageFormPage() {
         return { id: created.id }
       }}
     >
-      {(form) => <PageFields form={form} isEdit={isEdit} reservedSlugs={reservedSlugs} />}
+      <PageFields form={form} isEdit={isEdit} />
     </ResourceFormPage>
   )
 }
@@ -96,11 +150,9 @@ export default function PageFormPage() {
 function PageFields({
   form,
   isEdit,
-  reservedSlugs,
 }: {
-  form: FormInstance<FormValues>
+  form: UseFormReturn<FormValues>
   isEdit: boolean
-  reservedSlugs: string[]
 }) {
   /*
    * The slug follows the title only until the merchant takes it over. Once
@@ -112,96 +164,146 @@ function PageFields({
 
   const handleTitleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (slugIsManual) return
-    form.setFieldValue('slug', slugify(event.target.value))
+    form.setValue('slug', slugify(event.target.value))
   }
 
   return (
-    <div className="grid gap-x-6 md:grid-cols-2">
-      <Form.Item
+    <div className="grid gap-x-6 gap-y-4 md:grid-cols-2">
+      <FormField
+        control={form.control}
         name="title"
-        label="Title"
-        rules={[{ required: true, message: 'Give this page a title' }]}
-      >
-        <Input placeholder="e.g. Refund Policy" onChange={handleTitleChange} />
-      </Form.Item>
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Title</FormLabel>
+            <FormControl>
+              {/* `field.onChange` first: the slug is derived from the title the
+                  form now holds, so the write has to land before it is read. */}
+              <Input
+                placeholder="e.g. Refund Policy"
+                {...field}
+                onChange={(event) => {
+                  field.onChange(event)
+                  handleTitleChange(event)
+                }}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-      <Form.Item
+      <FormField
+        control={form.control}
         name="slug"
-        label="Address"
-        extra={
-          isEdit
-            ? 'Changing this breaks any existing link to the page.'
-            : 'Left blank, this is built from the title.'
-        }
-        rules={[
-          {
-            validator: async (_rule, value: string | undefined) => {
-              const slug = value?.trim()
-              if (!slug) return
-              if (!SLUG_PATTERN.test(slug)) {
-                throw new Error('Use lowercase words separated by single hyphens')
-              }
-              // Checked as the merchant types rather than left to the save,
-              // because a 409 after writing a whole page is a bad time to find
-              // out the address was never available. The server checks it too —
-              // this is the early warning, not the guarantee.
-              if (reservedSlugs.includes(slug)) {
-                throw new Error(`"/${slug}" is reserved by the storefront — pick another address`)
-              }
-            },
-          },
-        ]}
-      >
-        <Input
-          placeholder="refund-policy"
-          addonBefore="/"
-          onChange={() => setSlugIsManual(true)}
-        />
-      </Form.Item>
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Address</FormLabel>
+            {/* The leading "/" is antd's `addonBefore`: a joined, non-editable
+                prefix that says the value is a path segment, not a full URL. It
+                sits outside `FormControl` so the label still points at the input
+                rather than at the wrapper. */}
+            <div className="flex w-full">
+              <span className="inline-flex shrink-0 items-center rounded-l-md border border-r-0 border-input bg-muted px-2.5 text-sm text-muted-foreground">
+                /
+              </span>
+              <FormControl>
+                <Input
+                  placeholder="refund-policy"
+                  className="rounded-l-none"
+                  {...field}
+                  onChange={(event) => {
+                    field.onChange(event)
+                    setSlugIsManual(true)
+                  }}
+                />
+              </FormControl>
+            </div>
+            <FormDescription>
+              {isEdit
+                ? 'Changing this breaks any existing link to the page.'
+                : 'Left blank, this is built from the title.'}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-      <Form.Item
+      <FormField
+        control={form.control}
         name="status"
-        label="Status"
-        className="md:col-span-2"
-        extra="A draft is not reachable on the storefront — its address returns Not Found."
-      >
-        <Select
-          className="max-w-xs"
-          options={[
-            { value: 'DRAFT', label: 'Draft' },
-            { value: 'PUBLISHED', label: 'Published' },
-          ]}
-        />
-      </Form.Item>
+        render={({ field }) => (
+          <FormItem className="md:col-span-2">
+            <FormLabel>Status</FormLabel>
+            <Select value={field.value} onValueChange={field.onChange}>
+              <FormControl>
+                <SelectTrigger className="max-w-xs">
+                  <SelectValue />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                <SelectItem value="DRAFT">Draft</SelectItem>
+                <SelectItem value="PUBLISHED">Published</SelectItem>
+              </SelectContent>
+            </Select>
+            <FormDescription>
+              A draft is not reachable on the storefront — its address returns Not Found.
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-      <Form.Item
+      <FormField
+        control={form.control}
         name="body"
-        label="Content"
-        className="md:col-span-2"
-        rules={[{ required: true, message: 'A page needs some content' }]}
-      >
-        <RichTextEditor
-          minHeight="min-h-96"
-          allowImages
-          placeholder="Write the page — headings, lists and links all work."
-        />
-      </Form.Item>
+        render={({ field }) => (
+          <FormItem className="md:col-span-2">
+            <FormLabel>Content</FormLabel>
+            <FormControl>
+              <RichTextEditor
+                minHeight="min-h-96"
+                allowImages
+                placeholder="Write the page — headings, lists and links all work."
+                value={field.value}
+                onChange={field.onChange}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-      <Form.Item
+      <FormField
+        control={form.control}
         name="metaTitle"
-        label="Search engine title"
-        extra="Left blank, the page title is used."
-      >
-        <Input placeholder="Refund Policy | Gadgets Mart" />
-      </Form.Item>
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Search engine title</FormLabel>
+            <FormControl>
+              <Input placeholder="Refund Policy | Gadgets Mart" {...field} />
+            </FormControl>
+            <FormDescription>Left blank, the page title is used.</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-      <Form.Item
+      <FormField
+        control={form.control}
         name="metaDescription"
-        label="Search engine description"
-        extra="Left blank, this is taken from the start of the content."
-      >
-        <Input placeholder="How refunds and returns work." />
-      </Form.Item>
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Search engine description</FormLabel>
+            <FormControl>
+              <Input placeholder="How refunds and returns work." {...field} />
+            </FormControl>
+            <FormDescription>
+              Left blank, this is taken from the start of the content.
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
     </div>
   )
 }

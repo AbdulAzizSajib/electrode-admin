@@ -1,122 +1,226 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Form, Input } from 'antd'
 import { MemoryRouter } from 'react-router'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { ResourceFormPage } from '@/components/crud/resource-form-page'
+import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
 
 /**
- * Task 9.12 — a rejected save preserves everything the merchant entered.
+ * The guarantees every authoring page in the panel inherits from this scaffold.
  *
- * The guarantee is about what is still on screen after the server says no, so
- * it is checked by rendering a real form, typing into it, failing the save and
- * reading the inputs back. Asserting it by inspecting the code would only prove
- * that today's code does not call `resetFields`; this proves the merchant's
- * work survives whatever the reason for the refusal.
- *
- * antd's Form warns about `useForm` not being connected during the first paint
- * in jsdom; that is noise from the test environment, not the component.
+ * There was a second copy of this file while the panel ran two form stacks, and
+ * both asserted the same things the same way: by rendering a real form, typing
+ * into it, and reading back what is on screen afterwards. That is still how it
+ * is done here — an assertion about the *code* would only prove the scaffold
+ * looks right, not that a refused save left the merchant's work alone.
  */
 
-interface Values {
+const schema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  note: z.string(),
+})
+
+type Values = z.infer<typeof schema>
+
+const navigate = vi.fn()
+vi.mock('react-router', async () => {
+  const actual = await vi.importActual<typeof import('react-router')>('react-router')
+  return { ...actual, useNavigate: () => navigate }
+})
+
+const inputValue = (label: string) => (screen.getByLabelText(label) as HTMLInputElement).value
+
+interface Widget {
+  id: string
   name: string
   note: string
 }
 
-const EMPTY: Values = { name: '', note: '' }
+function Harness({
+  onSave,
+  recordId,
+  record,
+}: {
+  onSave: (values: Values) => Promise<{ id?: string } | void>
+  recordId?: string
+  record?: Widget
+}) {
+  const form = useForm<Values>({
+    resolver: zodResolver(schema),
+    defaultValues: { name: '', note: '' },
+  })
 
-/** Reads a field back the way a merchant sees it, without a matcher library. */
-const inputValue = (label: string) => (screen.getByLabelText(label) as HTMLInputElement).value
-
-function renderForm(onSave: (values: Values) => Promise<{ id?: string } | void>) {
-  return render(
+  return (
     <MemoryRouter>
-      <ResourceFormPage<Values, never>
+      <ResourceFormPage<Values, Widget>
         noun="Widget"
         listPath="/widgets"
-        emptyValues={EMPTY}
-        toValues={() => EMPTY}
+        recordId={recordId}
+        form={form}
+        record={record}
+        toValues={(w) => ({ name: w.name, note: w.note })}
         onSave={onSave}
       >
-        {() => (
-          <>
-            <Form.Item name="name" label="Name" rules={[{ required: true, message: 'Name is required' }]}>
-              <Input aria-label="Name" />
-            </Form.Item>
-            <Form.Item name="note" label="Note">
-              <Input aria-label="Note" />
-            </Form.Item>
-          </>
-        )}
+        <FormField
+          control={form.control}
+          name="name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Name</FormLabel>
+              <FormControl>
+                <Input aria-label="Name" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="note"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Note</FormLabel>
+              <FormControl>
+                <Input aria-label="Note" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
       </ResourceFormPage>
-    </MemoryRouter>,
+    </MemoryRouter>
   )
 }
 
-describe('ResourceFormPage — a rejected save', () => {
-  it('9.12 leaves everything the merchant entered on the page', async () => {
+describe('ResourceFormPage', () => {
+  it('leaves everything the merchant entered on the page when a save is refused', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn().mockRejectedValue(new Error('A widget named "Bolt" already exists'))
 
-    renderForm(onSave)
+    render(<Harness onSave={onSave} />)
 
     await user.type(screen.getByLabelText('Name'), 'Bolt')
     await user.type(screen.getByLabelText('Note'), 'Half an hour of typing')
-
     await user.click(screen.getByRole('button', { name: /save and continue editing/i }))
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
 
-    // Both fields still hold exactly what was typed — nothing was reset,
-    // re-fetched over, or navigated away from.
+    // Nothing was reset, re-fetched over, or navigated away from.
     await waitFor(() => {
       expect(inputValue('Name')).toBe('Bolt')
       expect(inputValue('Note')).toBe('Half an hour of typing')
     })
   })
 
-  it('9.12 shows the server’s own reason, not a generic failure', async () => {
+  it('shows the server’s own reason, not a generic failure', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn().mockRejectedValue(new Error('A widget named "Bolt" already exists'))
 
-    renderForm(onSave)
+    render(<Harness onSave={onSave} />)
 
     await user.type(screen.getByLabelText('Name'), 'Bolt')
     await user.click(screen.getByRole('button', { name: /save and continue editing/i }))
 
-    // The message names what actually went wrong, so the merchant can fix it.
-    await waitFor(() =>
-      expect(screen.getByText(/already exists/i)).toBeDefined(),
-    )
+    await waitFor(() => expect(screen.getByText(/already exists/i)).toBeDefined())
   })
 
   it('does not call the server at all when a required field is empty', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn().mockResolvedValue(undefined)
 
-    renderForm(onSave)
+    render(<Harness onSave={onSave} />)
 
     await user.type(screen.getByLabelText('Note'), 'no name given')
     await user.click(screen.getByRole('button', { name: /save and continue editing/i }))
 
-    // The field-level message appears, the request never leaves, and the note
-    // the merchant typed is still there.
     await waitFor(() => expect(screen.getByText('Name is required')).toBeDefined())
     expect(onSave).not.toHaveBeenCalled()
     expect(inputValue('Note')).toBe('no name given')
   })
 
-  it('keeps the merchant on the form when they choose to continue editing', async () => {
+  it('returns to the list on "Save and return"', async () => {
     const user = userEvent.setup()
+    navigate.mockClear()
     const onSave = vi.fn().mockResolvedValue(undefined)
 
-    renderForm(onSave)
+    render(<Harness onSave={onSave} />)
+
+    await user.type(screen.getByLabelText('Name'), 'Bolt')
+    await user.click(screen.getByRole('button', { name: /save and return/i }))
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/widgets'))
+  })
+
+  it('turns a create into the edit form for what was just created', async () => {
+    const user = userEvent.setup()
+    navigate.mockClear()
+    const onSave = vi.fn().mockResolvedValue({ id: 'w-1' })
+
+    render(<Harness onSave={onSave} />)
+
+    await user.type(screen.getByLabelText('Name'), 'Bolt')
+    await user.click(screen.getByRole('button', { name: /save and continue editing/i }))
+
+    // Without this, pressing Save again would create a second widget.
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith('/widgets/w-1', { replace: true }),
+    )
+  })
+
+  it('re-syncs when the record it is editing changes', async () => {
+    const onSave = vi.fn()
+    const { rerender } = render(
+      <Harness onSave={onSave} recordId="w-1" record={{ id: 'w-1', name: 'Bolt', note: 'first' }} />,
+    )
+
+    await waitFor(() => expect(inputValue('Name')).toBe('Bolt'))
+
+    // Editing one record then another keeps this component mounted — an overlay
+    // got the reset for free by unmounting on close.
+    rerender(
+      <Harness onSave={onSave} recordId="w-2" record={{ id: 'w-2', name: 'Nut', note: 'second' }} />,
+    )
+
+    await waitFor(() => {
+      expect(inputValue('Name')).toBe('Nut')
+      expect(inputValue('Note')).toBe('second')
+    })
+  })
+
+  it('empties the form when the same component becomes a create page', async () => {
+    const onSave = vi.fn()
+    const { rerender } = render(
+      <Harness onSave={onSave} recordId="w-1" record={{ id: 'w-1', name: 'Bolt', note: 'first' }} />,
+    )
+
+    await waitFor(() => expect(inputValue('Name')).toBe('Bolt'))
+
+    // `/:id` and `/new` are deliberately one component, so going from an edit
+    // URL to the create URL must not leave the edited record in the fields —
+    // saving would then create a copy of it.
+    rerender(<Harness onSave={onSave} />)
+
+    await waitFor(() => {
+      expect(inputValue('Name')).toBe('')
+      expect(inputValue('Note')).toBe('')
+    })
+  })
+
+  it('does not re-navigate when saving an existing record and staying', async () => {
+    const user = userEvent.setup()
+    navigate.mockClear()
+    const onSave = vi.fn().mockResolvedValue({ id: 'w-1' })
+
+    render(<Harness onSave={onSave} recordId="w-1" />)
 
     await user.type(screen.getByLabelText('Name'), 'Bolt')
     await user.click(screen.getByRole('button', { name: /save and continue editing/i }))
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
-    // Still editing the same record, with its values intact.
-    expect(inputValue('Name')).toBe('Bolt')
+    expect(navigate).not.toHaveBeenCalled()
   })
 })

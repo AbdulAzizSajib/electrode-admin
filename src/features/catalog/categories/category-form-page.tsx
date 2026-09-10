@@ -1,11 +1,27 @@
 import * as React from 'react'
 import { useLocation, useParams, useSearchParams } from 'react-router'
-import { Form, Input, InputNumber, Switch } from 'antd'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { ResourceFormPage } from '@/components/crud/resource-form-page'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { NumberInput } from '@/components/ui/number-input'
+import {
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form'
 import { SingleImageField } from '@/components/forms/single-image-field'
 import { CategoryParentPicker } from '@/features/catalog/categories/category-parent-picker'
 import { CATEGORIES_PATH } from '@/features/catalog/categories/categories-page'
 import { SUB_CATEGORIES_PATH } from '@/features/catalog/sub-categories/sub-categories-page'
+import { numberWithDefault } from '@/lib/validation/numeric'
 import {
   useCategory,
   useCategoryTree,
@@ -24,21 +40,32 @@ import {
  * the merchant goes back to the list they came from, not to the other one.
  */
 
-interface FormValues {
-  name: string
-  description?: string
-  image?: string
-  parentId: string | null
-  status: boolean
-  sortOrder: number
+const schema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  description: z.string().optional(),
+  image: z.string().optional(),
+  parentId: z.string().nullable(),
+  status: z.boolean(),
+  // No floor: a sort order is a position, and a merchant may want one to sit
+  // above whatever is currently at zero.
+  sortOrder: numberWithDefault(0, { min: null }),
   /**
    * The same two columns the SEO menu's Page SEO table writes. They existed on
    * the model and were accepted by the backend's validation long before this
    * form rendered them — so a merchant could not set them from anywhere.
    */
-  seoTitle?: string
-  seoDescription?: string
-}
+  seoTitle: z.string().optional(),
+  seoDescription: z.string().optional(),
+})
+/**
+ * `sortOrder` runs through a `z.preprocess`, so what the form holds and what a
+ * valid submit produces are different types — the box carries whatever was
+ * typed, the payload carries a number. The two are named separately and
+ * threaded through `useForm` and `ResourceFormPage`, as on the product and
+ * voucher forms.
+ */
+type FormValues = z.input<typeof schema>
+type OutputValues = z.output<typeof schema>
 
 const EMPTY_VALUES: FormValues = {
   name: '',
@@ -62,7 +89,7 @@ const toValues = (category: Category): FormValues => ({
   seoDescription: category.seoDescription ?? '',
 })
 
-function toInput(values: FormValues): CategoryInput {
+function toInput(values: OutputValues): CategoryInput {
   const input: CategoryInput = {
     name: values.name,
     description: values.description || undefined,
@@ -105,12 +132,17 @@ export default function CategoryFormPage() {
   const createMutation = useCreateCategory()
   const updateMutation = useUpdateCategory()
 
+  const form = useForm<FormValues, unknown, OutputValues>({
+    resolver: zodResolver(schema),
+    defaultValues: { ...EMPTY_VALUES, parentId: defaultParentId ?? null },
+  })
+
   // Picked files are component state, not form fields — the URL fields are the
   // other route to the same artwork.
   const [imageFile, setImageFile] = React.useState<File | null>(null)
   const [bannerFile, setBannerFile] = React.useState<File | null>(null)
 
-  const save = async (values: FormValues) => {
+  const save = async (values: OutputValues) => {
     if (categoryId) {
       await updateMutation.mutateAsync({ id: categoryId, input: toInput(values), imageFile, bannerFile })
       // The files have been sent; keeping them selected would re-upload the same
@@ -128,73 +160,164 @@ export default function CategoryFormPage() {
   const noun = listPath === SUB_CATEGORIES_PATH ? 'Sub category' : 'Category'
 
   return (
-    <ResourceFormPage<FormValues, Category>
+    <ResourceFormPage<FormValues, Category, OutputValues>
       noun={noun}
       listPath={listPath}
       recordId={categoryId}
+      form={form}
       record={data}
       isLoading={isLoading}
       loadError={error}
       toValues={toValues}
-      emptyValues={{ ...EMPTY_VALUES, parentId: defaultParentId ?? null }}
       onSave={save}
     >
-      {() => (
-        <>
-          <Form.Item name="name" label="Name" rules={[{ required: true, message: 'Name is required' }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="parentId" label="Parent category">
-            <CategoryParentPicker tree={categoryTree} excludeId={categoryId} />
-          </Form.Item>
-          <Form.Item name="description" label="Description">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-          {/* Upload and URL are alternatives, not a pair — the backend accepts either. */}
-          <Form.Item label="Image">
-            <SingleImageField
-              value={imageFile}
-              onChange={setImageFile}
-              currentUrl={data?.image}
-              label="Upload image"
-            />
-          </Form.Item>
-          <Form.Item name="image" label="Image URL">
-            <Input placeholder="https://example.com/image.jpg" disabled={!!imageFile} />
-          </Form.Item>
-          <Form.Item label="Banner">
-            <SingleImageField
-              value={bannerFile}
-              onChange={setBannerFile}
-              currentUrl={data?.banner}
-              label="Upload banner"
-            />
-          </Form.Item>
-          <Form.Item name="sortOrder" label="Sort order">
-            <InputNumber className="w-full" />
-          </Form.Item>
-          <Form.Item name="status" label="Active" valuePropName="checked">
-            <Switch />
-          </Form.Item>
+      <FormField
+        control={form.control}
+        name="name"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Name</FormLabel>
+            <FormControl>
+              <Input {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-          {/* Editable here AND from SEO → Page SEO. Both write these same two
-              columns through this same endpoint, so there is no copy to sync. */}
-          <Form.Item
-            name="seoTitle"
-            label="Search result title"
-            extra="Shown as the heading in Google. Leave blank to use the category name."
-          >
-            <Input maxLength={200} />
-          </Form.Item>
-          <Form.Item
-            name="seoDescription"
-            label="Search result description"
-            extra="The sentence under the link in search results. Around 160 characters."
-          >
-            <Input.TextArea rows={3} maxLength={500} />
-          </Form.Item>
-        </>
-      )}
+      <FormField
+        control={form.control}
+        name="parentId"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Parent category</FormLabel>
+            <CategoryParentPicker
+              tree={categoryTree}
+              excludeId={categoryId}
+              value={field.value}
+              onChange={field.onChange}
+            />
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="description"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Description</FormLabel>
+            <FormControl>
+              <Textarea rows={3} {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {/* Upload and URL are alternatives, not a pair — the backend accepts
+          either. Not form fields: the files never enter the schema. */}
+      <div className="flex flex-col gap-1.5">
+        <Label>Image</Label>
+        <SingleImageField
+          value={imageFile}
+          onChange={setImageFile}
+          currentUrl={data?.image}
+          label="Upload image"
+        />
+      </div>
+
+      <FormField
+        control={form.control}
+        name="image"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Image URL</FormLabel>
+            <FormControl>
+              <Input
+                placeholder="https://example.com/image.jpg"
+                disabled={!!imageFile}
+                {...field}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Banner</Label>
+        <SingleImageField
+          value={bannerFile}
+          onChange={setBannerFile}
+          currentUrl={data?.banner}
+          label="Upload banner"
+        />
+      </div>
+
+      <FormField
+        control={form.control}
+        name="sortOrder"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Sort order</FormLabel>
+            <FormControl>
+              <NumberInput className="w-full" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="status"
+        render={({ field }) => (
+          <FormItem className="flex flex-row items-center justify-between gap-2">
+            <FormLabel className="text-sm font-normal text-foreground">Active</FormLabel>
+            <FormControl>
+              <Switch checked={field.value} onCheckedChange={field.onChange} />
+            </FormControl>
+          </FormItem>
+        )}
+      />
+
+      {/* Editable here AND from SEO → Page SEO. Both write these same two
+          columns through this same endpoint, so there is no copy to sync. */}
+      <FormField
+        control={form.control}
+        name="seoTitle"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Search result title</FormLabel>
+            <FormControl>
+              <Input maxLength={200} {...field} />
+            </FormControl>
+            <FormDescription>
+              Shown as the heading in Google. Leave blank to use the category name.
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="seoDescription"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Search result description</FormLabel>
+            <FormControl>
+              <Textarea rows={3} maxLength={500} {...field} />
+            </FormControl>
+            <FormDescription>
+              The sentence under the link in search results. Around 160 characters.
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
     </ResourceFormPage>
   )
 }

@@ -1,31 +1,64 @@
 import * as React from 'react'
 import { useParams } from 'react-router'
-import { Form, Input, InputNumber, Select, type FormInstance } from 'antd'
+import { useForm, useWatch, type UseFormReturn } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { Loader2, Star, Trash2, Upload } from 'lucide-react'
 import { ResourceFormPage } from '@/components/crud/resource-form-page'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { NumberInput } from '@/components/ui/number-input'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form'
 import { toast } from '@/components/ui/use-toast'
 import { TESTIMONIALS_PATH } from '@/features/ui/testimonials/testimonials-list-page'
+import { numberWithDefault } from '@/lib/validation/numeric'
 import { useUploadImage } from '@/lib/api/uploads'
 import {
   useTestimonial,
   useCreateTestimonial,
   useUpdateTestimonial,
   TESTIMONIAL_RATINGS,
+  TESTIMONIAL_STATUSES,
   type Testimonial,
-  type TestimonialStatus,
 } from '@/lib/api/testimonials'
 import { initials } from '@/lib/utils/format'
 
-interface FormValues {
-  quote: string
-  authorName: string
-  authorRole: string
-  photoUrl: string
-  rating: number
-  status: TestimonialStatus
-  sortOrder: number
-}
+const schema = z.object({
+  quote: z.string().min(1, 'Write the quote').max(1000, 'Quote cannot be longer than 1000 characters'),
+  authorName: z
+    .string()
+    .min(1, 'Who said it?')
+    .max(120, 'Name cannot be longer than 120 characters'),
+  authorRole: z
+    .string()
+    .min(1, 'Add a short caption')
+    .max(120, 'Role cannot be longer than 120 characters'),
+  /** Set by the upload rather than typed, so it carries no rule of its own. */
+  photoUrl: z.string(),
+  rating: z.number(),
+  status: z.enum(TESTIMONIAL_STATUSES),
+  sortOrder: numberWithDefault(0),
+})
+
+/** `sortOrder` runs through a `z.preprocess`, so input and output diverge. */
+type FormValues = z.input<typeof schema>
+type OutputValues = z.output<typeof schema>
 
 const EMPTY: FormValues = {
   quote: '',
@@ -45,15 +78,20 @@ export default function TestimonialFormPage() {
   const createMutation = useCreateTestimonial()
   const updateMutation = useUpdateTestimonial()
 
+  const form = useForm<FormValues, unknown, OutputValues>({
+    resolver: zodResolver(schema),
+    defaultValues: EMPTY,
+  })
+
   return (
-    <ResourceFormPage<FormValues, Testimonial>
+    <ResourceFormPage<FormValues, Testimonial, OutputValues>
       noun="Testimonial"
       listPath={TESTIMONIALS_PATH}
       recordId={testimonialId}
+      form={form}
       record={data}
       isLoading={isLoading}
       loadError={error}
-      emptyValues={EMPTY}
       toValues={(t) => ({
         quote: t.quote,
         authorName: t.authorName,
@@ -84,25 +122,29 @@ export default function TestimonialFormPage() {
         return { id: created.id }
       }}
     >
-      {(form) => <TestimonialFields form={form} />}
+      <TestimonialFields form={form} />
     </ResourceFormPage>
   )
 }
 
-function TestimonialFields({ form }: { form: FormInstance<FormValues> }) {
+function TestimonialFields({
+  form,
+}: {
+  form: UseFormReturn<FormValues, unknown, OutputValues>
+}) {
   const uploadMutation = useUploadImage()
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = React.useState(false)
 
   // Watched so the preview reflects what is being typed, not what was loaded.
-  const photoUrl = Form.useWatch('photoUrl', form)
-  const authorName = Form.useWatch('authorName', form)
+  const photoUrl = useWatch({ control: form.control, name: 'photoUrl' })
+  const authorName = useWatch({ control: form.control, name: 'authorName' })
 
   const handleUpload = async (file: File) => {
     setUploading(true)
     try {
       const { url } = await uploadMutation.mutateAsync(file)
-      form.setFieldValue('photoUrl', url)
+      form.setValue('photoUrl', url)
     } catch (err) {
       toast({
         title: 'Could not upload that photo',
@@ -116,38 +158,61 @@ function TestimonialFields({ form }: { form: FormInstance<FormValues> }) {
   }
 
   return (
-    <div className="grid gap-x-6 md:grid-cols-2">
-      <Form.Item
+    <div className="grid gap-x-6 gap-y-4 md:grid-cols-2">
+      <FormField
+        control={form.control}
         name="quote"
-        label="Quote"
-        className="md:col-span-2"
-        rules={[{ required: true, message: 'Write the quote' }, { max: 1000 }]}
-      >
-        <Input.TextArea rows={3} placeholder="What the customer said." />
-      </Form.Item>
+        render={({ field }) => (
+          <FormItem className="md:col-span-2">
+            <FormLabel>Quote</FormLabel>
+            <FormControl>
+              <Textarea
+                rows={3}
+                maxLength={1000}
+                placeholder="What the customer said."
+                {...field}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-      <Form.Item
+      <FormField
+        control={form.control}
         name="authorName"
-        label="Name"
-        rules={[{ required: true, message: 'Who said it?' }, { max: 120 }]}
-      >
-        <Input placeholder="e.g. Rahim Ahmed" />
-      </Form.Item>
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Name</FormLabel>
+            <FormControl>
+              <Input maxLength={120} placeholder="e.g. Rahim Ahmed" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-      <Form.Item
+      <FormField
+        control={form.control}
         name="authorRole"
-        label="Role"
-        extra="The line under the name."
-        rules={[{ required: true, message: 'Add a short caption' }, { max: 120 }]}
-      >
-        <Input placeholder="e.g. Verified Buyer" />
-      </Form.Item>
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Role</FormLabel>
+            <FormControl>
+              <Input maxLength={120} placeholder="e.g. Verified Buyer" {...field} />
+            </FormControl>
+            <FormDescription>The line under the name.</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-      <Form.Item
-        label="Photo"
-        className="md:col-span-2"
-        extra="Optional. Without one, the card shows the author's initials — never a gap or a stock silhouette."
-      >
+      {/* Not a `FormField`: the photo is set by the upload rather than typed, so
+          there is no input to bind — the URL lives in the form's values and is
+          written with `setValue`. A plain labelled block, as the brand form's
+          upload is. */}
+      <div className="flex flex-col gap-1.5 md:col-span-2">
+        <Label>Photo</Label>
         <div className="flex items-center gap-3">
           {/* Exactly what the storefront card will render, photo or not, so the
               merchant approves the real thing rather than imagining it. */}
@@ -190,58 +255,91 @@ function TestimonialFields({ form }: { form: FormInstance<FormValues> }) {
               type="button"
               size="sm"
               variant="ghost"
-              onClick={() => form.setFieldValue('photoUrl', '')}
+              onClick={() => form.setValue('photoUrl', '')}
             >
               <Trash2 className="size-4" /> Remove
             </Button>
           )}
         </div>
-      </Form.Item>
+        <p className="text-xs text-muted-foreground">
+          Optional. Without one, the card shows the author&apos;s initials — never a gap or a stock
+          silhouette.
+        </p>
+      </div>
 
-      {/* Hidden, because the URL is set by the upload rather than typed — but it
-          is still the field that carries the value into the payload. */}
-      <Form.Item name="photoUrl" hidden>
-        <Input />
-      </Form.Item>
-
-      <Form.Item
+      <FormField
+        control={form.control}
         name="rating"
-        label="Rating"
-        extra="Whole stars. This is what the card shows — it was previously pinned at 5 for every quote."
-      >
-        <Select
-          options={TESTIMONIAL_RATINGS.map((n) => ({
-            value: n,
-            label: (
-              <span className="flex items-center gap-1">
-                {n}
-                <Star className="size-3.5 fill-current text-amber-500" aria-hidden />
-              </span>
-            ),
-          }))}
-        />
-      </Form.Item>
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Rating</FormLabel>
+            {/* Radix carries a string; the payload carries a whole number. */}
+            <Select value={String(field.value)} onValueChange={(v) => field.onChange(Number(v))}>
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                {TESTIMONIAL_RATINGS.map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    <span className="flex items-center gap-1">
+                      {n}
+                      <Star className="size-3.5 fill-current text-amber-500" aria-hidden />
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FormDescription>
+              Whole stars. This is what the card shows — it was previously pinned at 5 for every
+              quote.
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-      <Form.Item
+      <FormField
+        control={form.control}
         name="status"
-        label="Status"
-        extra="A draft does not appear on the storefront."
-      >
-        <Select
-          options={[
-            { value: 'DRAFT', label: 'Draft' },
-            { value: 'PUBLISHED', label: 'Published' },
-          ]}
-        />
-      </Form.Item>
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Status</FormLabel>
+            <Select value={field.value} onValueChange={field.onChange}>
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                <SelectItem value="DRAFT">Draft</SelectItem>
+                <SelectItem value="PUBLISHED">Published</SelectItem>
+              </SelectContent>
+            </Select>
+            <FormDescription>A draft does not appear on the storefront.</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-      <Form.Item
+      <FormField
+        control={form.control}
         name="sortOrder"
-        label="Order"
-        extra="Lower numbers come first. The homepage section shows only the first few, so this is how you choose which quote leads."
-      >
-        <InputNumber className="w-full" min={0} step={1} />
-      </Form.Item>
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Order</FormLabel>
+            <FormControl>
+              <NumberInput className="w-full" min={0} step={1} {...field} />
+            </FormControl>
+            <FormDescription>
+              Lower numbers come first. The homepage section shows only the first few, so this is
+              how you choose which quote leads.
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
     </div>
   )
 }

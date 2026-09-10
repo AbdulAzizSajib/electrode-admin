@@ -24,10 +24,9 @@ export interface CategoryParentPickerProps {
   /**
    * The effective parentId (leaf of the chain), or null for top-level.
    *
-   * Injected by whichever form owns the field. antd's `<Form.Item name="parentId">`
-   * clones this component with `value`/`onChange`, and react-hook-form's
-   * `<FormField render={({ field })}>` hands over the same two — so this stays one
-   * component serving the migrated product form and the still-antd category form.
+   * Injected by whichever form owns the field: react-hook-form's
+   * `<FormField render={({ field })}>` hands over exactly this pair, which is
+   * all the picker asks of its consumer.
    */
   value?: string | null
   onChange?: (parentId: string | null) => void
@@ -115,8 +114,8 @@ export function CategoryParentPicker({
   )
 
   // Derive the ancestor chain straight from `value` by walking up via parentId to the root — no
-  // local state to keep in sync, so re-renders (including antd resetting `value` on form reset)
-  // are reflected automatically.
+  // local state to keep in sync, so re-renders (including the form resetting `value` when a
+  // record loads) are reflected automatically.
   const chain = React.useMemo(() => {
     if (!value || !byId.has(value)) return []
     const path: string[] = []

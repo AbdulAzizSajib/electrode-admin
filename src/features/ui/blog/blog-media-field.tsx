@@ -20,9 +20,8 @@ import { EMPTY_MEDIA, type BlogMedia } from '@/features/ui/blog/blog-media'
  */
 
 /**
- * Both props are optional because antd's `Form.Item` injects them by cloning its child — the
- * standard control contract. Declaring them required would force the caller to pass throwaway
- * values that `Form.Item` immediately overwrites.
+ * Both props are optional so the field can be rendered without a form around it — in a test
+ * harness, or anywhere its value is not yet decided. A `FormField` always supplies both.
  */
 export function BlogMediaField({
   value = EMPTY_MEDIA,

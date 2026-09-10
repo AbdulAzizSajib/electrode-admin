@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useNavigate } from 'react-router'
-import { Alert } from 'antd'
 import { ArrowLeft, Loader2 } from 'lucide-react'
+import { Alert } from '@/components/ui/alert'
 import { PageHeader } from '@/components/ui/page-header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -9,12 +9,12 @@ import { Card, CardContent } from '@/components/ui/card'
 /**
  * Everything an authoring page is apart from its fields.
  *
- * Extracted from `ResourceFormPage` so the two form stacks in this panel — antd
- * `Form` for the catalogue pages, react-hook-form for the rest — can present the
- * same page to the merchant without one of them being rewritten to match the
- * other. The library binding the inputs is invisible from the outside; the
- * header, the three buttons, where the failure appears and what a load error
- * looks like are not, and they belong in one place.
+ * Extracted from `ResourceFormPage` when the panel ran two form stacks at once,
+ * so neither had to be rewritten to present the same page to the merchant. Only
+ * one stack is left, and the split has earned its keep anyway: the header, the
+ * three buttons, where a failure appears and what a load error looks like are
+ * the page's contract with the merchant, and they are worth reading without the
+ * form plumbing around them.
  *
  * See `replace-admin-modals-with-pages` — design.md Decision 1, and
  * `specs/admin-shell/spec.md` "Authoring Pages Behave Consistently".
@@ -84,12 +84,11 @@ export function ResourceFormLayout({
     return (
       <div className="flex flex-col gap-4">
         <PageHeader title={`Edit ${noun.toLowerCase()}`} />
-        <Alert
-          type="error"
-          showIcon
-          message={`Could not load this ${noun.toLowerCase()}`}
-          description={loadError instanceof Error ? loadError.message : undefined}
-        />
+        {/* No dismiss control: the record still will not load, so there is
+            nothing to dismiss to. */}
+        <Alert variant="destructive" title={`Could not load this ${noun.toLowerCase()}`}>
+          {loadError instanceof Error ? loadError.message : undefined}
+        </Alert>
         <div>
           <Button variant="outline" onClick={() => navigate(listPath)}>
             <ArrowLeft /> Back to list
@@ -124,7 +123,7 @@ export function ResourceFormLayout({
           {/* Above the fields, so the reason a save was rejected is the first
               thing in view when the page stops scrolling. */}
           {error && (
-            <Alert type="error" showIcon message={error} className="mb-4" closable onClose={onDismissError} />
+            <Alert variant="destructive" title={error} className="mb-4" onDismiss={onDismissError} />
           )}
 
           {children}

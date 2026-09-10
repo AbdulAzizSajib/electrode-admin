@@ -3,6 +3,7 @@ import {
   Controller,
   FormProvider,
   useFormContext,
+  useFormState,
   type ControllerProps,
   type FieldPath,
   type FieldValues,
@@ -132,3 +133,60 @@ export const FormMessage = React.forwardRef<HTMLParagraphElement, React.Componen
   },
 )
 FormMessage.displayName = 'FormMessage'
+
+/** Walks a dotted path — `deliveryZones`, `sections.2.rows` — through the error tree. */
+function errorAtPath(errors: unknown, path: string): unknown {
+  return path
+    .split('.')
+    .reduce<unknown>(
+      (node, key) =>
+        node == null || typeof node !== 'object'
+          ? undefined
+          : (node as Record<string, unknown>)[key],
+      errors,
+    )
+}
+
+/**
+ * The failure message for a repeatable group, as opposed to for one field in it.
+ *
+ * Some rules hold over a whole list — that it is not empty, that a value is
+ * distinct across its rows — and belong to no single input. `FormMessage` cannot
+ * show them: it reads the error for the field it sits inside, and there is no
+ * such field. Without this component those rules refuse the save and put nothing
+ * on screen, which is the worst outcome available and exactly what antd's
+ * `Form.List rules` + `Form.ErrorList` gave for free.
+ *
+ * A zod issue raised on the array's own path lands at `errors.<name>.root` once
+ * the name is registered as a field array, and at `errors.<name>.message` when
+ * it is not. Both are read, because which one applies depends on whether the
+ * page reached `useFieldArray` — a distinction no caller should have to know.
+ *
+ * See openspec/changes/remove-antd-from-admin, design.md Decision 3, and
+ * `specs/admin-shell` — "A validation failure belonging to a whole group is
+ * reported against the group".
+ */
+export function FormArrayMessage({
+  name,
+  className,
+  ...props
+}: { name: string } & React.ComponentProps<'p'>) {
+  // `useFormState` rather than reading `formState` off the context: it
+  // subscribes this component to the named branch, so the message appears on
+  // the render that the failed submit causes rather than on the next unrelated
+  // one.
+  const { errors } = useFormState({ name })
+  const node = errorAtPath(errors, name)
+
+  if (node == null || typeof node !== 'object') return null
+  const branch = node as { root?: { message?: unknown }; message?: unknown }
+
+  const message = branch.root?.message ?? branch.message
+  if (typeof message !== 'string' || !message) return null
+
+  return (
+    <p className={cn('text-xs font-medium text-destructive', className)} {...props}>
+      {message}
+    </p>
+  )
+}

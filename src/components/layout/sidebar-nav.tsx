@@ -136,7 +136,7 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
               className={cn(navTriggerClass(false, false), 'w-full', sectionActive && 'text-white')}
             >
               <Icon className="size-4 shrink-0" />
-              <span className="flex-1 text-left">{section.label}</span>
+              <span className="flex-1 text-left">{section.label}</span>  
               <ChevronDown className={cn('size-3.5 transition-transform', isOpen && 'rotate-180')} />
             </button>
             {isOpen && (

@@ -1,21 +1,22 @@
+import * as React from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Form } from 'antd'
 import { CategoryParentPicker } from '@/features/catalog/categories/category-parent-picker'
 import type { Category } from '@/lib/api/categories'
 
 /**
- * This component is the one file in `migrate-product-form-to-shadcn` that a page
- * NOT being migrated still depends on: `category-form-page` is antd, and wraps
- * this in a `<Form.Item name="parentId">`.
+ * The picker's contract is `value` in, `onChange` out — nothing more. Its
+ * consumer used to be an antd `Form.Item`, which supplied the pair by cloning
+ * its child, and this file wrapped the picker in a real antd form to exercise
+ * that. `category-form-page` is now react-hook-form, whose `FormField` hands
+ * over the same two, so the wrapper's job is done by a plain controlled harness
+ * and the library is gone.
  *
- * antd's `Form.Item` clones its child with `value` and `onChange`; react-hook-form's
- * `FormField` hands over the same two. So the picker is exercised here inside a real
- * antd form — the consumer most likely to break — as well as standalone. A test that
- * only rendered it bare would pass while the category page was broken.
+ * The assertions are unchanged: what is being tested is the picker, not whoever
+ * is holding its value.
  *
- * See design.md Decision 7.
+ * See design.md Decision 8 of `remove-antd-from-admin`.
  */
 
 const node = (id: string, name: string, parentId: string | null, children: Category[] = []): Category =>
@@ -39,13 +40,30 @@ const TREE: Category[] = [
 /** Every level's combobox, top-level first. */
 const levels = () => screen.getAllByRole('combobox')
 
-function AntdHarness({ initial = null, onValuesChange }: { initial?: string | null; onValuesChange?: (v: unknown) => void }) {
+/**
+ * What a form page gives the picker: a held value and a setter. Deliberately
+ * controlled — an uncontrolled harness would let the picker's own state pass a
+ * test that the real consumer, which re-renders it with the value it reported,
+ * would fail.
+ */
+function ControlledHarness({
+  initial = null,
+  onValuesChange,
+}: {
+  initial?: string | null
+  onValuesChange?: (v: unknown) => void
+}) {
+  const [parentId, setParentId] = React.useState<string | null>(initial)
+
   return (
-    <Form initialValues={{ parentId: initial }} onValuesChange={(_, all) => onValuesChange?.(all)}>
-      <Form.Item name="parentId" label="Parent category">
-        <CategoryParentPicker tree={TREE} />
-      </Form.Item>
-    </Form>
+    <CategoryParentPicker
+      tree={TREE}
+      value={parentId}
+      onChange={(next) => {
+        setParentId(next)
+        onValuesChange?.({ parentId: next })
+      }}
+    />
   )
 }
 
@@ -125,18 +143,18 @@ describe('CategoryParentPicker', () => {
     expect(offered).not.toContain('Laptops')
   })
 
-  describe('inside the still-antd category form', () => {
+  describe('driven by a form holding its value', () => {
     it('rehydrates from the form value', () => {
-      render(<AntdHarness initial="laptops" />)
+      render(<ControlledHarness initial="laptops" />)
 
       expect(levels()[0].textContent).toContain('Computing & IT')
       expect(levels()[1].textContent).toContain('Laptops')
     })
 
-    it('writes the chosen parent back into the antd form', async () => {
+    it('writes the chosen parent back into the form', async () => {
       const onValuesChange = vi.fn()
       const user = userEvent.setup()
-      render(<AntdHarness initial={null} onValuesChange={onValuesChange} />)
+      render(<ControlledHarness initial={null} onValuesChange={onValuesChange} />)
 
       await user.click(levels()[0])
       await user.click(screen.getByRole('option', { name: 'Audio' }))

@@ -24,10 +24,8 @@ const router = createBrowserRouter([{ path: '*', element: <App /> }])
  * AdminFontProvider is INSIDE QueryClientProvider, not outside it.
  *
  * It reads the panel's typeface from the settings query, so it needs a query
- * client in scope — which is also why <ConfigProvider> moved into it from here.
- * The antd theme now depends on a value that has to be fetched, and antd reads
- * `token.fontFamily` at render rather than from CSS, so the provider that knows
- * the font has to be the one supplying the theme.
+ * client in scope. Everything under it renders on the fallback stack until that
+ * query resolves, which is deliberate — see `AdminFontProvider`.
  */
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

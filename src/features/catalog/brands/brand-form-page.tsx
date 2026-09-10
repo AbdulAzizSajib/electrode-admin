@@ -1,7 +1,14 @@
 import * as React from 'react'
 import { useParams } from 'react-router'
-import { Form, Input, Switch } from 'antd'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { ResourceFormPage } from '@/components/crud/resource-form-page'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { SingleImageField } from '@/components/forms/single-image-field'
 import { BRANDS_PATH } from '@/features/catalog/brands/brands-page'
 import {
@@ -12,12 +19,13 @@ import {
   type BrandInput,
 } from '@/lib/api/brands'
 
-interface FormValues {
-  name: string
-  logo?: string
-  description?: string
-  status: boolean
-}
+const schema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  logo: z.string().optional(),
+  description: z.string().optional(),
+  status: z.boolean(),
+})
+type FormValues = z.infer<typeof schema>
 
 const EMPTY_VALUES: FormValues = { name: '', logo: '', description: '', status: true }
 
@@ -44,6 +52,8 @@ export default function BrandFormPage() {
   const createMutation = useCreateBrand()
   const updateMutation = useUpdateBrand()
 
+  const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: EMPTY_VALUES })
+
   // The picked file is component state, not a form field — the schema has no
   // say over an upload, and the logo URL field is the other route to the same
   // artwork.
@@ -67,38 +77,80 @@ export default function BrandFormPage() {
       noun="Brand"
       listPath={BRANDS_PATH}
       recordId={brandId}
+      form={form}
       record={data}
       isLoading={isLoading}
       loadError={error}
       toValues={toValues}
-      emptyValues={EMPTY_VALUES}
       onSave={save}
     >
-      {() => (
-        <>
-          <Form.Item name="name" label="Name" rules={[{ required: true, message: 'Name is required' }]}>
-            <Input />
-          </Form.Item>
-          {/* Upload and URL are alternatives, not a pair — the backend accepts either. */}
-          <Form.Item label="Logo">
-            <SingleImageField
-              value={logoFile}
-              onChange={setLogoFile}
-              currentUrl={data?.logo}
-              label="Upload logo"
-            />
-          </Form.Item>
-          <Form.Item name="logo" label="Logo URL">
-            <Input placeholder="https://…" disabled={!!logoFile} />
-          </Form.Item>
-          <Form.Item name="description" label="Description">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-          <Form.Item name="status" label="Active" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-        </>
-      )}
+      <FormField
+        control={form.control}
+        name="name"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Name</FormLabel>
+            <FormControl>
+              <Input {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {/* Upload and URL are alternatives, not a pair — the backend accepts
+          either. Not a form field: the file never enters the schema, so this
+          is a plain labelled block rather than a `FormField`. */}
+      <div className="flex flex-col gap-1.5">
+        <Label>Logo</Label>
+        <SingleImageField
+          value={logoFile}
+          onChange={setLogoFile}
+          currentUrl={data?.logo}
+          label="Upload logo"
+        />
+      </div>
+
+      <FormField
+        control={form.control}
+        name="logo"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Logo URL</FormLabel>
+            <FormControl>
+              <Input placeholder="https://…" disabled={!!logoFile} {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="description"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Description</FormLabel>
+            <FormControl>
+              <Textarea rows={3} {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name="status"
+        render={({ field }) => (
+          <FormItem className="flex flex-row items-center justify-between gap-2">
+            <FormLabel className="text-sm font-normal text-foreground">Active</FormLabel>
+            <FormControl>
+              <Switch checked={field.value} onCheckedChange={field.onChange} />
+            </FormControl>
+          </FormItem>
+        )}
+      />
     </ResourceFormPage>
   )
 }

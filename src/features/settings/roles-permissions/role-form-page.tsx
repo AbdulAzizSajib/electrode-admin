@@ -10,7 +10,7 @@ import { useParams } from 'react-router'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { ResourceFormPageRhf } from '@/components/crud/resource-form-page-rhf'
+import { ResourceFormPage } from '@/components/crud/resource-form-page'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
@@ -53,7 +53,7 @@ export default function RoleFormPage() {
   }
 
   return (
-    <ResourceFormPageRhf<Values, Role>
+    <ResourceFormPage<Values, Role>
       noun="Role"
       listPath={ROLES_PATH}
       recordId={roleId}
@@ -71,6 +71,6 @@ export default function RoleFormPage() {
       <FormField control={form.control} name="description" render={({ field }) => (
         <FormItem><FormLabel>Description</FormLabel><FormControl><Textarea rows={3} {...field} /></FormControl><FormMessage /></FormItem>
       )} />
-    </ResourceFormPageRhf>
+    </ResourceFormPage>
   )
 }

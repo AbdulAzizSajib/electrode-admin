@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/number-input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -41,6 +42,7 @@ import { useBrands, type Brand } from '@/lib/api/brands'
 import { useAllAttributes, type Attribute } from '@/lib/api/attributes'
 import { useAllTaxRules, type TaxRule } from '@/lib/api/tax-rules'
 import { useAllCollections, type Collection } from '@/lib/api/collections'
+import { numberWithDefault, optionalNumber, requiredNumber } from '@/lib/validation/numeric'
 import { useAllBundleDeals, type BundleDeal } from '@/lib/api/bundle-deals'
 import { QuickCreateBrand } from '@/features/catalog/products/components/quick-create-brand'
 import { QuickCreateCategory } from '@/features/catalog/products/components/quick-create-category'
@@ -91,20 +93,6 @@ import { slugify } from '@/lib/utils/slug'
 let variantKeySeq = 0
 const nextVariantKey = () => `__new_${(variantKeySeq += 1)}`
 
-/**
- * An optional amount, where "left empty" and "zero" are different answers.
- *
- * antd's `InputNumber` handed back `null` for an emptied field. A native number
- * input hands back `''`, and `z.coerce.number()` turns `''` into 0 — which
- * would save a cleared "Regular price" as a regular price of zero rather than
- * as "this product is not on offer". See design.md Decision 2.
- */
-const optionalNumber = (message = 'Cannot be negative') =>
-  z.preprocess(
-    (value) => (value === '' || value === null || value === undefined ? undefined : value),
-    z.coerce.number().min(0, message).optional(),
-  )
-
 const schema = z.object({
   name: z.string().min(1, 'Name is required'),
   sku: z.string().min(1, 'Product code is required'),
@@ -121,10 +109,9 @@ const schema = z.object({
   brandId: z.string().min(1, 'Select a brand'),
 
   /** What the customer pays — the required one. */
-  offerPrice: z.preprocess(
-    (value) => (value === '' || value === null || value === undefined ? undefined : value),
-    z.coerce.number({ message: 'Offer price is required' }).min(0, 'Offer price cannot be negative'),
-  ),
+  offerPrice: requiredNumber('Offer price is required', {
+    message: 'Offer price cannot be negative',
+  }),
   /** The struck-through regular price; absent when nothing is on offer. */
   sellingPrice: optionalNumber(),
   /** Supplier cost, admin-only. */
@@ -135,10 +122,7 @@ const schema = z.object({
    * asserted a quantity no ledger row backed, which the storefront advertised
    * and checkout then rejected.
    */
-  lowStockThreshold: z.preprocess(
-    (value) => (value === '' || value === null || value === undefined ? 5 : value),
-    z.coerce.number().min(0, 'Cannot be negative'),
-  ),
+  lowStockThreshold: numberWithDefault(5),
   isFeatured: z.boolean(),
 
   taxRuleId: z.string().min(1, 'A product must be taxable'),
@@ -1376,17 +1360,11 @@ export default function ProductFormPage() {
                       <FormItem data-field="purchasePrice">
                         <FormLabel>Purchase price</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             min={0}
                             step={0.01}
                             className="w-full tabular-nums"
                             {...field}
-                            value={
-                              field.value === undefined || field.value === null
-                                ? ''
-                                : String(field.value)
-                            }
                           />
                         </FormControl>
                         <FormDescription>
@@ -1403,17 +1381,11 @@ export default function ProductFormPage() {
                       <FormItem data-field="offerPrice">
                         <FormLabel>Offer price</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             min={0}
                             step={0.01}
                             className="w-full tabular-nums"
                             {...field}
-                            value={
-                              field.value === undefined || field.value === null
-                                ? ''
-                                : String(field.value)
-                            }
                           />
                         </FormControl>
                         <FormDescription>What the customer actually pays.</FormDescription>
@@ -1428,17 +1400,11 @@ export default function ProductFormPage() {
                       <FormItem data-field="sellingPrice">
                         <FormLabel>Regular price</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
+                          <NumberInput
                             min={0}
                             step={0.01}
                             className="w-full tabular-nums"
                             {...field}
-                            value={
-                              field.value === undefined || field.value === null
-                                ? ''
-                                : String(field.value)
-                            }
                           />
                         </FormControl>
                         {/*
@@ -1745,17 +1711,7 @@ export default function ProductFormPage() {
                       <FormItem data-field="lowStockThreshold">
                         <FormLabel>Low stock threshold</FormLabel>
                         <FormControl>
-                          <Input
-                            type="number"
-                            min={0}
-                            className="w-full"
-                            {...field}
-                            value={
-                              field.value === undefined || field.value === null
-                                ? ''
-                                : String(field.value)
-                            }
-                          />
+                          <NumberInput min={0} className="w-full" {...field} />
                         </FormControl>
                         <FormDescription>
                           Flags the product once stock drops to this level.

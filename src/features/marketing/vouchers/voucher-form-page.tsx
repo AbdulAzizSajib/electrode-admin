@@ -7,7 +7,7 @@ import { useParams } from 'react-router'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { ResourceFormPageRhf } from '@/components/crud/resource-form-page-rhf'
+import { ResourceFormPage } from '@/components/crud/resource-form-page'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
@@ -138,7 +138,7 @@ export default function VoucherFormPage() {
   }
 
   return (
-    <ResourceFormPageRhf<Values, Coupon, OutputValues>
+    <ResourceFormPage<Values, Coupon, OutputValues>
       noun="Voucher"
       listPath={VOUCHERS_PATH}
       recordId={voucherId}
@@ -231,6 +231,6 @@ export default function VoucherFormPage() {
           <FormMessage />
         </FormItem>
       )} />
-    </ResourceFormPageRhf>
+    </ResourceFormPage>
   )
 }

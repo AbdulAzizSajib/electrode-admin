@@ -6,7 +6,7 @@ import { useParams } from 'react-router'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { ResourceFormPageRhf } from '@/components/crud/resource-form-page-rhf'
+import { ResourceFormPage } from '@/components/crud/resource-form-page'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { STAFF_USERS_PATH } from '@/features/customers/staff-users/staff-users-page'
@@ -62,7 +62,7 @@ export default function StaffUserFormPage() {
   }
 
   return (
-    <ResourceFormPageRhf<Values, StaffUserRow>
+    <ResourceFormPage<Values, StaffUserRow>
       noun="User"
       listPath={STAFF_USERS_PATH}
       recordId={userId}
@@ -100,6 +100,6 @@ export default function StaffUserFormPage() {
           <FormMessage />
         </FormItem>
       )} />
-    </ResourceFormPageRhf>
+    </ResourceFormPage>
   )
 }

@@ -2,7 +2,7 @@ import { useParams } from 'react-router'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { ResourceFormPageRhf } from '@/components/crud/resource-form-page-rhf'
+import { ResourceFormPage } from '@/components/crud/resource-form-page'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
@@ -54,7 +54,7 @@ export default function WarehouseFormPage() {
   }
 
   return (
-    <ResourceFormPageRhf<Values, Warehouse>
+    <ResourceFormPage<Values, Warehouse>
       noun="Warehouse"
       listPath={WAREHOUSES_PATH}
       recordId={warehouseId}
@@ -88,6 +88,6 @@ export default function WarehouseFormPage() {
           <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
         </FormItem>
       )} />
-    </ResourceFormPageRhf>
+    </ResourceFormPage>
   )
 }

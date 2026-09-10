@@ -3,7 +3,7 @@ import { useParams } from 'react-router'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { ResourceFormPageRhf } from '@/components/crud/resource-form-page-rhf'
+import { ResourceFormPage } from '@/components/crud/resource-form-page'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
@@ -223,7 +223,7 @@ export default function BannerFormPage() {
   const products = productsData?.data ?? []
 
   return (
-    <ResourceFormPageRhf<Values, Banner, OutputValues>
+    <ResourceFormPage<Values, Banner, OutputValues>
       noun="Banner"
       listPath={BANNERS_PATH}
       recordId={bannerId}
@@ -395,6 +395,6 @@ export default function BannerFormPage() {
           </FormItem>
         )} />
       </div>
-    </ResourceFormPageRhf>
+    </ResourceFormPage>
   )
 }

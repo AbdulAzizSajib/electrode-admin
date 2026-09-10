@@ -304,7 +304,7 @@ export default function OrderDetailPage() {
                   the order when they come back. Each route renders outside the
                   app shell so the printed page carries no chrome. */}
               {PRINTABLE_DOCUMENTS.map((doc) => (
-                <Button key={doc.kind} variant="outline" size="sm" asChild>
+                <Button key={doc.kind} variant="outline" size="lg" asChild>
                   <Link to={`/sales/orders/${order.id}/print/${doc.kind}`} target="_blank" rel="noreferrer">
                     <Printer /> {doc.label}
                   </Link>

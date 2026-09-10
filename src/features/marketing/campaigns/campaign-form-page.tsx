@@ -10,7 +10,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { ResourceFormPageRhf } from '@/components/crud/resource-form-page-rhf'
+import { ResourceFormPage } from '@/components/crud/resource-form-page'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -71,7 +71,7 @@ export default function CampaignFormPage() {
   }
 
   return (
-    <ResourceFormPageRhf<Values, Campaign>
+    <ResourceFormPage<Values, Campaign>
       noun="Campaign"
       listPath={CAMPAIGNS_PATH}
       form={form}
@@ -120,6 +120,6 @@ export default function CampaignFormPage() {
           <FormItem><FormLabel>Ends</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
         )} />
       </div>
-    </ResourceFormPageRhf>
+    </ResourceFormPage>
   )
 }

@@ -169,10 +169,12 @@ export function ImageUploadField({
       )}
 
       {/*
-        Hidden with absolute positioning rather than `display:none`: antd v6
-        injects its reset stylesheet at runtime with higher specificity than
+        Hidden with absolute positioning rather than `display:none`. antd v6
+        injected a reset stylesheet at runtime with higher specificity than
         Tailwind's single-class `.hidden`, which left the raw "Choose Files"
-        control visible next to the styled button.
+        control visible beside the styled button. antd is gone, but positioning
+        it off-screen also keeps the input focusable, which `display:none` does
+        not — so this stays.
       */}
       <input
         ref={inputRef}

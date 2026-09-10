@@ -105,7 +105,65 @@
 }
 
 @layer utilities {
-  .scrollbar-thin {
+  /*
+   * A scroll region that does not advertise itself.
+   *
+   * The panel nests scroll containers by design — the sidebar scrolls inside a
+   * shell that never does, and the routed page scrolls beside it — so every
+   * always-on scrollbar is a second grey stripe on screen competing with the
+   * one the merchant actually meant to use. This keeps the track invisible and
+   * fades a thin thumb in only while the region is in use.
+   *
+   * "In use" is three things, and all three are needed:
+   *  - `[data-scrolling]`, set by `useAutoHideScrollbar` for the duration of a
+   *    scroll and a moment after — the "only while scrolling" part;
+   *  - `:hover`, without which the thumb is invisible exactly when the pointer
+   *    is over it and so can never be dragged;
+   *  - `:focus-within`, so keyboard users get the same position feedback.
+   *
+   * The gutter stays reserved at all times — the thumb is painted transparent
+   * rather than the scrollbar removed — so nothing reflows the moment it
+   * appears. `width` is set on the WebKit pseudo-element because `thin` alone
+   * is the widest of the narrow options; Firefox has no equivalent and takes
+   * `scrollbar-width` instead.
+   */
+  .scrollbar-overlay {
+    --scrollbar-thumb: color-mix(in srgb, var(--color-foreground) 30%, transparent);
+
     scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  /* For the dark sidebar, where a foreground-tinted thumb would disappear. */
+  .scrollbar-overlay-inverted {
+    --scrollbar-thumb: color-mix(in srgb, #ffffff 26%, transparent);
+  }
+
+  .scrollbar-overlay:hover,
+  .scrollbar-overlay:focus-within,
+  .scrollbar-overlay[data-scrolling] {
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  .scrollbar-overlay::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-overlay::-webkit-scrollbar-track,
+  .scrollbar-overlay::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  .scrollbar-overlay::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 9999px;
+    transition: background-color 150ms ease;
+  }
+
+  .scrollbar-overlay:hover::-webkit-scrollbar-thumb,
+  .scrollbar-overlay:focus-within::-webkit-scrollbar-thumb,
+  .scrollbar-overlay[data-scrolling]::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
   }
 }

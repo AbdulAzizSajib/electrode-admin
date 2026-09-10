@@ -18,9 +18,9 @@ import { useUploadImage } from '@/lib/api/uploads'
  * pre-hosted URL just as happily, and a merchant reusing artwork they already
  * host should not have to re-upload it to satisfy this control.
  *
- * Both props are optional because antd's `Form.Item` injects them by cloning
- * its child — the standard control contract. Declaring them required would
- * force callers to pass throwaway values `Form.Item` immediately overwrites.
+ * Both props are optional so the field can be rendered without a form around
+ * it — in a test harness, or anywhere its value is not yet decided. A
+ * `FormField` always supplies both.
  */
 export function ImageUrlField({
   value = '',

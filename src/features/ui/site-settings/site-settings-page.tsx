@@ -144,7 +144,23 @@ function FontPicker({
           return (
             <label
               key={font.id}
-              className={`flex cursor-pointer flex-col gap-1 rounded-md border p-3 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 ${
+              /*
+               * `relative` is load-bearing, not decoration. `sr-only` is
+               * `position: absolute`, so the hidden radio is placed against its
+               * nearest POSITIONED ancestor — and without this that is the
+               * shell's `fixed inset-0` box, four levels above `<main>`. An
+               * absolute box anchored outside the scroller does not move when
+               * the scroller scrolls, so on a page scrolled down to the font
+               * section the radio's real position sits that far below the
+               * viewport. Clicking the card focuses it, the browser scrolls the
+               * nearest scrollable ancestor to reveal it — the shell, which is
+               * `overflow-hidden` and so has no scrollbar to scroll back — and
+               * the entire panel slides off the top of the screen for good.
+               * Anchoring the radio to its own card keeps it inside `<main>`'s
+               * scrolled content, where it is already in view and nothing needs
+               * to scroll at all.
+               */
+              className={`relative flex cursor-pointer flex-col gap-1 rounded-md border p-3 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 ${
                 isSelected
                   ? 'border-primary bg-primary/5'
                   : 'border-border hover:border-muted-foreground/40'

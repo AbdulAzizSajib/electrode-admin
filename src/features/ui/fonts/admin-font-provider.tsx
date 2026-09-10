@@ -1,25 +1,20 @@
 import * as React from 'react'
-import { ConfigProvider } from 'antd'
-import { buildAntdTheme } from '@/lib/antd-theme'
 import { resolveFontHref, resolveFontStack } from '@/lib/font'
 import { DEFAULT_THEME, useStoreSettings } from '@/lib/api/store-settings'
 
 /**
  * Applies the merchant's chosen typeface to the whole admin panel.
  *
- * The panel has TWO independent styling systems and the font has to reach both,
- * which is why this does two distinct things rather than one:
+ * One mechanism: `--font-sans` is set on `<html>`, which is what
+ * `body { font-family: var(--font-sans) }` in index.css resolves, and every
+ * surface in the panel inherits from there.
  *
- *  1. **The CSS variable.** `--font-sans` is set on `<html>`, which is what
- *     `body { font-family: var(--font-sans) }` in index.css resolves. That
- *     covers every Tailwind and shadcn surface.
- *
- *  2. **The antd token.** antd reads `token.fontFamily` at RENDER time and
- *     writes its own class-based styles; it never consults the CSS variable. So
- *     the variable alone would restyle most of the panel and leave every antd
- *     form — the resource form pages, roughly eighteen files — in the old
- *     typeface. A panel where the forms disagree with everything around them is
- *     the failure this second step exists to prevent.
+ * There used to be a second. antd read `token.fontFamily` at render time and
+ * emitted its own class-based styles from it, never consulting the CSS
+ * variable, so the panel had to set the font twice or its form pages would sit
+ * in the old typeface while everything around them changed. `remove-antd-from-
+ * admin` took antd out, and with it the only styling system in the panel that
+ * could not read a custom property.
  *
  * The stylesheet `<link>` is injected rather than declared in index.html
  * because which font to fetch is not known until the setting is read. It is
@@ -84,12 +79,5 @@ export function AdminFontProvider({ children }: { children: React.ReactNode }) {
     document.head.appendChild(link)
   }, [href])
 
-  /*
-   * Memoised on the family alone: rebuilding the theme object on every render
-   * would give ConfigProvider a new identity each time and re-render every antd
-   * component in the panel.
-   */
-  const theme = React.useMemo(() => buildAntdTheme(stack), [stack])
-
-  return <ConfigProvider theme={theme}>{children}</ConfigProvider>
+  return <>{children}</>
 }

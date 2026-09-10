@@ -1,7 +1,8 @@
 /**
- * jsdom is missing a handful of browser APIs that antd reaches for on mount.
- * Stubbed here rather than mocked per-test, since a component asking whether
- * the viewport is wide is not what any of these tests are about.
+ * jsdom is missing a handful of browser APIs the panel's components reach for on
+ * mount — Radix measures, Recharts observes. Stubbed here rather than mocked
+ * per-test, since a component asking whether the viewport is wide is not what
+ * any of these tests are about.
  */
 
 if (!window.matchMedia) {

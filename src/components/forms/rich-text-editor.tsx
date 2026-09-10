@@ -34,8 +34,8 @@ import { cn } from '@/lib/utils/cn'
  * sanitised on the way out, not only on the way in". Sanitising only here would
  * leave anything already stored, or written by any other path, trusted forever.
  *
- * Shaped as a controlled input (`value`/`onChange`) so antd's `Form.Item` can
- * drive it like any other field.
+ * Shaped as a controlled input (`value`/`onChange`) so a form can drive it like
+ * any other field.
  */
 
 export interface RichTextEditorProps {
