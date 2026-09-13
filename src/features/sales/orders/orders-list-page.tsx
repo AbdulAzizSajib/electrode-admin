@@ -35,6 +35,21 @@ const STATUS_VARIANT: Record<OrderStatus, 'secondary' | 'info' | 'warning' | 'de
   COMPLETED: 'success',
 }
 
+/**
+ * The parcel's address, one compact line for the Customer column.
+ *
+ * This is the SHIPPING address, not the account's: it names where the box
+ * actually goes and can carry a different recipient than the order's owner.
+ * Reduced to the first meaningful lines (street, then city) rather than the
+ * full block the detail page shows — enough to tell two parcels apart at a
+ * glance, without turning a table row into a letter.
+ */
+const shippingAddressSummary = (order: Order): string => {
+  const address = order.shippingAddress
+  if (!address) return order.deliveryMethod === 'PICKUP' ? 'Collection' : 'No address'
+  return [address.addressLine1, address.addressLine2, address.city, address.state].filter(Boolean).join(', ')
+}
+
 export default function OrdersListPage() {
   const navigate = useNavigate()
   const [search, setSearch] = React.useState('')
@@ -143,12 +158,30 @@ export default function OrdersListPage() {
     { accessorKey: 'orderNumber', header: 'Order', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.orderNumber}</span> },
     { id: 'customer', header: 'Customer', cell: ({ row }) => (
       <div className="flex flex-col">
-        <span>{row.original.customer.firstName} {row.original.customer.lastName ?? ''}</span>
-        <span className="text-xs text-muted-foreground">{row.original.customer.email ?? '—'}</span>
+        <span className="font-medium text-foreground">{row.original.customer.firstName} {row.original.customer.lastName ?? ''}</span>
+        <span className="text-xs text-muted-foreground">{row.original.customer.phone ?? '—'}</span>
+        <span className="text-xs text-muted-foreground">{shippingAddressSummary(row.original)}</span>
       </div>
     ) },
-    // The list endpoint omits `items`; fall back to an em dash rather than a misleading 0.
-    { id: 'items', header: 'Items', cell: ({ row }) => row.original.items?.reduce((sum, i) => sum + i.quantity, 0) ?? '—' },
+    /*
+     * What the order bought, read off the items the list payload now carries —
+     * no per-row detail request to fetch them (that would reintroduce the N+1
+     * integrate-orders-api removed). One line per line item, quantity first,
+     * matching the detail page's table so the two surfaces read the same.
+     */
+    { id: 'items', header: 'Items', cell: ({ row }) => {
+      const items = row.original.items ?? []
+      if (items.length === 0) return <span className="text-muted-foreground">—</span>
+      return (
+        <div className="flex flex-col">
+          {items.map((item, i) => (
+            <span key={`${item.productId}-${item.variantId ?? ''}-${i}`} className="text-sm">
+              <span className="tabular-nums">{item.quantity}×</span> {item.productName}
+            </span>
+          ))}
+        </div>
+      )
+    } },
     { id: 'total', header: 'Total', cell: ({ row }) => formatCurrency(Number(row.original.totalAmount)) },
     { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={STATUS_VARIANT[row.original.status]}>{STATUS_LABEL[row.original.status]}</Badge> },
     /*

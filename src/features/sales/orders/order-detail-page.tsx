@@ -631,7 +631,11 @@ export default function OrderDetailPage() {
               {shipment ? (
                 <div className="flex flex-col gap-1 text-sm">
                   <Row label="Carrier" value={shipment.carrier ?? '—'} />
-                  <Row label="Tracking #" value={shipment.trackingNumber ?? '—'} />
+                  {/* Tracking belongs to the Courier card when the courier owns
+                      the shipment, so it is not repeated here: both rows read
+                      the same string, and one copy next to its consignment id
+                      is enough. */}
+                  {!isCourierOwned && <Row label="Tracking #" value={shipment.trackingNumber ?? '—'} />}
                   <Row label="Status" value={SHIPMENT_STATUS_LABEL[shipment.status] ?? shipment.status} />
                   {isCourierOwned && (
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -765,6 +769,37 @@ export default function OrderDetailPage() {
               ) : (
                 <span className="text-muted-foreground">No email on file</span>
               )}
+              {/* The phone sits here only when there is no address below —
+                  checkout's contact phone lives in the address block, and
+                  showing it twice is noise. A collecting shopper has no
+                  address, so the phone moves up beside the name. */}
+              {!order.shippingAddress && order.customer.phone && (
+                <span className="text-muted-foreground">{order.customer.phone}</span>
+              )}
+              {/*
+                The address, one block under the same card rather than a second
+                card that restated the shopper's name. The parcel's recipient
+                keeps its own line — it can differ from the account holder, so
+                the two are not one fact to dedupe.
+              */}
+              {order.shippingAddress ? (
+                <div className="mt-1 flex flex-col gap-0.5 border-t border-border pt-2 text-foreground">
+                  <span>{order.shippingAddress.fullName}</span>
+                  <span>{order.shippingAddress.addressLine1}</span>
+                  {order.shippingAddress.addressLine2 && <span>{order.shippingAddress.addressLine2}</span>}
+                  <span>{order.shippingAddress.city}{order.shippingAddress.state ? `, ${order.shippingAddress.state}` : ''} {order.shippingAddress.postalCode ?? ''}</span>
+                  <span>{order.shippingAddress.country}</span>
+                  <span className="text-muted-foreground">{order.shippingAddress.phone}</span>
+                </div>
+              ) : (
+                <span className="text-muted-foreground">
+                  {order.deliveryMethod === 'PICKUP'
+                    ? // The Collection card already says who is collecting and
+                      // why; this line only needs to say no address is on file.
+                      'No delivery address.'
+                    : 'No shipping address on file.'}
+                </span>
+              )}
             </CardContent>
           </Card>
 
@@ -806,8 +841,8 @@ export default function OrderDetailPage() {
             A collection order must be unmistakable, because the failure it
             prevents is a real one: handing a parcel the customer is coming to
             fetch to a courier, and charging for a delivery nobody asked for.
-            The address card below still renders whatever was captured, but this
-            says plainly that nothing is being delivered.
+            The Customer card above stays short ("No delivery address.") —
+            this card is where that, plainly, is stated.
           */}
           {/* Warning tokens, not raw amber-*. The palette defines --color-warning
               and --color-warning-bg for exactly this, and the hardcoded pair
@@ -831,35 +866,6 @@ export default function OrderDetailPage() {
               </CardContent>
             </Card>
           )}
-
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                {order.deliveryMethod === 'PICKUP' ? 'Contact details' : 'Shipping address'}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-0.5 text-sm text-foreground">
-              {order.shippingAddress ? (
-                <>
-                  <span>{order.shippingAddress.fullName}</span>
-                  <span>{order.shippingAddress.addressLine1}</span>
-                  {order.shippingAddress.addressLine2 && <span>{order.shippingAddress.addressLine2}</span>}
-                  <span>{order.shippingAddress.city}{order.shippingAddress.state ? `, ${order.shippingAddress.state}` : ''} {order.shippingAddress.postalCode ?? ''}</span>
-                  <span>{order.shippingAddress.country}</span>
-                  <span className="text-muted-foreground">{order.shippingAddress.phone}</span>
-                </>
-              ) : (
-                <span className="text-muted-foreground">
-                  {order.deliveryMethod === 'PICKUP'
-                    ? // Expected, not missing data: the checkout stops asking a
-                      // collecting shopper for an address, since there is
-                      // nothing to deliver to.
-                      'None — this order is being collected in person.'
-                    : 'No shipping address on file.'}
-                </span>
-              )}
-            </CardContent>
-          </Card>
 
           <Card>
             <CardHeader><CardTitle>Status history</CardTitle></CardHeader>

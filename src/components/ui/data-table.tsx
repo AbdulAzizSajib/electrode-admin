@@ -219,7 +219,7 @@ export function DataTable<TData>({
                       {header.isPlaceholder ? null : canSort ? (
                         <button
                           type="button"
-                          className="inline-flex items-center gap-1 cursor-pointer select-none hover:text-foreground"
+                          className="inline-flex items-center gap-1 cursor-pointer select-none hover:text-foreground text-sm py-2 px-1.5 font-medium text-muted-foreground transition-colors"
                           onClick={header.column.getToggleSortingHandler()}
                         >
                           {flexRender(header.column.columnDef.header, header.getContext())}
@@ -244,7 +244,7 @@ export function DataTable<TData>({
                          * are carried across so layout is identical everywhere
                          * else this component is used.
                          */
-                        <span className="inline-flex items-center gap-1 cursor-default">
+                        <span className="inline-flex items-center gap-1 cursor-default text-sm py-2">
                           {flexRender(header.column.columnDef.header, header.getContext())}
                         </span>
                       )}

@@ -74,7 +74,14 @@ export interface Order {
   customerId: string
   customer: OrderCustomerRef
   status: OrderStatus
-  /** Only present on detail responses (`GET /orders/:id`) — list rows omit it. */
+  /**
+   * Present on BOTH list and detail responses. The list once omitted items
+   * (keeping the paginated payload light), but the orders table now names what
+   * each order bought, so they ride along from the same `ORDER_LIST_INCLUDE`.
+   * Still treated as optional here because the `_getAllOrders()` shim catches a
+   * fetch failure into an empty cache, and empty is representable while a bare
+   * `undefined` needs the callers' `?? []` fallbacks to survive.
+   */
   items?: OrderLineItem[]
   /** Decimal column — arrives as a string from the API. */
   subtotal: string
@@ -123,6 +130,11 @@ export interface Order {
   deliveryOptionLabel: string | null
   /** Only present on detail responses (`GET /orders/:id`). */
   landingPage?: { id: string; title: string; slug: string } | null
+  /**
+   * Present on BOTH list and detail responses — the list's Customer column
+   * shows where each parcel goes. Null (not "—") for collection orders, which
+   * have no delivery address at all.
+   */
   shippingAddress: OrderShippingAddress | null
   /** Only present on detail responses (`GET /orders/:id`) — list rows omit these. */
   payments?: Payment[]
