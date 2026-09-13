@@ -26,14 +26,14 @@ import { useStoreSettings } from '@/lib/api/store-settings'
 export function ShellBrand({ collapsed = false }: { collapsed?: boolean }) {
   const { data } = useStoreSettings()
 
-  const storeName = data?.storeName?.trim() || 'Ecom Admin'
+  const storeName = data?.storeName?.trim() || 'Admin Panel'
   const accent = data?.siteNameAccent?.trim() ?? ''
 
   // Collapsed, the rail is 4rem and the full name cannot fit, so it falls back
   // to the initial — the name shortened, not a mark standing in for it.
   if (collapsed) {
     return (
-      <span className="w-full text-center text-sm font-semibold text-white">
+      <span className="w-full text-center text-sm font-semibold text-black">
         {storeName.charAt(0).toUpperCase()}
       </span>
     )
@@ -43,9 +43,9 @@ export function ShellBrand({ collapsed = false }: { collapsed?: boolean }) {
   // free text, so a long one has to end in an ellipsis rather than push the
   // lockup out of its own box.
   return (
-    <span className="min-w-0 truncate text-xl font-semibold text-white">
+    <span className="min-w-0 truncate text-xl font-semibold text-Black text-center ">
       {storeName}
-      {accent && <span className="ml-1 text-primary">{accent}</span>}
+      {accent && <span className="ml-1">{accent}</span>}
     </span>
   )
 }

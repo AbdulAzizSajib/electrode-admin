@@ -29,10 +29,10 @@ const focusRing =
 
 function navTriggerClass(active: boolean, collapsed: boolean) {
   return cn(
-    'flex items-center gap-2.5 rounded-md py-1.5 text-base font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-active hover:text-white',
+    'flex items-center gap-2.5 rounded-md py-1.5 text-base  font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-active hover:text-black',
     focusRing,
     collapsed ? 'justify-center px-0' : 'px-2.5',
-    active && 'bg-sidebar-active text-white',
+    active && 'bg-sidebar-active text-black',
   )
 }
 
@@ -53,7 +53,7 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
   })
 
   return (
-    <nav className="flex flex-col gap-2 px-2 py-2">
+    <nav className="flex flex-col gap-2 px-2 py-2 ">
       {NAV_SECTIONS.filter((section) => isNavNodeVisible(section.roles, role)).map((section) => {
         const Icon = section.icon
 
@@ -67,7 +67,7 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
               aria-label={collapsed ? section.label : undefined}
               className={navTriggerClass(active, collapsed)}
             >
-              <Icon className="size-4 shrink-0" />
+              <Icon className="size-5 shrink-0" />
               {!collapsed && <span>{section.label}</span>}
             </NavLink>
           )
@@ -94,7 +94,7 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
                 <TooltipTrigger asChild>
                   <DropdownMenuTrigger asChild>
                     <button type="button" aria-label={section.label} className={navTriggerClass(sectionActive, true)}>
-                      <Icon className="size-4 shrink-0" />
+                      <Icon className="size-5 shrink-0" />
                     </button>
                   </DropdownMenuTrigger>
                 </TooltipTrigger>
@@ -113,7 +113,7 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
                       className={cn(active && 'bg-muted font-medium text-primary')}
                     >
                       <NavLink to={item.path} onClick={onNavigate} className="gap-2">
-                        <ItemIcon className="size-4 shrink-0" />
+                        <ItemIcon className="size-5 shrink-0" />
                         {item.label}
                       </NavLink>
                     </DropdownMenuItem>
@@ -127,20 +127,20 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
         const isOpen = expanded[section.label] ?? sectionActive
 
         return (
-          <div key={section.label}>
+          <div key={section.label} className="">
             <button
               type="button"
               onClick={() => setExpanded((prev) => ({ ...prev, [section.label]: !isOpen }))}
               aria-expanded={isOpen}
               aria-controls={listId}
-              className={cn(navTriggerClass(false, false), 'w-full', sectionActive && 'text-white')}
+              className={cn(navTriggerClass(false, false), 'w-full', sectionActive && 'text-black')}
             >
-              <Icon className="size-4 shrink-0" />
+              <Icon className="size-5 shrink-0" />
               <span className="flex-1 text-left">{section.label}</span>  
               <ChevronDown className={cn('size-3.5 transition-transform', isOpen && 'rotate-180')} />
             </button>
             {isOpen && (
-              <div id={listId} className="ml-4 flex flex-col gap-0.5 border-l border-sidebar-border pl-3 pt-0.5">
+              <div id={listId} className="ml-4 flex flex-col gap-1 border-l border-sidebar-border pl-3 pt-0.5">
                 {items.map((item) => {
                   const active = pathname.startsWith(item.path)
                   const ItemIcon = item.icon
@@ -150,12 +150,12 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
                       to={item.path}
                       onClick={onNavigate}
                       className={cn(
-                        'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-base text-sidebar-foreground transition-colors hover:bg-sidebar-active hover:text-white',
+                        'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-base text-sidebar-foreground transition-colors hover:bg-sidebar-active hover:text-black',
                         focusRing,
-                        active && 'bg-sidebar-active font-medium text-white',
+                        active && 'bg-sidebar-active font-medium text-black',
                       )}
                     >
-                      <ItemIcon className="size-4 shrink-0" />
+                      <ItemIcon className="size-5 shrink-0" />
                       <span className="flex-1">{item.label}</span>
                       {item.path === PENDING_BADGE_PATH && pendingOrders > 0 && (
                         <Badge

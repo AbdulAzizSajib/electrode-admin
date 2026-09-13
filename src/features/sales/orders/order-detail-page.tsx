@@ -17,7 +17,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
 import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
-import { useOrder, useUpdateOrderStatus, type OrderStatus } from '@/lib/api/orders'
+import { ORDER_STATUSES, useOrder, useUpdateOrderStatus, type OrderStatus } from '@/lib/api/orders'
 import { usePaymentsByOrder, useRecordPayment, type PaymentMethod, type PaymentStatus } from '@/lib/api/payments'
 import { useShipmentByOrder, useUpsertShipment, type ShipmentStatus } from '@/lib/api/shipments'
 import {
@@ -435,28 +435,34 @@ export default function OrderDetailPage() {
                       `min-w` on the primitive would otherwise let it shrink to
                       the content. */}
                   <SelectContent className="w-(--radix-select-trigger-width)">
-                    {/* The current status is listed and marked, so the dropdown
-                        reads as "where this order is, among the others" rather
-                        than a list the order is mysteriously absent from. It is
-                        non-selectable: the server rejects a no-op, and offering
-                        it would produce an error toast for a click that means
-                        "leave it alone". */}
-                    <SelectItem value={order.status} disabled>
-                      <StatusOption status={order.status} />
-                    </SelectItem>
-                    {/* CANCELLED is filtered out, not listed: it keeps its own
-                        button beside this, where a destructive action is
-                        visible as one rather than sitting a click deep in a
-                        dropdown between two routine statuses. Both paths run
-                        the same confirmation, so which one an operator reaches
-                        for does not change what happens. */}
-                    {allowedStatuses
-                      .filter((value) => value !== 'CANCELLED')
-                      .map((value) => (
-                        <SelectItem key={value} value={value}>
-                          <StatusOption status={value} />
-                        </SelectItem>
-                      ))}
+                    {/*
+                     * Statuses in one fixed order, whatever the order currently is.
+                     *
+                     * The current status used to be prepended as the first item,
+                     * so moving an order reshuffled the whole list: the moment it
+                     * became CONFIRMED, "Confirmed" jumped to the top and every
+                     * status below it slid out from under the operator's cursor.
+                     * `ORDER_STATUSES` keeps the sequence constant — Pending →
+                     * Confirmed → Processing → … — while the current status still
+                     * appears in its own slot, marked and non-selectable: the
+                     * server rejects a no-op, and offering it would produce an
+                     * error toast for a click that means "leave it alone".
+                     *
+                     * CANCELLED is skipped when it is only an option — it keeps
+                     * its own button beside this, where a destructive action is
+                     * visible as one rather than sitting a click deep in the
+                     * list. When the order IS cancelled it must still appear,
+                     * as the marked current status above.
+                     */}
+                    {ORDER_STATUSES.filter(
+                      (value) =>
+                        value === order.status ||
+                        (allowedStatuses.includes(value) && value !== 'CANCELLED'),
+                    ).map((value) => (
+                      <SelectItem key={value} value={value} disabled={value === order.status}>
+                        <StatusOption status={value} />
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               )}

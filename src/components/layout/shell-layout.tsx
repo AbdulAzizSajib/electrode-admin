@@ -101,7 +101,7 @@ export function ShellLayout() {
         <aside
           className={cn(
             'hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-150 lg:flex',
-            sidebarCollapsed ? 'w-16' : 'w-76',
+            sidebarCollapsed ? 'w-18' : 'w-72',
           )}
         >
           {/* No `gap` — the lockup is one text node now that the monogram tile

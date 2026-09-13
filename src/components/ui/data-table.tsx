@@ -206,96 +206,98 @@ export function DataTable<TData>({
         </div>
       )}
 
-      <Table>
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => {
-                const canSort = header.column.getCanSort()
-                const sortDir = header.column.getIsSorted()
-                return (
-                  <TableHead key={header.id}>
-                    {header.isPlaceholder ? null : canSort ? (
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 cursor-pointer select-none hover:text-foreground"
-                        onClick={header.column.getToggleSortingHandler()}
-                      >
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                        {sortDir === 'asc' ? (
-                          <ArrowUp className="size-3" />
-                        ) : sortDir === 'desc' ? (
-                          <ArrowDown className="size-3" />
-                        ) : (
-                          <ArrowUpDown className="size-3 opacity-40" />
-                        )}
-                      </button>
-                    ) : (
-                      /*
-                       * An unsortable header renders as a plain span, NOT a
-                       * disabled button.
-                       *
-                       * A disabled <button> swallows every click on its
-                       * children, so the select-all checkbox nested in this
-                       * header silently did nothing while the per-row ones
-                       * worked. Wrapping non-interactive text in a disabled
-                       * button was never meaningful markup anyway; the classes
-                       * are carried across so layout is identical everywhere
-                       * else this component is used.
-                       */
-                      <span className="inline-flex items-center gap-1 cursor-default">
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                      </span>
-                    )}
-                  </TableHead>
-                )
-              })}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody>
-          {isLoading ? (
-            Array.from({ length: 6 }).map((_, i) => (
-              <TableRow key={`skeleton-${i}`}>
-                {tableColumns.map((_, ci) => (
-                  <TableCell key={ci}>
-                    <Skeleton className="h-4 w-full max-w-32" />
-                  </TableCell>
-                ))}
+      <div className="overflow-hidden rounded-md border border-border bg-surface">
+        <Table>
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => {
+                  const canSort = header.column.getCanSort()
+                  const sortDir = header.column.getIsSorted()
+                  return (
+                    <TableHead key={header.id}>
+                      {header.isPlaceholder ? null : canSort ? (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 cursor-pointer select-none hover:text-foreground"
+                          onClick={header.column.getToggleSortingHandler()}
+                        >
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {sortDir === 'asc' ? (
+                            <ArrowUp className="size-3" />
+                          ) : sortDir === 'desc' ? (
+                            <ArrowDown className="size-3" />
+                          ) : (
+                            <ArrowUpDown className="size-3 opacity-40" />
+                          )}
+                        </button>
+                      ) : (
+                        /*
+                         * An unsortable header renders as a plain span, NOT a
+                         * disabled button.
+                         *
+                         * A disabled <button> swallows every click on its
+                         * children, so the select-all checkbox nested in this
+                         * header silently did nothing while the per-row ones
+                         * worked. Wrapping non-interactive text in a disabled
+                         * button was never meaningful markup anyway; the classes
+                         * are carried across so layout is identical everywhere
+                         * else this component is used.
+                         */
+                        <span className="inline-flex items-center gap-1 cursor-default">
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                        </span>
+                      )}
+                    </TableHead>
+                  )
+                })}
               </TableRow>
-            ))
-          ) : isError ? (
-            <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={tableColumns.length} className="py-8">
-                <ErrorState description={errorMessage} onRetry={onRetry} />
-              </TableCell>
-            </TableRow>
-          ) : table.getRowModel().rows.length === 0 ? (
-            <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={tableColumns.length} className="py-8">
-                <EmptyState
-                  title={emptyState?.title ?? 'No results'}
-                  description={emptyState?.description ?? 'There is nothing here yet.'}
-                  icon={emptyState?.icon}
-                  action={emptyState?.action}
-                />
-              </TableCell>
-            </TableRow>
-          ) : (
-            table.getRowModel().rows.map((row) => (
-              <TableRow
-                key={row.id}
-                onClick={onRowClick ? () => onRowClick(row.original) : undefined}
-                className={cn(onRowClick && 'cursor-pointer')}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
-                ))}
+            ))}
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              Array.from({ length: 6 }).map((_, i) => (
+                <TableRow key={`skeleton-${i}`}>
+                  {tableColumns.map((_, ci) => (
+                    <TableCell key={ci}>
+                      <Skeleton className="h-4 w-full max-w-32" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : isError ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={tableColumns.length} className="py-8">
+                  <ErrorState description={errorMessage} onRetry={onRetry} />
+                </TableCell>
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
+            ) : table.getRowModel().rows.length === 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={tableColumns.length} className="py-8">
+                  <EmptyState
+                    title={emptyState?.title ?? 'No results'}
+                    description={emptyState?.description ?? 'There is nothing here yet.'}
+                    icon={emptyState?.icon}
+                    action={emptyState?.action}
+                  />
+                </TableCell>
+              </TableRow>
+            ) : (
+              table.getRowModel().rows.map((row) => (
+                <TableRow
+                  key={row.id}
+                  onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                  className={cn(onRowClick && 'cursor-pointer')}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                  ))}
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
       {!isError && !(hidePagerWhenSinglePage && pageCount <= 1) && (
         <DataPagination
