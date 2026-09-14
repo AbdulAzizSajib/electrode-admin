@@ -149,7 +149,7 @@ export const MultiSelect = React.forwardRef<HTMLButtonElement, MultiSelectProps>
               disabled={disabled}
               onBlur={onBlur}
               className={cn(
-                'flex h-8 w-full min-w-0 items-center justify-between gap-1.5 rounded-md border border-input bg-background px-2.5 py-1 text-left text-sm text-foreground',
+                'flex h-10 w-full min-w-0 items-center justify-between gap-1.5 rounded-md border border-input bg-background px-2.5 py-1 text-left text-sm text-foreground',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 'disabled:cursor-not-allowed disabled:opacity-50',
               )}

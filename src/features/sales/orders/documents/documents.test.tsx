@@ -23,6 +23,10 @@ const item = (over: Partial<OrderLineItem> = {}): OrderLineItem => ({
   quantity: 2,
   unitPrice: '500.00',
   totalPrice: '1000.00',
+  // Printed documents do not render the thumbnail — a packing slip is read
+  // beside the goods themselves — but the field is on every line the API
+  // returns, so the fixture carries it.
+  image: null,
   ...over,
 })
 

@@ -49,6 +49,7 @@ const PurchaseOrderDetailPage = lazy(
 
 const OrdersListPage = lazy(() => import('@/features/sales/orders/orders-list-page'))
 const OrderDetailPage = lazy(() => import('@/features/sales/orders/order-detail-page'))
+const OrderCreatePage = lazy(() => import('@/features/sales/orders/order-create-page'))
 const OrderDocumentPage = lazy(
   () => import('@/features/sales/orders/documents/order-document-page'),
 )
@@ -211,6 +212,16 @@ export function AppRouter() {
           <Route path="/inventory/purchase-orders/:poId/edit" element={<PurchaseOrderFormPage />} />
 
           <Route path="/sales/orders" element={<OrdersListPage />} />
+          {/* Above `/:orderId`, or that path captures the literal "new" as an
+              id and sends the operator to a detail page for an order that does
+              not exist — the same ordering `/inventory/purchase-orders/new`
+              above depends on.
+              No RoleGuard: the backend gates POST /orders/manual on
+              ADMIN_PANEL_ROLES, which is OWNER/ADMIN/STAFF — exactly the three
+              values `AdminRole` can take, so anyone who can reach this router
+              already passes. A guard listing all three would read as a
+              restriction while restricting nothing. */}
+          <Route path="/sales/orders/new" element={<OrderCreatePage />} />
           <Route path="/sales/orders/:orderId" element={<OrderDetailPage />} />
           <Route path="/sales/returns" element={<ReturnsPage />} />
           <Route path="/sales/returns/:returnId" element={<ReturnDetailPage />} />

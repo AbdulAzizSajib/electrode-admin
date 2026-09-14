@@ -85,8 +85,8 @@ function ToolbarButton({
       aria-label={label}
       aria-pressed={active}
       className={cn(
-        'inline-flex size-7 items-center justify-center rounded transition-colors',
-        'text-muted-foreground hover:bg-muted hover:text-foreground',
+        'inline-flex size-7  border-r  items-center justify-center  transition-colors',
+        'text-black hover:bg-muted hover:text-foreground',
         'disabled:pointer-events-none disabled:opacity-40',
         active && 'bg-muted text-foreground',
       )}
@@ -127,21 +127,21 @@ function Toolbar({ editor, allowImages }: { editor: Editor; allowImages?: boolea
         active={editor.isActive('bold')}
         onClick={() => editor.chain().focus().toggleBold().run()}
       >
-        <Bold className="size-3.5" />
+        <Bold className="size-4" />
       </ToolbarButton>
       <ToolbarButton
         label="Italic"
         active={editor.isActive('italic')}
         onClick={() => editor.chain().focus().toggleItalic().run()}
       >
-        <Italic className="size-3.5" />
+        <Italic className="size-4" />
       </ToolbarButton>
       <ToolbarButton
         label="Strikethrough"
         active={editor.isActive('strike')}
         onClick={() => editor.chain().focus().toggleStrike().run()}
       >
-        <Strikethrough className="size-3.5" />
+        <Strikethrough className="size-4" />
       </ToolbarButton>
 
       <span className="mx-1 h-4 w-px bg-border" />
@@ -151,14 +151,14 @@ function Toolbar({ editor, allowImages }: { editor: Editor; allowImages?: boolea
         active={editor.isActive('heading', { level: 2 })}
         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
       >
-        <Heading2 className="size-3.5" />
+        <Heading2 className="size-4" />
       </ToolbarButton>
       <ToolbarButton
         label="Sub-heading"
         active={editor.isActive('heading', { level: 3 })}
         onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
       >
-        <Heading3 className="size-3.5" />
+        <Heading3 className="size-4" />
       </ToolbarButton>
 
       <span className="mx-1 h-4 w-px bg-border" />
@@ -168,31 +168,31 @@ function Toolbar({ editor, allowImages }: { editor: Editor; allowImages?: boolea
         active={editor.isActive('bulletList')}
         onClick={() => editor.chain().focus().toggleBulletList().run()}
       >
-        <List className="size-3.5" />
+        <List className="size-4" />
       </ToolbarButton>
       <ToolbarButton
         label="Numbered list"
         active={editor.isActive('orderedList')}
         onClick={() => editor.chain().focus().toggleOrderedList().run()}
       >
-        <ListOrdered className="size-3.5" />
+        <ListOrdered className="size-4" />
       </ToolbarButton>
       <ToolbarButton
         label="Quote"
         active={editor.isActive('blockquote')}
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
       >
-        <Quote className="size-3.5" />
+        <Quote className="size-4" />
       </ToolbarButton>
 
       <span className="mx-1 h-4 w-px bg-border" />
 
       <ToolbarButton label="Add link" active={editor.isActive('link')} onClick={setLink}>
-        <LinkIcon className="size-3.5" />
+        <LinkIcon className="size-4" />
       </ToolbarButton>
       {allowImages && (
         <ToolbarButton label="Insert image" onClick={insertImage}>
-          <ImageIcon className="size-3.5" />
+          <ImageIcon className="size-4" />
         </ToolbarButton>
       )}
       <ToolbarButton
@@ -200,7 +200,7 @@ function Toolbar({ editor, allowImages }: { editor: Editor; allowImages?: boolea
         disabled={!editor.isActive('link')}
         onClick={() => editor.chain().focus().unsetLink().run()}
       >
-        <Unlink className="size-3.5" />
+        <Unlink className="size-4" />
       </ToolbarButton>
 
       <span className="mx-1 h-4 w-px bg-border" />
@@ -210,14 +210,14 @@ function Toolbar({ editor, allowImages }: { editor: Editor; allowImages?: boolea
         disabled={!editor.can().undo()}
         onClick={() => editor.chain().focus().undo().run()}
       >
-        <Undo2 className="size-3.5" />
+        <Undo2 className="size-4" />
       </ToolbarButton>
       <ToolbarButton
         label="Redo"
         disabled={!editor.can().redo()}
         onClick={() => editor.chain().focus().redo().run()}
       >
-        <Redo2 className="size-3.5" />
+        <Redo2 className="size-4" />
       </ToolbarButton>
     </div>
   )

@@ -17,9 +17,11 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
 import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
-import { ORDER_STATUSES, useOrder, useUpdateOrderStatus, type OrderStatus } from '@/lib/api/orders'
+import { CHANNEL_LABEL, ORDER_STATUSES, useOrder, useUpdateOrderStatus, type OrderStatus } from '@/lib/api/orders'
+import { useStaffUser } from '@/lib/api/staff-users'
+import { Thumbnail } from '@/components/ui/thumbnail'
 import { usePaymentsByOrder, useRecordPayment, type PaymentMethod, type PaymentStatus } from '@/lib/api/payments'
-import { useShipmentByOrder, useUpsertShipment, type ShipmentStatus } from '@/lib/api/shipments'
+import { useShipmentByOrder } from '@/lib/api/shipments'
 import {
   useConfiguredCourier,
   useCourierConfig,
@@ -86,26 +88,32 @@ const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
   REFUNDED: 'Refunded',
   PARTIALLY_REFUNDED: 'Partially refunded',
 }
-const SHIPMENT_STATUS_OPTIONS: ShipmentStatus[] = ['PENDING', 'PROCESSING', 'SHIPPED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED', 'RETURNED']
-
-/**
- * Shipment statuses in sentence case, for the same reason as
- * `PAYMENT_STATUS_LABEL`.
+/*
+ * There is no SHIPMENT_STATUS_LABEL here any more, and no shipment form.
  *
- * This replaces a `.replace(/_/g, ' ')` that ran at three call sites and left
- * `OUT FOR DELIVERY` shouting in the middle of ordinary prose. A map also means
- * a status can be worded rather than merely de-underscored.
+ * The panel used to carry a Shipment card beside the Courier one, with a dialog
+ * over carrier / tracking number / an eight-value shipment status. It was
+ * removed because nothing read what it wrote: the printed documents never
+ * mention a carrier or a tracking number, the storefront's /track-order page
+ * shows `order.status` and nothing else, and no report or list touches a
+ * shipment. An operator typed three fields in so they could look at those same
+ * three fields on the same page.
+ *
+ * It also cost more than nothing. It put a third status enum on a page that
+ * already has two — order status and payment status — with no stated relation
+ * between them and no sync in either direction, so an order could read SHIPPED
+ * beside a shipment reading Pending and the panel would not object. And on a
+ * shop with an integrated courier the card was actively misleading: dispatch
+ * overwrites carrier, tracking and status from the courier's response
+ * (courier.service.ts, `recordConsignment`), so anything entered by hand
+ * beforehand was thrown away.
+ *
+ * A shipment is still created, read and kept current — by the courier, through
+ * dispatch and the delivery webhook. The Courier card below is where it
+ * surfaces. The POST/PATCH `/orders/:id/shipment` endpoints are untouched and
+ * still in the Postman collection; what went is the admin's hand-entry UI, not
+ * the API.
  */
-const SHIPMENT_STATUS_LABEL: Record<ShipmentStatus, string> = {
-  PENDING: 'Pending',
-  PROCESSING: 'Processing',
-  SHIPPED: 'Shipped',
-  IN_TRANSIT: 'In transit',
-  OUT_FOR_DELIVERY: 'Out for delivery',
-  DELIVERED: 'Delivered',
-  FAILED: 'Failed',
-  RETURNED: 'Returned',
-}
 
 const paymentSchema = z.object({
   amount: z.coerce.number().min(0.01, 'Amount must be greater than zero'),
@@ -114,13 +122,6 @@ const paymentSchema = z.object({
 })
 type PaymentValues = z.input<typeof paymentSchema>
 type PaymentOutput = z.output<typeof paymentSchema>
-
-const shipmentSchema = z.object({
-  carrier: z.string().optional(),
-  trackingNumber: z.string().optional(),
-  status: z.enum(['PENDING', 'PROCESSING', 'SHIPPED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED', 'RETURNED']),
-})
-type ShipmentValues = z.infer<typeof shipmentSchema>
 
 /**
  * The documents printable from an order, in fulfilment order: pick it, box it
@@ -157,10 +158,15 @@ export default function OrderDetailPage() {
   const navigate = useNavigate()
   const { data: order, isLoading } = useOrder(orderId)
   const { data: payments } = usePaymentsByOrder(orderId)
+  /*
+   * Who recorded this order, when a person did. `useStaffUser` is disabled
+   * without an id, so a website order — which is most of them — makes no
+   * request at all.
+   */
+  const { data: recordedBy } = useStaffUser(order?.createdByUserId ?? undefined)
   const { data: shipment } = useShipmentByOrder(orderId)
   const updateStatus = useUpdateOrderStatus()
   const recordPayment = useRecordPayment()
-  const upsertShipment = useUpsertShipment()
   const dispatchOne = useDispatchSingleOrder()
   const createReturn = useCreateCourierReturn()
 
@@ -176,7 +182,6 @@ export default function OrderDetailPage() {
   const confirmCancel = useConfirmDialog()
 
   const [paymentOpen, setPaymentOpen] = React.useState(false)
-  const [shipmentOpen, setShipmentOpen] = React.useState(false)
   const [returnOpen, setReturnOpen] = React.useState(false)
   const [returnReason, setReturnReason] = React.useState('')
 
@@ -185,14 +190,6 @@ export default function OrderDetailPage() {
   const paymentForm = useForm<PaymentValues, unknown, PaymentOutput>({
     resolver: zodResolver(paymentSchema),
     defaultValues: { amount: 0, method: 'CARD', status: 'PAID' },
-  })
-  const shipmentForm = useForm<ShipmentValues>({
-    resolver: zodResolver(shipmentSchema),
-    values: {
-      carrier: shipment?.carrier ?? '',
-      trackingNumber: shipment?.trackingNumber ?? '',
-      status: shipment?.status ?? 'PENDING',
-    },
   })
 
   if (isLoading) {
@@ -288,6 +285,24 @@ export default function OrderDetailPage() {
   const canDispatchHere =
     !isCourierOwned && order.status === 'PACKED' && Boolean(courier?.capabilities.dispatch)
 
+  /**
+   * Whether this order has a courier surface at all.
+   *
+   * True when the shop's courier can dispatch — the card is then where that
+   * happens — or when this parcel is already out with one. The second half is
+   * not redundant: a shop that switches to MANUAL still has consignments in
+   * flight under the old courier, and hiding those would strand the consignment
+   * id and tracking code that are the only record of where the box is.
+   *
+   * False on a shop with no dispatch integration and nothing dispatched. That
+   * combination is what the card used to render as a paragraph explaining that
+   * it could do nothing, below a Shipment card whose hand-typed carrier and
+   * tracking number no document, report or storefront page ever read. Both are
+   * gone; the status timeline in the right column is the fulfilment record for
+   * a shop that hands parcels over itself.
+   */
+  const showCourierCard = isCourierOwned || Boolean(courier?.capabilities.dispatch)
+
   const dispatchSingle = async () => {
     try {
       const summary = await dispatchOne.mutateAsync(order!.id)
@@ -333,25 +348,6 @@ export default function OrderDetailPage() {
         description: err instanceof Error ? err.message : undefined,
         variant: 'destructive',
       })
-    }
-  }
-
-  const submitShipment = async (values: ShipmentValues) => {
-    if (!orderId) return
-    try {
-      await upsertShipment.mutateAsync({
-        orderId,
-        input: {
-          carrier: values.carrier || undefined,
-          trackingNumber: values.trackingNumber || undefined,
-          status: values.status,
-        },
-        hasExisting: !!shipment,
-      })
-      toast({ title: shipment ? 'Shipment updated' : 'Shipment created' })
-      setShipmentOpen(false)
-    } catch (err) {
-      toast({ title: 'Could not save shipment', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
     }
   }
 
@@ -510,8 +506,17 @@ export default function OrderDetailPage() {
                   {(order.items ?? []).map((item, i) => (
                     <TableRow key={`${item.productId}-${i}`}>
                       <TableCell className="font-medium text-foreground">
-                        {item.productName}
-                        <div className="text-xs font-normal text-muted-foreground">{item.sku}</div>
+                        {/* The picture beside the name, for the same reason the
+                            orders list carries one: whoever is packing this box
+                            is matching it against a shelf. A line with no image
+                            gets a same-sized placeholder, so rows stay level. */}
+                        <div className="flex items-center gap-3">
+                          <Thumbnail url={item.image} className="size-10" />
+                          <div className="min-w-0">
+                            {item.productName}
+                            <div className="text-xs font-normal text-muted-foreground">{item.sku}</div>
+                          </div>
+                        </div>
                       </TableCell>
                       {/* `tabular-nums` throughout: the default proportional
                           figures give `1` a narrower advance than `0`, so
@@ -534,7 +539,21 @@ export default function OrderDetailPage() {
             <div className="flex justify-end border-t border-border px-4 py-3 text-sm">
               <div className="flex w-full max-w-xs flex-col gap-1">
                 <Row label="Subtotal" value={formatCurrency(Number(order.subtotal))} />
-                {Number(order.discountAmount) > 0 && <Row label="Discount" value={`-${formatCurrency(Number(order.discountAmount))}`} />}
+                {Number(order.discountAmount) > 0 && (
+                  <>
+                    <Row label="Discount" value={`-${formatCurrency(Number(order.discountAmount))}`} />
+                    {/*
+                      Why, when a person decided it. A staff discount has no
+                      coupon code to point at, so without this the order carries
+                      an unexplained hole in the day's takings once the
+                      conversation that produced it is gone. Absent for a coupon
+                      discount, which `couponCode` already explains.
+                    */}
+                    {order.discountReason && (
+                      <p className="-mt-0.5 text-xs text-muted-foreground">{order.discountReason}</p>
+                    )}
+                  </>
+                )}
                 {/* The option's captured name, so this line reads as the choice
                     the shopper made rather than a bare "Shipping" — and keeps
                     reading that way after the option is renamed or deleted. */}
@@ -615,63 +634,21 @@ export default function OrderDetailPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex-row items-center justify-between space-y-0">
-              <CardTitle>Shipment</CardTitle>
-              {/* Still reachable when the courier owns the shipment: the dialog
-                  is where the fields are shown disabled and Steadfast is named
-                  as their source. Hiding it would leave the operator with no
-                  explanation of why they cannot edit. */}
-              <Button size="lg" variant="outline" onClick={() => setShipmentOpen(true)}>
-                <Truck />{' '}
-                {isCourierOwned ? 'View shipment' : shipment ? 'Update shipment' : 'Create shipment'}
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {shipment ? (
-                <div className="flex flex-col gap-1 text-sm">
-                  <Row label="Carrier" value={shipment.carrier ?? '—'} />
-                  {/* Tracking belongs to the Courier card when the courier owns
-                      the shipment, so it is not repeated here: both rows read
-                      the same string, and one copy next to its consignment id
-                      is enough. */}
-                  {!isCourierOwned && <Row label="Tracking #" value={shipment.trackingNumber ?? '—'} />}
-                  <Row label="Status" value={SHIPMENT_STATUS_LABEL[shipment.status] ?? shipment.status} />
-                  {isCourierOwned && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Managed by {shipmentCourierName} — these values come from the courier
-                      and are not edited here.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                /*
-                 * The empty state says who fills this in, not just that it is
-                 * empty.
-                 *
-                 * "No shipment created yet." beside a "Create shipment" button
-                 * reads as an instruction, and on a shop that dispatches through
-                 * an integrated courier it is the wrong one: dispatching writes
-                 * this card itself, and a shipment entered by hand first is
-                 * overwritten by the consignment. An operator who follows the
-                 * button does harmless but wasted work and reasonably concludes
-                 * the panel is confusing. So the sentence names the courier that
-                 * is about to do it.
-                 */
-                <p className="text-sm text-muted-foreground">
-                  {canDispatchHere
-                    ? `No shipment yet. Sending this order to ${courierName} fills this in automatically — you only need to enter one by hand if you are shipping it yourself.`
-                    : 'No shipment created yet.'}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
           {/*
-           * Courier state, kept separate from the shipment card above: one is
-           * what this shop recorded, the other is what the courier reports, and
-           * merging them would hide which is which.
+           * The courier's own record of this parcel — the only delivery surface
+           * on the page now that the hand-entered Shipment card beside it has
+           * gone (see the note where SHIPMENT_STATUS_LABEL used to be). What is
+           * shown here is written by dispatch and kept current by the delivery
+           * webhook, so there is no longer a "what we typed" and a "what the
+           * courier says" to keep apart.
+           *
+           * Rendered only when there is a courier in the picture at all. On a
+           * shop set to MANUAL with nothing dispatched, this card's entire
+           * content was a sentence explaining that the card could do nothing —
+           * a box that exists to apologise for existing. It is absent instead,
+           * and the status timeline is the fulfilment record.
            */}
+          {showCourierCard && (
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <CardTitle>Courier</CardTitle>
@@ -734,16 +711,20 @@ export default function OrderDetailPage() {
                   )}
                 </div>
               ) : (
+                /* Reached only on a shop whose courier CAN dispatch — a shop
+                   that cannot has no card at all — so the branch that used to
+                   explain the missing integration has gone with it. What is
+                   left is the one thing an operator needs here: whether this
+                   order is ready to go, and if not, why not. */
                 <p className="text-sm text-muted-foreground">
-                  {!courier?.capabilities.dispatch
-                    ? `This shop is set to ${courierName}, which has no dispatch integration. Hand the parcel over and record the shipment above.`
-                    : order.status === 'PACKED'
-                      ? 'Not dispatched yet.'
-                      : `Not dispatched. Only a packed order can be sent to the courier — this one is ${STATUS_LABEL[order.status].toLowerCase()}.`}
+                  {order.status === 'PACKED'
+                    ? 'Not dispatched yet.'
+                    : `Not dispatched. Only a packed order can be sent to the courier — this one is ${STATUS_LABEL[order.status].toLowerCase()}.`}
                 </p>
               )}
             </CardContent>
           </Card>
+          )}
         </div>
 
         <div className="flex flex-col gap-4">
@@ -802,6 +783,33 @@ export default function OrderDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/*
+            Only for orders a person recorded. Absent on a website order, which
+            is the same reasoning the Campaign card below uses: a card reading
+            "Recorded by: —" on every self-service order is noise, and the
+            ABSENCE of a recorder is precisely what says the customer placed it
+            themselves.
+
+            The staff member is fetched by id and only when there is one, so an
+            ordinary order costs no extra request. A deleted staff account
+            leaves `createdByUserId` null (SetNull), so this card disappears
+            rather than naming nobody — the transition is still attributed on
+            the status timeline below, which records the same user.
+          */}
+          {order.createdByUserId && (
+            <Card>
+              <CardHeader><CardTitle>Recorded by staff</CardTitle></CardHeader>
+              <CardContent className="flex flex-col gap-1 text-sm">
+                <span className="font-medium text-foreground">
+                  {recordedBy?.name ?? recordedBy?.email ?? 'A staff member'}
+                </span>
+                <span className="text-muted-foreground">
+                  Customer reached us on {CHANNEL_LABEL[order.channel ?? 'OTHER']}
+                </span>
+              </CardContent>
+            </Card>
+          )}
 
           {/*
             Only for orders a campaign produced. Absent — not "—" — on a normal
@@ -972,58 +980,6 @@ export default function OrderDetailPage() {
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setPaymentOpen(false)}>Cancel</Button>
                 <Button type="submit" loading={paymentForm.formState.isSubmitting}>Record payment</Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={shipmentOpen} onOpenChange={setShipmentOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{shipment ? 'Update shipment' : 'Create shipment'}</DialogTitle></DialogHeader>
-          {/*
-           * Disabled rather than hidden when the courier owns this shipment.
-           * A hidden tracking number reads as "this order has none"; a disabled
-           * one with the courier named beside it says what is actually true.
-           * The backend refuses these writes on the same condition, so the form
-           * cannot offer a control the server will reject.
-           * See design.md Decision 6.
-           */}
-          {/* Names the courier that actually created this consignment, not a
-              hardcoded one. A parcel dispatched before the shop switched
-              couriers is still carried by the old one, and telling the operator
-              otherwise is the same lie the Courier card is careful not to
-              tell. */}
-          {isCourierOwned && (
-            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-              This shipment is managed by {shipmentCourierName} (consignment{' '}
-              {shipment?.consignmentId}). Its carrier, tracking number, status and
-              timestamps come from the courier and cannot be edited here.
-            </p>
-          )}
-          <Form {...shipmentForm}>
-            <form onSubmit={shipmentForm.handleSubmit(submitShipment)} className="flex flex-col gap-3.5">
-              <FormField control={shipmentForm.control} name="carrier" render={({ field }) => (
-                <FormItem><FormLabel>Carrier</FormLabel><FormControl><Input placeholder="e.g. UPS" disabled={isCourierOwned} {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={shipmentForm.control} name="trackingNumber" render={({ field }) => (
-                <FormItem><FormLabel>Tracking number</FormLabel><FormControl><Input disabled={isCourierOwned} {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={shipmentForm.control} name="status" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Status</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange} disabled={isCourierOwned}>
-                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      {SHIPMENT_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{SHIPMENT_STATUS_LABEL[s]}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShipmentOpen(false)}>Cancel</Button>
-                <Button type="submit" disabled={isCourierOwned} loading={shipmentForm.formState.isSubmitting}>{shipment ? 'Save changes' : 'Create shipment'}</Button>
               </DialogFooter>
             </form>
           </Form>

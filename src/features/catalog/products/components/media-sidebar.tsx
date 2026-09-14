@@ -11,6 +11,7 @@ import {
   type PendingImage,
 } from '@/features/catalog/products/components/image-upload-field'
 import { useUploadVideo } from '@/lib/api/uploads'
+import { Thumbnail } from '@/components/ui/thumbnail'
 import { cn } from '@/lib/utils/cn'
 
 /**
@@ -47,33 +48,6 @@ export interface MediaSidebarProps {
    * a product, and the merchant is told so rather than shown dead controls.
    */
   productExists: boolean
-}
-
-/** A URL thumbnail that degrades to a placeholder rather than a broken image. */
-function Thumb({ url, className }: { url?: string; className?: string }) {
-  const [failed, setFailed] = React.useState(false)
-
-  if (!url || failed) {
-    return (
-      <div
-        className={cn(
-          'flex items-center justify-center rounded-md border border-border bg-muted',
-          className,
-        )}
-      >
-        <ImageIcon className="size-5 text-muted-foreground" />
-      </div>
-    )
-  }
-
-  return (
-    <img
-      src={url}
-      alt=""
-      onError={() => setFailed(true)}
-      className={cn('rounded-md border border-border object-cover', className)}
-    />
-  )
 }
 
 export function MediaSidebar({
@@ -137,7 +111,7 @@ export function MediaSidebar({
           <CardTitle className="text-sm">Main image</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <Thumb url={primary?.url ?? pendingPrimaryUrl} className="aspect-square w-full" />
+          <Thumbnail url={primary?.url ?? pendingPrimaryUrl} className="aspect-square w-full" />
           <p className="text-xs text-muted-foreground">
             Shown on the product card. Whichever image is starred below is the main one.
           </p>
@@ -259,7 +233,7 @@ export function MediaSidebar({
                     key={image.id ?? `url-${index}`}
                     className="flex items-start gap-2 rounded-md border border-border p-2"
                   >
-                    <Thumb url={image.url} className="size-12 shrink-0" />
+                    <Thumbnail url={image.url} className="size-12 shrink-0" />
                     <div className="flex flex-1 flex-col gap-1.5">
                       {/* A placeholder is not an accessible name, and it
                           disappears the moment the field is typed in — so each

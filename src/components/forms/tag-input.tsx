@@ -161,7 +161,7 @@ export function TagInput({
           <div
             onClick={() => inputRef.current?.focus()}
             className={cn(
-              'flex min-h-8 w-full flex-wrap items-center gap-1 rounded-md border border-input bg-background px-2 py-1',
+              'flex min-h-10 w-full flex-wrap items-center gap-1 rounded-md border border-input bg-background px-2 py-1',
               'focus-within:ring-2 focus-within:ring-ring',
               disabled && 'cursor-not-allowed opacity-50',
             )}

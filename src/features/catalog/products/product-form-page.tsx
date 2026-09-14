@@ -156,7 +156,7 @@ const EMPTY_VALUES: FormValues = {
   seoTitle: '',
   seoDescription: '',
   type: 'SIMPLE',
-  status: 'DRAFT',
+  status: 'ACTIVE',
   categoryId: null,
   brandId: '',
   offerPrice: 0,
@@ -1030,7 +1030,7 @@ export default function ProductFormPage() {
                           <FormLabel>Name</FormLabel>
                           <FormControl>
                             <Input
-                              placeholder="65W USB-C Fast Charger"
+                              placeholder="product name"
                               {...field}
                               onChange={(event) => {
                                 field.onChange(event)
@@ -1051,7 +1051,7 @@ export default function ProductFormPage() {
                           <div className="relative">
                             <FormControl>
                               <Input
-                                placeholder="65w-usb-c-fast-charger"
+                                placeholder="product code"
                                 className="pr-8"
                                 {...field}
                                 onChange={(event) => {
@@ -1083,8 +1083,8 @@ export default function ProductFormPage() {
                       <FormItem data-field="shortDescription">
                         <FormLabel>Overview</FormLabel>
                         <FormControl>
-                          <RichTextEditor
-                            minHeight="min-h-24"
+                          <RichTextEditor    
+                            minHeight="min-h-20"
                             value={field.value}
                             onChange={field.onChange}
                           />
@@ -1277,9 +1277,9 @@ export default function ProductFormPage() {
                          * loaded product's value, and the enum then rejects the
                          * save with "Invalid option". Radix forbids an item whose
                          * value is `''`, so `''` is never a real choice here and
-                         * ignoring it loses nothing.
+                         * ignoring it loses nothing.s
                          */}
-                        <Select
+                        <Select          
                           value={field.value}
                           onValueChange={(next) => next && field.onChange(next)}
                         >

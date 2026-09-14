@@ -5,11 +5,16 @@
  * synchronously (its own mock-to-real migration is a later change — see design.md Decision 4 in
  * openspec/changes/integrate-orders-api). Don't add new callers of it.
  *
- * There is no order-create function here: the real backend only creates orders through customer
- * checkout (`POST /orders` against the caller's own cart) — there's no admin "create order on a
- * customer's behalf" capability to wrap. Cancellation similarly isn't a separate call: the
- * dedicated cancel endpoint is customer-self-service only, so admin cancellation goes through
- * `updateOrderStatus` with `status: 'CANCELLED'` like any other status change.
+ * Orders CAN now be created from here, through `POST /orders/manual` — the seller's side of a
+ * WhatsApp or Messenger conversation. That endpoint is not `POST /orders`: the latter is the
+ * shopper's checkout, runs under `optionalAuth` so guests can reach it, and must never grow a
+ * field like `discountAmount`. Pricing goes through `POST /orders/quote/manual` for the same
+ * reason — the shopper's `/orders/quote` would price an admin's OWN cart, which is correct there
+ * and wrong here.
+ *
+ * Cancellation still isn't a separate call: the dedicated cancel endpoint is customer-self-service
+ * only, so admin cancellation goes through `updateOrderStatus` with `status: 'CANCELLED'` like any
+ * other status change.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
@@ -39,6 +44,55 @@ export interface OrderLineItem {
   unitPrice: string
   /** Decimal column — arrives as a string from the API. */
   totalPrice: string
+  /**
+   * The line's current picture: the variant's own image when the line names a
+   * variant that has one, else the product's primary image, else null.
+   *
+   * Present on BOTH list and detail reads, and in the same shape for staff and
+   * for the customer — the server flattens the nested relations at every
+   * boundary. A product with no photography legitimately has none, so null is a
+   * normal value here rather than a failure; `Thumbnail` renders it.
+   *
+   * Deliberately NOT a snapshot taken at placement, unlike `productName`, `sku`
+   * and `unitPrice` beside it. Those are what the customer was sold and are
+   * accountable facts of the transaction; a photograph is not, so replacing a
+   * product's image shows through to past orders and does not make their record
+   * untrue. An operator matching a parcel against a shelf wants the picture of
+   * what is on the shelf now.
+   */
+  image: string | null
+}
+
+/**
+ * Where the CUSTOMER reached the shop — not how the order was entered.
+ *
+ * `WEBSITE` means the shopper placed it themselves and is the server's column
+ * default, so it is what every order placed before manual entry existed reads
+ * as. The rest are conversations a seller turned into an order by hand.
+ *
+ * There is no `LANDING_PAGE`: campaign attribution is `landingPageId`, and two
+ * fields answering one question is how the two come to disagree.
+ */
+export type OrderChannel = 'WEBSITE' | 'WHATSAPP' | 'MESSENGER' | 'PHONE' | 'IN_STORE' | 'OTHER'
+
+/** What staff may select when recording an order — `WEBSITE` is not offered, and the API rejects it. */
+export const MANUAL_ORDER_CHANNELS = [
+  'WHATSAPP',
+  'MESSENGER',
+  'PHONE',
+  'IN_STORE',
+  'OTHER',
+] as const satisfies readonly OrderChannel[]
+
+export type ManualOrderChannel = (typeof MANUAL_ORDER_CHANNELS)[number]
+
+export const CHANNEL_LABEL: Record<OrderChannel, string> = {
+  WEBSITE: 'Website',
+  WHATSAPP: 'WhatsApp',
+  MESSENGER: 'Messenger',
+  PHONE: 'Phone',
+  IN_STORE: 'In person',
+  OTHER: 'Other',
 }
 
 export interface OrderStatusEvent {
@@ -94,6 +148,27 @@ export interface Order {
   /** Decimal column — arrives as a string from the API. */
   totalAmount: string
   couponCode: string | null
+  /**
+   * Why a discount was given, when a person decided to give one.
+   *
+   * Set only on a staff-placed order — a price negotiated in a WhatsApp
+   * conversation has no code to point at. Null for a coupon discount, which
+   * `couponCode` already explains, and null for no discount at all.
+   */
+  discountReason: string | null
+  /**
+   * Where the customer came from. Defaults to `WEBSITE` server-side, so every
+   * order has one.
+   */
+  channel: OrderChannel
+  /**
+   * Which staff member recorded this order, when one did.
+   *
+   * Null means nobody placed it on the customer's behalf — i.e. the customer
+   * placed it themselves. The absence is the signal, so render nothing rather
+   * than a dash or "unknown", which would read as missing data.
+   */
+  createdByUserId: string | null
   notes: string | null
   /**
    * The campaign that produced this order, when it came from a landing page.
@@ -169,11 +244,72 @@ export interface Order {
 
 export interface OrderListParams extends ListParams {
   status?: OrderStatus
+  /**
+   * Narrows to one channel. Sent to the backend, which filters through its
+   * QueryBuilder — never applied to the fetched page, which would answer
+   * "WhatsApp orders among these ten" while reading as "WhatsApp orders".
+   */
+  channel?: OrderChannel
 }
 
 export interface UpdateOrderStatusInput {
   status: OrderStatus
   note?: string
+}
+
+/** One line of a manual order. No price field: the server prices from the catalog. */
+export interface ManualOrderLineInput {
+  productId: string
+  variantId?: string
+  quantity: number
+}
+
+export interface ManualOrderAddressInput {
+  addressLine1: string
+  addressLine2?: string
+  city?: string
+  state?: string
+  postalCode?: string
+  country?: string
+}
+
+export interface CreateManualOrderInput {
+  /** The customer's identity. Normalized server-side, so the stored value may differ. */
+  phone: string
+  fullName?: string
+  shippingAddress: ManualOrderAddressInput
+  items: ManualOrderLineInput[]
+  deliveryOptionKey: string
+  channel: ManualOrderChannel
+  /** Required by the API whenever `discountAmount` is above zero. */
+  discountAmount?: number
+  discountReason?: string
+  notes?: string
+}
+
+/** What the form needs priced. Mirrors the placement payload minus the customer. */
+export interface ManualOrderQuoteInput {
+  items: ManualOrderLineInput[]
+  deliveryOptionKey: string
+  discountAmount?: number
+}
+
+export interface ManualOrderQuote {
+  subtotal: number
+  discountAmount: number
+  taxAmount: number
+  shippingAmount: number
+  /** Delivery before any waiver, so "Free" can be shown as a saving. */
+  shippingBeforeWaiver: number
+  deliveryDays: number | null
+  totalAmount: number
+  delivery: {
+    optionKey: string
+    optionLabel: string
+    method: 'DELIVERY' | 'PICKUP'
+    price: number
+    days: number
+  } | null
 }
 
 async function listOrders(params: OrderListParams = {}): Promise<PaginatedResponse<Order>> {
@@ -186,6 +322,7 @@ async function listOrders(params: OrderListParams = {}): Promise<PaginatedRespon
   query.set('limit', String(limit))
   if (params.search) query.set('searchTerm', params.search)
   if (params.status) query.set('status', params.status)
+  if (params.channel) query.set('channel', params.channel)
 
   const res = await request<Order[]>(`/orders?${query}`)
   return {
@@ -201,6 +338,50 @@ async function getOrder(id: string): Promise<Order> {
 
 async function updateOrderStatus(id: string, input: UpdateOrderStatusInput): Promise<Order> {
   const res = await request<Order>(`/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify(input) })
+  return res.data
+}
+
+/**
+ * Records an order taken off-site.
+ *
+ * `idempotencyKey` is a header rather than a body field, mirroring the server,
+ * and the CALLER owns it: it must survive a retry of the same order so a second
+ * attempt replays instead of sending the customer a second parcel. Minting one
+ * here would defeat the purpose, because every retry would mint a fresh one.
+ */
+async function createManualOrder(
+  input: CreateManualOrderInput,
+  idempotencyKey: string,
+): Promise<Order> {
+  const res = await request<Order>('/orders/manual', {
+    method: 'POST',
+    /*
+     * Content-Type is restated here and must be. `request()` spreads `init`
+     * LAST, so a `headers` object passed in replaces its default outright
+     * rather than merging — dropping the JSON content type, which makes the
+     * backend fail to parse the body. The one other caller that sets headers
+     * (uploads) sends FormData and wants exactly that behaviour.
+     */
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+    body: JSON.stringify(input),
+  })
+  return res.data
+}
+
+/**
+ * Prices an order still being typed.
+ *
+ * The panel never works a total out for itself. Tax comes from each product's
+ * own rule, the discount is allocated across lines BEFORE tax, and delivery can
+ * be waived by a free-shipping threshold — so a figure computed here would be
+ * right until the first rule changed, and the operator would already have read
+ * it to the customer. See design.md, Decision 1.
+ */
+async function quoteManualOrder(input: ManualOrderQuoteInput): Promise<ManualOrderQuote> {
+  const res = await request<ManualOrderQuote>('/orders/quote/manual', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
   return res.data
 }
 
@@ -221,6 +402,30 @@ export function useUpdateOrderStatus() {
       client.invalidateQueries({ queryKey: queryKeys.orders.detail(v.id) })
     },
   })
+}
+
+export function useCreateManualOrder() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ input, idempotencyKey }: { input: CreateManualOrderInput; idempotencyKey: string }) =>
+      createManualOrder(input, idempotencyKey),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: queryKeys.orders.all })
+    },
+  })
+}
+
+/**
+ * The running total for an order being typed.
+ *
+ * A mutation rather than a query, deliberately. The form owns when to price —
+ * it debounces the operator's typing and disables submit until a fresh figure
+ * has landed — and a query keyed on the whole draft would cache a total per
+ * keystroke, each entry stale the moment the catalog moves. Nothing here is
+ * worth re-reading later; only the newest answer matters.
+ */
+export function useManualOrderQuote() {
+  return useMutation({ mutationFn: quoteManualOrder })
 }
 
 // --- Compatibility shim for still-mock modules (see file header) ---

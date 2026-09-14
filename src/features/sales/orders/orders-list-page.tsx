@@ -1,17 +1,18 @@
 import * as React from 'react'
 import { useNavigate } from 'react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import { AlertTriangle, ShoppingCart, Truck } from 'lucide-react'
+import { AlertTriangle, Plus, ShoppingCart, Truck } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DataTable } from '@/components/ui/data-table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Thumbnail } from '@/components/ui/thumbnail'
 import { CourierStatusBadge } from '@/features/sales/courier/courier-status-badge'
 import { courierNeedsAttention } from '@/features/sales/courier/courier-presentation'
 import { DispatchDialog } from '@/features/sales/courier/dispatch-preview'
 import { useConfiguredCourier } from '@/lib/api/courier'
-import { useOrders, type Order, type OrderStatus } from '@/lib/api/orders'
+import { CHANNEL_LABEL, useOrders, type Order, type OrderChannel, type OrderStatus } from '@/lib/api/orders'
 import { formatCurrency, formatDate } from '@/lib/utils/format'
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
@@ -54,6 +55,7 @@ export default function OrdersListPage() {
   const navigate = useNavigate()
   const [search, setSearch] = React.useState('')
   const [status, setStatus] = React.useState('all')
+  const [channel, setChannel] = React.useState('all')
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(10)
 
@@ -75,6 +77,10 @@ export default function OrdersListPage() {
     page,
     limit: pageSize,
     status: status === 'all' ? undefined : (status as OrderStatus),
+    // Sent to the backend, not applied to the fetched page: filtering here
+    // would answer "WhatsApp orders among these ten" while reading as
+    // "WhatsApp orders". Combines with the status filter server-side.
+    channel: channel === 'all' ? undefined : (channel as OrderChannel),
   })
 
   /*
@@ -173,13 +179,46 @@ export default function OrdersListPage() {
       const items = row.original.items ?? []
       if (items.length === 0) return <span className="text-muted-foreground">—</span>
       return (
-        <div className="flex flex-col">
+        /*
+         * A thumbnail per line, beside the name. An operator packing a parcel
+         * is matching a picture against a shelf, and this list is where they
+         * do it — making them open each order to see what is in it costs the
+         * same as not showing the picture at all.
+         *
+         * `gap-1` between rows and a fixed `size-8` box so a line with no
+         * image is exactly as tall as one with: `Thumbnail` renders a
+         * placeholder of the same size, which is what stops the column
+         * reflowing when one product has no photography.
+         */
+        <div className="flex flex-col gap-1">
           {items.map((item, i) => (
-            <span key={`${item.productId}-${item.variantId ?? ''}-${i}`} className="text-sm">
-              <span className="tabular-nums">{item.quantity}×</span> {item.productName}
+            <span
+              key={`${item.productId}-${item.variantId ?? ''}-${i}`}
+              className="flex items-center gap-2 text-sm"
+            >
+              <Thumbnail url={item.image} className="size-8" />
+              <span className="min-w-0">
+                <span className="tabular-nums">{item.quantity}×</span> {item.productName}
+              </span>
             </span>
           ))}
         </div>
+      )
+    } },
+    /*
+     * Where the customer came from. Its own column rather than a badge inside
+     * the status one: the two are independent axes and operators filter by
+     * them together, so conflating them would make neither readable.
+     *
+     * A website order is named plainly and carries no staff member, because
+     * nobody took it — that absence is the information.
+     */
+    { id: 'channel', header: 'Source', cell: ({ row }) => {
+      const value = row.original.channel ?? 'WEBSITE'
+      return value === 'WEBSITE' ? (
+        <span className="text-sm text-muted-foreground">{CHANNEL_LABEL.WEBSITE}</span>
+      ) : (
+        <Badge variant="secondary">{CHANNEL_LABEL[value]}</Badge>
       )
     } },
     { id: 'total', header: 'Total', cell: ({ row }) => formatCurrency(Number(row.original.totalAmount)) },
@@ -222,7 +261,23 @@ export default function OrdersListPage() {
 
   return (
     <div className="flex flex-col gap-4" ref={pageRef}>
-      <PageHeader title="Orders" description="Track and fulfill customer orders." />
+      <PageHeader
+        title="Orders"
+        description="Track and fulfill customer orders."
+        actions={
+          /*
+           * Recording an order taken over WhatsApp, Messenger or the phone.
+           *
+           * Ungated, deliberately: the backend gates POST /orders/manual on
+           * ADMIN_PANEL_ROLES, which is OWNER/ADMIN/STAFF — every role that can
+           * sign into this panel. A `RequireRole` naming all three would read as
+           * a restriction while hiding the button from nobody.
+           */
+          <Button size="lg" onClick={() => navigate('/sales/orders/new')}>
+            <Plus /> Record an order
+          </Button>
+        }
+      />
 
       {/*
        * The bulk action bar, present only when something is selected. It says
@@ -267,17 +322,30 @@ export default function OrdersListPage() {
         onRowClick={(row) => navigate(`/sales/orders/${row.id}`)}
         emptyState={{ icon: ShoppingCart, title: 'No orders found' }}
         toolbar={
-          <Select value={status} onValueChange={changeView((v: string) => { setStatus(v); setPage(1) })}>
-            <SelectTrigger className="h-8 w-40">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              {Object.entries(STATUS_LABEL).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <>
+            <Select value={status} onValueChange={changeView((v: string) => { setStatus(v); setPage(1) })}>
+              <SelectTrigger className="h-8 w-40">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                {Object.entries(STATUS_LABEL).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={channel} onValueChange={changeView((v: string) => { setChannel(v); setPage(1) })}>
+              <SelectTrigger className="h-8 w-40">
+                <SelectValue placeholder="Source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All sources</SelectItem>
+                {Object.entries(CHANNEL_LABEL).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
         }
         page={page}
         pageSize={pageSize}
