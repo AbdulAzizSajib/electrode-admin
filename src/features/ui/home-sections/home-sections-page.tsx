@@ -1,0 +1,264 @@
+import { ArrowDown, ArrowUp, GripVertical, TriangleAlert } from 'lucide-react'
+import { PageHeader } from '@/components/ui/page-header'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
+import { toast } from '@/components/ui/use-toast'
+import {
+  EditorActions,
+  UnsavedChangesDialog,
+} from '@/features/ui/components/settings-editor'
+import {
+  moveItem,
+  useSettingsDraft,
+  useUnsavedChangesGuard,
+} from '@/features/ui/components/settings-editor-utils'
+import {
+  ReorderableList,
+  type DragHandleProps,
+} from '@/features/ui/components/reorderable-list'
+import {
+  useStoreSettings,
+  useUpdateStoreSettings,
+  DEFAULT_HOME_CONFIG,
+  HOME_SECTION_REGISTRY,
+  type HomeConfig,
+  type HomeSection,
+  type HomeSectionKey,
+} from '@/lib/api/store-settings'
+
+/**
+ * Which sections the website's home page is built from, and in what order.
+ *
+ * Writes ONLY `homeConfig`. `PATCH /settings` is a partial upsert, so this page and the other
+ * settings editors are saved independently without any of them clobbering another — the same
+ * disjoint-field-set arrangement Catalog Setting, Checkout Setting, Header Links and Footer Links
+ * already rely on.
+ *
+ * Every switch here is reversible at no cost, which is why none of them asks for confirmation:
+ * turning a section off removes it from the home page and nothing else. The products, banners,
+ * testimonials and posts it was showing are all untouched and still reachable at their own URLs,
+ * so turning it back on restores exactly what was there.
+ *
+ * THE HOME PAGE ONLY. The header, footer, announcement bar and mobile menu are on every page of
+ * the website, not just this one, and are deliberately not listed here.
+ */
+
+const TITLE = 'Home sections'
+const DESCRIPTION =
+  'The blocks your home page is built from, top to bottom. Drag to reorder, or switch a section off to hide it — nothing it shows is deleted, so you can switch it back on at any time.'
+
+/** Look-up from key to the merchant-facing name and description. */
+const SECTION_INFO = new Map(HOME_SECTION_REGISTRY.map((section) => [section.key, section]))
+
+/**
+ * One section: what it is, where it sits, and whether it is shown.
+ *
+ * Carries BOTH a drag handle and a pair of move buttons. The drag handle is the fast path, but
+ * native drag cannot be operated by keyboard and is unreliable on touch — and a good share of
+ * merchants run this panel from a tablet. The buttons are what make the order reachable for them,
+ * so they are not redundant with the handle; they are the accessible version of it.
+ */
+function SectionRow({
+  section,
+  index,
+  count,
+  dragHandleProps,
+  onMove,
+  onToggle,
+}: {
+  section: HomeSection
+  index: number
+  count: number
+  dragHandleProps: DragHandleProps
+  onMove: (from: number, to: number) => void
+  onToggle: (enabled: boolean) => void
+}) {
+  const info = SECTION_INFO.get(section.key)
+  const switchId = `home-section-${section.key}`
+
+  return (
+    <div
+      {...dragHandleProps}
+      className={`flex items-center gap-3 rounded-md border border-border bg-card p-3 ${
+        section.enabled ? '' : 'opacity-60'
+      }`}
+    >
+      {/* Presentational: the drag affordance lives on the whole row, and the
+          buttons beside it are what a keyboard reaches. */}
+      <GripVertical className="size-4 shrink-0 cursor-grab text-muted-foreground" aria-hidden />
+
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <Label htmlFor={switchId} className="cursor-pointer">
+          {info?.label ?? section.key}
+        </Label>
+        <span className="text-xs text-muted-foreground">{info?.description}</span>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1">
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          disabled={index === 0}
+          onClick={() => onMove(index, index - 1)}
+          aria-label={`Move ${info?.label ?? section.key} up`}
+        >
+          <ArrowUp className="size-4" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          disabled={index === count - 1}
+          onClick={() => onMove(index, index + 1)}
+          aria-label={`Move ${info?.label ?? section.key} down`}
+        >
+          <ArrowDown className="size-4" />
+        </Button>
+        <Switch
+          id={switchId}
+          checked={section.enabled}
+          onCheckedChange={onToggle}
+          aria-label={`Show ${info?.label ?? section.key}`}
+        />
+      </div>
+    </div>
+  )
+}
+
+export default function HomeSectionsPage() {
+  const { data, isLoading, error } = useStoreSettings()
+  const updateMutation = useUpdateStoreSettings()
+
+  /*
+   * An unconfigured store seeds from the same defaults the backend falls back to, so the list shows
+   * what the home page is actually doing rather than reading as though every section were off.
+   * `data &&` matters: until the record arrives the draft has no loaded value, and
+   * `useSettingsDraft` treats that as not-yet-dirty rather than as a merchant's choice.
+   *
+   * A stored list may be SHORTER than the registry — that is a config saved before a section
+   * shipped, not a corrupt one. Missing sections are appended below rather than dropped, mirroring
+   * what the backend's own reconciliation does on the read path. Without this the merchant would
+   * simply never see the new section, and could not switch it on.
+   */
+  const draft = useSettingsDraft<HomeConfig>(
+    data && (data.homeConfig ?? DEFAULT_HOME_CONFIG),
+    DEFAULT_HOME_CONFIG,
+  )
+  const blocker = useUnsavedChangesGuard(draft.isDirty)
+
+  const stored = draft.value
+  const known = new Set<HomeSectionKey>(HOME_SECTION_REGISTRY.map((s) => s.key))
+
+  /*
+   * What the merchant edits: their stored order with anything unrecognised dropped and anything
+   * missing appended, enabled. The appended-at-the-end placement is a deliberate simplification of
+   * the backend's rule (which splices at the registry position) — the merchant can see the new row
+   * and drag it where they want, and the save then makes their choice explicit.
+   */
+  const sections: HomeConfig = [
+    ...stored.filter((section) => known.has(section.key)),
+    ...HOME_SECTION_REGISTRY.filter(
+      (entry) => !stored.some((section) => section.key === entry.key),
+    ).map((entry) => ({ key: entry.key, enabled: true })),
+  ]
+
+  const allHidden = sections.every((section) => !section.enabled)
+
+  const handleSave = async () => {
+    try {
+      // One key and only one — see the note at the top of this file.
+      await updateMutation.mutateAsync({ homeConfig: sections })
+      draft.markSaved(sections)
+      toast({ title: 'Home sections saved' })
+    } catch (err) {
+      // The draft is deliberately left as it was: a merchant whose save failed
+      // should not also lose the ordering they just built.
+      toast({
+        title: 'Could not save the home sections',
+        description: err instanceof Error ? err.message : undefined,
+        variant: 'destructive',
+      })
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-4">
+        <PageHeader title={TITLE} description={DESCRIPTION} />
+        <Skeleton className="h-136 w-full" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col gap-4">
+        <PageHeader title={TITLE} description={DESCRIPTION} />
+        <p className="text-sm text-destructive">
+          {error instanceof Error ? error.message : 'Could not load the home sections.'}
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader title={TITLE} description={DESCRIPTION} />
+
+      {/*
+        Stated, not prevented. Every section off is a real choice — a merchant running everything
+        through a campaign page may want exactly that — so the save is not blocked. But it is also
+        indistinguishable from a mistake once saved, and the home page is the one page nobody
+        checks after editing a list, so it is worth saying out loud beforehand.
+      */}
+      {allHidden ? (
+        <Card className="flex items-center gap-2 border-warning/40 p-3">
+          <TriangleAlert className="size-4 shrink-0 text-warning" />
+          <span className="text-sm text-foreground">
+            <span className="font-medium">Your home page will be empty.</span> Every section is
+            switched off, so visitors will see only your header and footer. Your menus, products and
+            other pages are unaffected.
+          </span>
+        </Card>
+      ) : null}
+
+      <Card className="p-3">
+        <ReorderableList
+          items={sections}
+          getKey={(section) => section.key}
+          onReorder={draft.set}
+          className="flex flex-col gap-2"
+          renderItem={(section, dragHandleProps, index) => (
+            <SectionRow
+              section={section}
+              index={index}
+              count={sections.length}
+              dragHandleProps={dragHandleProps}
+              onMove={(from, to) => draft.set(moveItem(sections, from, to))}
+              onToggle={(enabled) =>
+                draft.set(
+                  sections.map((entry) =>
+                    entry.key === section.key ? { ...entry, enabled } : entry,
+                  ),
+                )
+              }
+            />
+          )}
+        />
+      </Card>
+
+      <EditorActions
+        isDirty={draft.isDirty}
+        isSaving={updateMutation.isPending}
+        onReset={draft.reset}
+        onSave={handleSave}
+      />
+
+      <UnsavedChangesDialog blocker={blocker} />
+    </div>
+  )
+}

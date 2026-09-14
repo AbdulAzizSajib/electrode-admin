@@ -91,6 +91,16 @@ export interface CourierProviderInfo {
   /** Whether the API credentials are present. Never the credentials themselves. */
   credentialsConfigured: boolean
   webhookConfigured: boolean
+  /**
+   * Whether the merchant has this integration switched on at UI → Integrations.
+   *
+   * Independent of `credentialsConfigured`: a courier can be fully configured
+   * and deliberately switched off. The picker refuses to OFFER a disabled
+   * courier rather than letting it be chosen and then refused on save — the
+   * server enforces the same rule, so this is the honest version of a refusal
+   * that would happen anyway.
+   */
+  enabled: boolean
 }
 
 export interface CourierConfiguration {

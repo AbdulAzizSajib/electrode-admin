@@ -11,7 +11,6 @@ export const queryKeys = {
 
   attributes: { all: ['attributes'] as const, list: (p?: object) => ['attributes', 'list', p] as const, detail: (id: string) => ['attributes', 'detail', id] as const },
   taxRules: { all: ['tax-rules'] as const, list: (p?: object) => ['tax-rules', 'list', p] as const, detail: (id: string) => ['tax-rules', 'detail', id] as const },
-  collections: { all: ['collections'] as const, list: (p?: object) => ['collections', 'list', p] as const, detail: (id: string) => ['collections', 'detail', id] as const },
   bundleDeals: { all: ['bundle-deals'] as const, list: (p?: object) => ['bundle-deals', 'list', p] as const, detail: (id: string) => ['bundle-deals', 'detail', id] as const },
   // `search` is keyed by term rather than by a params object: the autocomplete
   // asks per keystroke and each term is its own cacheable answer.
@@ -34,6 +33,19 @@ export const queryKeys = {
     all: ['courier'] as const,
     balance: ['courier', 'balance'] as const,
     config: ['courier', 'config'] as const,
+  },
+  /*
+   * Third-party connections — couriers, tracking pixels, whatever comes next.
+   *
+   * Separate from `courier` above, which answers "what can the selected courier
+   * do and is it ready"; this answers "what is connected and what credentials
+   * are stored". They overlap for couriers and diverge for everything else, and
+   * a saved credential has to invalidate both.
+   */
+  integrations: {
+    all: ['integrations'] as const,
+    list: ['integrations', 'list'] as const,
+    detail: (provider: string) => ['integrations', 'detail', provider] as const,
   },
   returns: { all: ['returns'] as const, list: (p?: object) => ['returns', 'list', p] as const, detail: (id: string) => ['returns', 'detail', id] as const },
   refunds: { all: ['refunds'] as const, list: (p?: object) => ['refunds', 'list', p] as const, detail: (id: string) => ['refunds', 'detail', id] as const },

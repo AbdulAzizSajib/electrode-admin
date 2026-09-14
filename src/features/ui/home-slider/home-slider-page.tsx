@@ -24,7 +24,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { SlotEditorDialog } from '@/features/ui/home-slider/slot-editor-dialog'
-import { moveItem } from '@/features/ui/components/settings-editor-utils'
+import {
+  ReorderableList,
+  type DragHandleProps,
+} from '@/features/ui/components/reorderable-list'
 import {
   HERO_SLOTS,
   formatSize,
@@ -235,8 +238,9 @@ export default function HomeSliderPage() {
                 onAdd={() => setEditing({ slot: sliderSlot, banner: null })}
               />
             ) : (
-              <ReorderableRow
+              <ReorderableList
                 items={slides}
+                getKey={(banner) => banner.id}
                 onReorder={persistOrder}
                 className="grid grid-cols-1 gap-3 sm:grid-cols-2"
                 renderItem={(banner, dragHandleProps) => (
@@ -263,8 +267,9 @@ export default function HomeSliderPage() {
                 : undefined
             }
           >
-            <ReorderableRow
+            <ReorderableList
               items={sideTiles}
+              getKey={(banner) => banner.id}
               onReorder={persistOrder}
               className="grid grid-cols-2 gap-3"
               renderItem={(banner, dragHandleProps) => (
@@ -402,14 +407,6 @@ function EmptySlot({ slot, onAdd }: { slot: HeroSlot; onAdd: () => void }) {
   )
 }
 
-interface DragHandleProps {
-  draggable: true
-  onDragStart: (e: React.DragEvent) => void
-  onDragOver: (e: React.DragEvent) => void
-  onDrop: (e: React.DragEvent) => void
-  onDragEnd: () => void
-}
-
 /** One configured slot: its artwork at the slot's true ratio, plus its state. */
 function SlotTile({
   banner,
@@ -481,56 +478,6 @@ function SlotTile({
           <Trash2 className="size-3.5" />
         </Button>
       </div>
-    </div>
-  )
-}
-
-/**
- * Drag-to-reorder over the native HTML5 API.
- *
- * A drag library would be a new dependency for what is, here, a handful of
- * image tiles in one row — the panel has no other sortable surface to amortise
- * it against. `onReorder` is called with the new array so the caller can write
- * `sortOrder` back.
- */
-function ReorderableRow({
-  items,
-  onReorder,
-  renderItem,
-  className,
-  trailing,
-}: {
-  items: Banner[]
-  onReorder: (ordered: Banner[]) => void
-  renderItem: (banner: Banner, dragHandleProps: DragHandleProps) => React.ReactNode
-  className?: string
-  trailing?: React.ReactNode
-}) {
-  // State rather than a ref: the tiles re-render on drag anyway, and a ref read
-  // while building these handlers would be a render-time ref access.
-  const [dragIndex, setDragIndex] = React.useState<number | null>(null)
-
-  const makeHandleProps = (index: number): DragHandleProps => ({
-    draggable: true,
-    onDragStart: () => setDragIndex(index),
-    // Without preventDefault the browser refuses the drop outright — the
-    // default for a dragover is "not a valid target".
-    onDragOver: (e) => e.preventDefault(),
-    onDrop: (e) => {
-      e.preventDefault()
-      setDragIndex(null)
-      if (dragIndex === null || dragIndex === index) return
-      onReorder(moveItem(items, dragIndex, index))
-    },
-    onDragEnd: () => setDragIndex(null),
-  })
-
-  return (
-    <div className={className}>
-      {items.map((banner, index) => (
-        <React.Fragment key={banner.id}>{renderItem(banner, makeHandleProps(index))}</React.Fragment>
-      ))}
-      {trailing}
     </div>
   )
 }

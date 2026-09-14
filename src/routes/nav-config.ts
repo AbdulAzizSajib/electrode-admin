@@ -15,7 +15,6 @@ import {
   Tag,
   SlidersHorizontal,
   Percent,
-  Layers,
   PackagePlus,
   TicketPercent,
   ShoppingBag,
@@ -27,6 +26,7 @@ import {
   Undo2,
   Banknote,
   Truck,
+  Plug,
   Type,
   Target,
   Image as ImageIcon,
@@ -41,6 +41,7 @@ import {
   Rocket,
   FileText,
   GalleryHorizontal,
+  LayoutList,
   PanelTop,
   PanelBottom,
   Globe,
@@ -84,14 +85,49 @@ export const NAV_SECTIONS: NavSection[] = [
     path: '/dashboard',
   },
   {
+    /*
+     * Orders is a direct link directly under Dashboard rather than a leaf under
+     * Sales, because it is the screen a merchant opens most and opens first —
+     * often the reason they logged in at all. Reaching it used to cost expanding
+     * Sales past four other pages; the returns, refunds and courier screens it
+     * sat with are all follow-ups to an order, read far less often, and stay
+     * under Sales. The route itself is unchanged (/sales/orders), so links,
+     * bookmarks and the router's nesting are untouched.
+     */
+    label: 'Orders',
+    icon: ReceiptText,
+    path: '/sales/orders',
+  },
+  {
+    /*
+     * Top-level for the same reason as Orders: of everything under Catalog it
+     * is by far the most opened, and unlike the rest of that section it is
+     * reached on its own rather than while setting the catalogue up.
+     *
+     * This costs something real, and the trade is deliberate. Catalog used to
+     * be ordered build-first — the things a product refers to, then Products
+     * last, because authoring one is easier once its category, brand and
+     * attributes exist — and pulling Products out breaks that reading. The
+     * judgement is that the build order matters once, when a shop is first
+     * populated, while the trip to Products is made every day after. What is
+     * left under Catalog is still in build order, so the original logic holds
+     * for the screens that are actually used that way.
+     *
+     * Route unchanged (/catalog/products): the section's own /catalog/* paths,
+     * the router and any bookmarks are untouched by the move.
+     */
+    label: 'Products',
+    icon: ShoppingBag,
+    path: '/catalog/products',
+  },
+  {
     label: 'Catalog',
     icon: Package,
     /*
      * Ordered the way a merchant builds a catalogue rather than
-     * alphabetically: the things a product refers to come first, and Products
-     * last, because authoring one is easier once its category, brand,
-     * attributes and rules already exist. This is the grouping the reference
-     * panel uses, for the same reason.
+     * alphabetically: the things a product refers to come first. Products
+     * itself is deliberately NOT listed here — it is a top-level link above,
+     * and must not be added back as a second entry pointing at the same path.
      */
     items: [
       { label: 'Categories', path: '/catalog/categories', icon: FolderTree },
@@ -99,10 +135,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Brands', path: '/catalog/brands', icon: Tag },
       { label: 'Attributes', path: '/catalog/attributes', icon: SlidersHorizontal },
       { label: 'Tax rules', path: '/catalog/tax-rules', icon: Percent },
-      { label: 'Collections', path: '/catalog/collections', icon: Layers },
       { label: 'Bundle deals', path: '/catalog/bundle-deals', icon: PackagePlus },
       { label: 'Vouchers', path: '/marketing/vouchers', icon: TicketPercent },
-      { label: 'Products', path: '/catalog/products', icon: ShoppingBag },
     ],
   },
   {
@@ -117,10 +151,13 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    /*
+     * Orders is deliberately NOT listed here — it is a top-level link above
+     * Catalog. What stays is everything that happens *after* an order exists.
+     */
     label: 'Sales',
     icon: ShoppingCart,
     items: [
-      { label: 'Orders', path: '/sales/orders', icon: ReceiptText },
       { label: 'Returns', path: '/sales/returns', icon: Undo2 },
       { label: 'Refunds', path: '/sales/refunds', icon: Banknote },
       { label: 'Courier', path: '/sales/courier', icon: Truck },
@@ -178,6 +215,14 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Pages', path: '/ui/pages', icon: FileText },
       { label: 'Blog', path: '/ui/blog', icon: Newspaper },
       { label: 'Testimonials', path: '/ui/testimonials', icon: MessageSquareQuote },
+      /*
+       * Directly above Home Slider, because it is the wider decision of the
+       * two: this page says whether the home page has a hero at all, and that
+       * one says what is in it. A merchant who switches the hero off and then
+       * opens the slider to wonder why their banners are not showing has been
+       * sent the wrong way round.
+       */
+      { label: 'Home Sections', path: '/ui/home-sections', icon: LayoutList },
       { label: 'Home Slider', path: '/ui/home-slider', icon: GalleryHorizontal },
       { label: 'Banners', path: '/ui/banners', icon: ImageIcon },
       { label: 'Header Links', path: '/ui/header-links', icon: PanelTop },
@@ -185,13 +230,21 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Catalog Setting', path: '/ui/catalog-settings', icon: Boxes },
       { label: 'Checkout Setting', path: '/ui/checkout-settings', icon: ShoppingCart },
       /*
-       * Sits with the other settings editors rather than under Sales beside the
-       * Courier page: that one reports account state, this one decides which
-       * courier the shop uses. Both are gated to OWNER/ADMIN by this section,
-       * matching the RoleGuard in app-router.tsx — the two must be kept in step
-       * by hand.
+       * Everything this shop connects to: courier accounts and marketing
+       * integrations. Sits with the other settings editors rather than under
+       * Sales beside the Courier page — that one reports account state, this one
+       * decides what is connected and holds the credentials.
+       *
+       * Gated to OWNER/ADMIN by this section, matching the RoleGuard in
+       * app-router.tsx — the two must be kept in step by hand. STAFF is excluded
+       * on purpose here even though they dispatch parcels: changing which
+       * account parcels go through, or what the shop's ad measurement reports,
+       * is an owner-level decision.
+       *
+       * Renamed from "Courier Setting" at /ui/courier-settings, which now
+       * redirects — see app-router.tsx.
        */
-      { label: 'Courier Setting', path: '/ui/courier-settings', icon: Truck },
+      { label: 'Integrations', path: '/ui/integrations', icon: Plug },
       /*
        * Directly above Site Setting, because that is where its fonts are
        * chosen: a merchant who opens the font pickers and finds the face they

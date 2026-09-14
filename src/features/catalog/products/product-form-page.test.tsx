@@ -115,10 +115,6 @@ vi.mock('@/lib/api/tax-rules', () => ({
   }),
   useCreateTaxRule: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
-vi.mock('@/lib/api/collections', () => ({
-  useAllCollections: () => ({ data: [], isLoading: false, isError: false }),
-  useCreateCollection: () => ({ mutateAsync: vi.fn(), isPending: false }),
-}))
 vi.mock('@/lib/api/bundle-deals', () => ({
   useAllBundleDeals: () => ({ data: [], isLoading: false, isError: false }),
   useCreateBundleDeal: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -179,7 +175,6 @@ const PRODUCT = {
   isFeatured: false,
   taxRuleId: 'tax-1',
   bundleDealId: null,
-  collections: [],
   tags: [],
   unit: '',
   badge: '',

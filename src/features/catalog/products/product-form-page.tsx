@@ -15,7 +15,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Combobox } from '@/components/ui/combobox'
-import { MultiSelect } from '@/components/ui/multi-select'
 import { SegmentedRadioGroup } from '@/components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
@@ -41,12 +40,10 @@ import { useCategoryTree, type Category } from '@/lib/api/categories'
 import { useBrands, type Brand } from '@/lib/api/brands'
 import { useAllAttributes, type Attribute } from '@/lib/api/attributes'
 import { useAllTaxRules, type TaxRule } from '@/lib/api/tax-rules'
-import { useAllCollections, type Collection } from '@/lib/api/collections'
 import { numberWithDefault, optionalNumber, requiredNumber } from '@/lib/validation/numeric'
 import { useAllBundleDeals, type BundleDeal } from '@/lib/api/bundle-deals'
 import { QuickCreateBrand } from '@/features/catalog/products/components/quick-create-brand'
 import { QuickCreateCategory } from '@/features/catalog/products/components/quick-create-category'
-import { QuickCreateCollection } from '@/features/catalog/products/components/quick-create-collection'
 import { QuickCreateTaxRule } from '@/features/catalog/products/components/quick-create-tax-rule'
 import { QuickCreateBundleDeal } from '@/features/catalog/products/components/quick-create-bundle-deal'
 import { QuickCreateAttribute } from '@/features/catalog/products/components/quick-create-attribute'
@@ -127,7 +124,6 @@ const schema = z.object({
 
   taxRuleId: z.string().min(1, 'A product must be taxable'),
   bundleDealId: z.string().nullable(),
-  collectionIds: z.array(z.string()),
   tags: z.array(z.string()),
 
   unit: z.string().optional(),
@@ -166,7 +162,6 @@ const EMPTY_VALUES: FormValues = {
   isFeatured: false,
   taxRuleId: '',
   bundleDealId: null,
-  collectionIds: [],
   tags: [],
   unit: '',
   badge: '',
@@ -190,7 +185,6 @@ const FIELD_ORDER: (keyof FormValues)[] = [
   'description',
   'categoryId',
   'brandId',
-  'collectionIds',
   'tags',
   'type',
   'status',
@@ -216,7 +210,6 @@ const FIELD_ORDER: (keyof FormValues)[] = [
 type QuickCreateTarget =
   | null
   | { kind: 'brand' }
-  | { kind: 'collection' }
   | { kind: 'taxRule' }
   | { kind: 'bundleDeal' }
   | { kind: 'attribute' }
@@ -296,7 +289,6 @@ export default function ProductFormPage() {
   const brandsQuery = useBrands()
   const attributesQuery = useAllAttributes()
   const taxRulesQuery = useAllTaxRules()
-  const collectionsQuery = useAllCollections()
   const bundleDealsQuery = useAllBundleDeals()
 
   /*
@@ -313,7 +305,6 @@ export default function ProductFormPage() {
    */
   const [createdCategories, setCreatedCategories] = React.useState<Category[]>([])
   const [createdBrands, setCreatedBrands] = React.useState<Brand[]>([])
-  const [createdCollections, setCreatedCollections] = React.useState<Collection[]>([])
   const [createdTaxRules, setCreatedTaxRules] = React.useState<TaxRule[]>([])
   const [createdBundleDeals, setCreatedBundleDeals] = React.useState<BundleDeal[]>([])
   const [createdAttributes, setCreatedAttributes] = React.useState<Attribute[]>([])
@@ -345,7 +336,6 @@ export default function ProductFormPage() {
     [attributes, editingAttributeId],
   )
   const taxRules = withCreated(taxRulesQuery.data ?? [], createdTaxRules)
-  const collections = withCreated(collectionsQuery.data ?? [], createdCollections)
   const bundleDeals = withCreated(bundleDealsQuery.data ?? [], createdBundleDeals)
 
   /*
@@ -360,7 +350,6 @@ export default function ProductFormPage() {
     brandsQuery.isError && 'brands',
     taxRulesQuery.isError && 'tax rules',
     attributesQuery.isError && 'attributes',
-    collectionsQuery.isError && 'collections',
     bundleDealsQuery.isError && 'bundle deals',
   ].filter((name): name is string => typeof name === 'string')
 
@@ -409,7 +398,6 @@ export default function ProductFormPage() {
       isFeatured: product.isFeatured,
       taxRuleId: product.taxRuleId ?? '',
       bundleDealId: product.bundleDealId ?? null,
-      collectionIds: (product.collections ?? []).map((row) => row.collection.id),
       tags: (product.tags ?? []).map((row) => row.tag.name),
       unit: product.unit ?? '',
       badge: product.badge ?? '',
@@ -838,7 +826,6 @@ export default function ProductFormPage() {
       taxRuleId: values.taxRuleId,
       // Null clears the offer; the backend distinguishes that from omission.
       bundleDealId: values.bundleDealId ?? null,
-      collectionIds: values.collectionIds ?? [],
       tags: values.tags ?? [],
 
       unit: values.unit?.trim() || undefined,
@@ -941,8 +928,8 @@ export default function ProductFormPage() {
    * saying anything had gone wrong, and `images`, `rows` and `selectedValueIds`
    * would all still be at their empty defaults. Since this form submits those
    * as the COMPLETE intended set, a merchant who retyped the required fields
-   * and saved would delete every image, variant, collection, tag and
-   * specification the product had. The load-failure guard in
+   * and saved would delete every image, variant, tag and specification the
+   * product had. The load-failure guard in
    * `ResourceFormLayout` exists for exactly this reason; this page is bespoke
    * and had been missing it.
    */
@@ -1210,35 +1197,6 @@ export default function ProductFormPage() {
                             }}
                           />
                         </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="collectionIds"
-                    render={({ field }) => (
-                      <FormItem data-field="collectionIds">
-                        <FormLabel>Collections</FormLabel>
-                        <FormControl>
-                          <MultiSelect
-                            placeholder="None"
-                            searchPlaceholder="Search collections"
-                            aria-label="Collections"
-                            options={collections.map((c) => ({ value: c.id, label: c.name }))}
-                            value={field.value}
-                            onValueChange={field.onChange}
-                            onBlur={field.onBlur}
-                            loading={collectionsQuery.isLoading}
-                            createAction={{
-                              label: 'Add collection',
-                              onSelect: () => setQuickCreate({ kind: 'collection' }),
-                            }}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Merchandising groups. A product keeps its category whichever it joins.
-                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -1772,21 +1730,6 @@ export default function ProductFormPage() {
         />
       )}
 
-      {quickCreate?.kind === 'collection' && (
-        <QuickCreateCollection
-          open
-          onOpenChange={closeQuickCreate}
-          onCreated={(collection) => {
-            setCreatedCollections((current) => [...current, collection])
-            // Added to the selection, not replacing it.
-            form.setValue('collectionIds', [...form.getValues('collectionIds'), collection.id], {
-              shouldValidate: true,
-              shouldDirty: true,
-            })
-            announceCreated('Collection', collection.name)
-          }}
-        />
-      )}
 
       {quickCreate?.kind === 'taxRule' && (
         <QuickCreateTaxRule

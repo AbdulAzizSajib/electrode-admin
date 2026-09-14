@@ -110,6 +110,43 @@ export type CourierProvider = (typeof COURIER_PROVIDERS)[number]
 export const DEFAULT_COURIER_SETTINGS = { courierProvider: 'STEADFAST' as CourierProvider }
 
 /**
+ * The public half of integration configuration.
+ *
+ * MIRRORS `integrationConfigSchema` in the backend's store-setting.validation.ts
+ * and must be kept in step with it — the same standing obligation
+ * `DEFAULT_CATALOG_CONFIG` and `SETTINGS_LIMITS` carry. A field added there and
+ * not here is a field the panel silently drops on every save, because a present
+ * `integrationConfig` replaces the whole column.
+ */
+export interface IntegrationConfig {
+  facebookPixel?: {
+    enabled: boolean
+    /** Digits only, 5–20. Bounded because the storefront interpolates it into a
+     *  script bootstrap; see the backend schema for the full reasoning. */
+    pixelId: string
+  }
+  facebookCapi?: {
+    enabled: boolean
+    testMode: boolean
+    /** Required by the backend whenever `testMode` is on. */
+    testEventCode: string
+  }
+}
+
+/**
+ * What an unconfigured shop's Integrations page shows.
+ *
+ * Both features OFF. The page seeds from this rather than from `{}` so that
+ * "never configured" and "configured and switched off" render identically and
+ * correctly — and so a merchant who has never opened the page cannot have
+ * tracking silently enabled by a default.
+ */
+export const DEFAULT_INTEGRATION_CONFIG: Required<IntegrationConfig> = {
+  facebookPixel: { enabled: false, pixelId: '' },
+  facebookCapi: { enabled: false, testMode: false, testEventCode: '' },
+}
+
+/**
  * Mirrors the backend's `MIN_CURRENCY_DECIMALS` / `MAX_CURRENCY_DECIMALS`.
  *
  * 0 covers currencies with no minor unit, 3 those with a thousandth unit, 4 is headroom. Repeated
@@ -290,6 +327,133 @@ export const DEFAULT_CATALOG_CONFIG: CatalogConfig = {
   showCompare: true,
   showQuickView: true,
 }
+
+/* ------------------------------------------------------------------ *
+ * Home page sections
+ * ------------------------------------------------------------------ */
+
+/**
+ * Every section the storefront homepage can be composed from.
+ *
+ * Mirrors HOME_SECTION_KEYS in the backend's store-setting.constant.ts, which is
+ * the authority. A KEY IS PERMANENT once released — stored configurations name
+ * sections by these strings — but the `label` below is only what this panel
+ * prints and may be reworded freely.
+ */
+export type HomeSectionKey =
+  | 'HERO'
+  | 'BRAND_BAR'
+  | 'FEATURED_CATEGORIES'
+  | 'BEST_SELLING'
+  | 'MID_BANNERS'
+  | 'FEATURED_PRODUCTS'
+  | 'PERKS_BAR'
+  | 'DEAL_OF_WEEK'
+  | 'NEW_ARRIVALS'
+  | 'TESTIMONIALS'
+  | 'BLOG'
+
+/** One section's placement and visibility. Position in `HomeConfig` is its order. */
+export interface HomeSection {
+  key: HomeSectionKey
+  enabled: boolean
+}
+
+/**
+ * The homepage's sections in render order. ORDER IS THE DATA — this array is
+ * never sorted on the way to or from the API.
+ */
+export type HomeConfig = HomeSection[]
+
+/**
+ * What each section is, in the merchant's words.
+ *
+ * The description says what the section SHOWS rather than restating its name,
+ * because "Brand bar" tells a merchant nothing about which part of their
+ * homepage vanishes when they switch it off — and that is the one thing they
+ * need to know before touching the switch. Same reasoning as the consequence
+ * copy on Catalog Setting.
+ *
+ * Order here mirrors the backend's registry order, which is the default layout
+ * of the page. It is the order a never-configured store is shown, NOT the order
+ * a configured store renders in — that comes from the stored list.
+ */
+export const HOME_SECTION_REGISTRY: {
+  key: HomeSectionKey
+  label: string
+  description: string
+}[] = [
+  {
+    key: 'HERO',
+    label: 'Hero banners',
+    description: 'The big banner area at the very top, with the slider and its side tiles.',
+  },
+  {
+    key: 'BRAND_BAR',
+    label: 'Brand strip',
+    description: 'The scrolling row of brand logos.',
+  },
+  {
+    key: 'FEATURED_CATEGORIES',
+    label: 'Featured categories',
+    description: 'The grid of category tiles customers browse from.',
+  },
+  {
+    key: 'BEST_SELLING',
+    label: 'Best selling products',
+    description: 'A row of your best sellers, by number of units sold.',
+  },
+  {
+    key: 'MID_BANNERS',
+    label: 'Promo banners',
+    description: 'The three promotional tiles below the products.',
+  },
+  {
+    key: 'FEATURED_PRODUCTS',
+    label: 'Featured products',
+    description: 'A row of the products you have marked as featured.',
+  },
+  {
+    key: 'PERKS_BAR',
+    label: 'Perks strip',
+    description: 'The coloured band listing delivery, returns, gifts and support.',
+  },
+  {
+    key: 'DEAL_OF_WEEK',
+    label: 'Deal of the week',
+    description: 'The countdown block for your current deal campaign.',
+  },
+  {
+    key: 'NEW_ARRIVALS',
+    label: 'New arrivals',
+    description: 'A row of your most recently added products.',
+  },
+  {
+    key: 'TESTIMONIALS',
+    label: 'Customer testimonials',
+    description: 'What your customers have said about you.',
+  },
+  {
+    key: 'BLOG',
+    label: 'Recent blog posts',
+    description: 'Your latest published articles.',
+  },
+]
+
+/**
+ * Mirrors the backend's `DEFAULT_HOME_CONFIG`: every section on, registry order.
+ *
+ * Seeds the editor for a store whose column has never been written, so the page
+ * shows what the homepage is ACTUALLY doing rather than reading as though every
+ * section were off. The admin read returns the row as stored — unlike the public
+ * endpoint, which merges defaults — so without this mirror the panel could not
+ * tell "never configured" from "configured to exactly the default". The same
+ * obligation `DEFAULT_CATALOG_CONFIG` above already carries.
+ */
+export const DEFAULT_HOME_CONFIG: HomeConfig = HOME_SECTION_REGISTRY.map(({ key }) => ({
+  key,
+  enabled: true,
+}))
 
 /* ------------------------------------------------------------------ *
  * SEO
@@ -578,8 +742,31 @@ export interface StoreSettings {
   checkoutConfig: CheckoutConfig | null
   /** Null until a merchant opens Catalog Setting — same "not configured" distinction as above. */
   catalogConfig: CatalogConfig | null
+  /**
+   * Which homepage sections are shown, and in what order. Null until a merchant
+   * opens Home Sections — same "not configured" distinction as above, which is
+   * why the editor seeds from `DEFAULT_HOME_CONFIG` rather than from an empty
+   * list.
+   *
+   * Served here AS STORED. The public endpoint reconciles this against the
+   * backend's section registry before the storefront sees it, so a list read
+   * here may be shorter than the registry — that is a config saved before a
+   * section shipped, not a corrupt one.
+   */
+  homeConfig: HomeConfig | null
   /** Null until a merchant saves any SEO screen — same distinction again. */
   seoConfig: SeoConfig | null
+  /**
+   * The PUBLIC half of integration configuration — same "not configured"
+   * distinction as the blobs above, which is why the Integrations page seeds
+   * from `DEFAULT_INTEGRATION_CONFIG` rather than from an empty object.
+   *
+   * The CAPI access token is deliberately NOT here. It is a secret, so it lives
+   * in the credential store behind `/integrations`, and this column is served by
+   * a public endpoint. The two halves of that one feature are stored apart on
+   * purpose — see `lib/api/integrations.ts`.
+   */
+  integrationConfig: IntegrationConfig | null
   theme: Theme | null
   /**
    * The website ↔ single-landing-page toggle, and the page it points at.
@@ -664,6 +851,15 @@ export interface StoreSettingsInput {
   checkoutConfig?: CheckoutConfig
   catalogConfig?: CatalogConfig
   /**
+   * The WHOLE ordered section list, never a slice of one.
+   *
+   * Like `seoConfig` below, a present value replaces the stored column outright
+   * — the backend does not merge an array field by field, and could not: the
+   * array's own order is the data. Home Sections therefore always sends the
+   * complete list it is displaying.
+   */
+  homeConfig?: HomeConfig
+  /**
    * The WHOLE SEO config, never a slice of one.
    *
    * Unlike every other key here, the backend does not merge this one field by
@@ -673,6 +869,12 @@ export interface StoreSettingsInput {
    * keys would blank the other three.
    */
   seoConfig?: SeoConfig
+  /**
+   * Replaces the stored column outright, like `seoConfig` above — the merge does
+   * not recurse. The Integrations page owns both halves of this blob and sends
+   * them together, so there is no second editor to clobber.
+   */
+  integrationConfig?: IntegrationConfig
   /**
    * Both fonts go up as `{ family }` selections from the font library; the
    * backend resolves each to its stored `{ family, url }`. See `ThemeInput`.

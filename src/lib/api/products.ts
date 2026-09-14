@@ -7,7 +7,6 @@ import type { Category } from '@/lib/api/categories'
 import type { Brand } from '@/lib/api/brands'
 import type { TaxRule } from '@/lib/api/tax-rules'
 import type { BundleDeal } from '@/lib/api/bundle-deals'
-import type { Collection } from '@/lib/api/collections'
 
 export type ProductType = 'SIMPLE' | 'VARIABLE'
 export type ProductStatus = 'DRAFT' | 'ACTIVE' | 'ARCHIVED'
@@ -183,7 +182,6 @@ export interface Product {
   videoThumbnail: string | null
 
   /** Join rows, as the detail response nests them. */
-  collections?: { collection: Collection }[]
   tags?: { tag: { id: string; name: string } }[]
 
   createdAt: string
@@ -252,8 +250,6 @@ export interface ProductInput {
   video?: string | null
   videoThumbnail?: string | null
 
-  /** The full intended set of memberships — omitting the key leaves them alone. */
-  collectionIds?: string[]
   /** Keyword names, created on demand. The full intended set. */
   tags?: string[]
 

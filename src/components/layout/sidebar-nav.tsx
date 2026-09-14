@@ -16,7 +16,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Badge } from '@/components/ui/badge'
 import { usePulseValue } from '@/lib/realtime/use-realtime'
 
-/** The one nav item that carries a live count — orders still waiting on staff action. */
+/**
+ * The one nav entry that carries a live count — orders still waiting on staff
+ * action. Orders is a top-level direct link, so the badge is rendered by both
+ * the direct-link branch and the submenu branch below; keeping both paths means
+ * the count does not disappear if the entry is ever moved back under a section.
+ */
 const PENDING_BADGE_PATH = '/sales/orders'
 
 export interface SidebarNavProps {
@@ -57,25 +62,40 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
       {NAV_SECTIONS.filter((section) => isNavNodeVisible(section.roles, role)).map((section) => {
         const Icon = section.icon
 
-        // Direct link (no children), e.g. Dashboard, Notifications.
+        // Direct link (no children), e.g. Dashboard, Orders, Notifications.
         if (section.path) {
           const active = pathname === section.path || pathname.startsWith(section.path + '/')
+          const showBadge = section.path === PENDING_BADGE_PATH && pendingOrders > 0
           const link = (
             <NavLink
               to={section.path}
               onClick={onNavigate}
               aria-label={collapsed ? section.label : undefined}
-              className={navTriggerClass(active, collapsed)}
+              className={cn(navTriggerClass(active, collapsed), collapsed && showBadge && 'relative')}
             >
               <Icon className="size-5 shrink-0" />
-              {!collapsed && <span>{section.label}</span>}
+              {!collapsed && <span className="flex-1">{section.label}</span>}
+              {showBadge &&
+                (collapsed ? (
+                  // No room for a number on the rail; a dot still says "something is waiting".
+                  <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-destructive" />
+                ) : (
+                  <Badge
+                    variant="destructive"
+                    className="h-4 min-w-4 justify-center rounded-full p-0 px-1 text-[11px]"
+                  >
+                    {pendingOrders > 99 ? '99+' : pendingOrders}
+                  </Badge>
+                ))}
             </NavLink>
           )
           if (!collapsed) return <React.Fragment key={section.label}>{link}</React.Fragment>
           return (
             <Tooltip key={section.label}>
               <TooltipTrigger asChild>{link}</TooltipTrigger>
-              <TooltipContent side="right">{section.label}</TooltipContent>
+              <TooltipContent side="right">
+                {showBadge ? `${section.label} (${pendingOrders > 99 ? '99+' : pendingOrders} pending)` : section.label}
+              </TooltipContent>
             </Tooltip>
           )
         }

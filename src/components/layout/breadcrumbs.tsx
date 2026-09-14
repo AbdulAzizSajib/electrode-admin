@@ -17,9 +17,16 @@ export function Breadcrumbs() {
   const { pathname } = useLocation()
   const { label: overrideLabel } = useBreadcrumbContext()
 
-  const section = NAV_SECTIONS.find(
-    (s) => s.path === pathname || s.items?.some((i) => pathname.startsWith(i.path)),
-  )
+  /*
+   * A direct-link section matches its own subtree, not just its exact path —
+   * Orders lives at /sales/orders as a top-level link, so /sales/orders/<id>
+   * must resolve to it and not fall through to the Sales section below, which
+   * would label an order detail page "Sales › Orders" off the wrong node.
+   * Direct links are tested first for the same reason.
+   */
+  const section =
+    NAV_SECTIONS.find((s) => s.path && (s.path === pathname || pathname.startsWith(s.path + '/'))) ??
+    NAV_SECTIONS.find((s) => s.items?.some((i) => pathname.startsWith(i.path)))
   const item = section?.items?.find((i) => pathname.startsWith(i.path))
 
   const crumbs: { label: string; to?: string }[] = []

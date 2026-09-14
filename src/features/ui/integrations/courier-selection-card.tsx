@@ -1,50 +1,38 @@
+/**
+ * Which courier this shop dispatches through.
+ *
+ * MOVED FROM `courier-settings-page.tsx`, NOT REWRITTEN. The radio list, the
+ * `Current` badge, the capability badges, the configuration notes and the
+ * in-flight refusal message all behave exactly as they did — every one of them
+ * exists for a reason recorded in `add-courier-provider-selection`, and a rename
+ * is no occasion to relitigate them. What changed is where it lives and that it
+ * saves on its own button rather than a page-wide bar.
+ *
+ * Two things this card still deliberately does NOT do:
+ *
+ *  - **It does not decide what a provider can do.** Capabilities come from
+ *    `/courier/config`, because the answer depends on which adapter is
+ *    registered on the server — a fact the browser bundle cannot know and would
+ *    only get wrong after the next deploy.
+ *  - **It does not decide whether a provider is ready.** Same endpoint, same
+ *    reasoning; credentials now live in the database rather than the server's
+ *    environment, but they are still never sent to the browser.
+ */
 import { AlertTriangle, Check, Truck, X } from 'lucide-react'
-import { PageHeader } from '@/components/ui/page-header'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/use-toast'
-import { EditorActions, UnsavedChangesDialog } from '@/features/ui/components/settings-editor'
-import {
-  useSettingsDraft,
-  useUnsavedChangesGuard,
-} from '@/features/ui/components/settings-editor-utils'
 import { useCourierConfig, type CourierProviderInfo } from '@/lib/api/courier'
 import {
   useStoreSettings,
   useUpdateStoreSettings,
-  DEFAULT_COURIER_SETTINGS,
   type CourierProvider,
 } from '@/lib/api/store-settings'
-
-/**
- * Which courier the shop dispatches through.
- *
- * Writes ONLY `courierProvider`. `PATCH /settings` is a partial upsert, so this
- * page coexists with the other settings editors exactly as they coexist with
- * each other — by sending a disjoint set of keys. Sending a superset from here
- * would clobber whichever editor owns the extra fields.
- *
- * Two things this page deliberately does NOT do:
- *
- *  - **It does not collect credentials.** Those live in the server's
- *    environment, because `GET /settings` is public and a secret on that row is
- *    one careless field selection away from being served to the internet. What
- *    the page shows instead is whether each provider's credentials are PRESENT,
- *    which the server reports as a boolean and never as a value.
- *  - **It does not decide what a provider can do.** Capabilities come from
- *    `/courier/config`, because the answer depends on which adapter is
- *    registered on the server — a fact the browser bundle cannot know and would
- *    only get wrong after the next deploy.
- *
- * See openspec/changes/add-courier-provider-selection.
- */
-
-const TITLE = 'Courier'
-const DESCRIPTION =
-  'Which courier service this shop dispatches orders through. Orders are dispatched from the Orders list; this page decides who receives them.'
+import { useState } from 'react'
 
 /** One capability, and what it means for the merchant rather than the code. */
 const CAPABILITY_LABELS: { key: keyof CourierProviderInfo['capabilities']; label: string }[] = [
@@ -101,6 +89,23 @@ function CapabilityList({ provider }: { provider: CourierProviderInfo }) {
  * would show a working setup as broken.
  */
 function ConfigurationNote({ id, provider }: { id: string; provider: CourierProviderInfo }) {
+  /*
+   * Checked before everything else. A switched-off courier cannot be selected at
+   * all, so its credential state is beside the point — leading with "not
+   * configured" would send a merchant to add keys that are already there.
+   */
+  if (!provider.enabled) {
+    return (
+      <p id={id} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+        <span>
+          Switched off below. Turn it back on to dispatch through it — its stored
+          credentials are unaffected.
+        </span>
+      </p>
+    )
+  }
+
   if (!provider.capabilities.dispatch) {
     return (
       <p id={id} className="text-xs text-muted-foreground">
@@ -115,8 +120,8 @@ function ConfigurationNote({ id, provider }: { id: string; provider: CourierProv
         <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         <span>
           <span className="sr-only">Warning: </span>
-          API credentials are not set on the server, so dispatch will be refused. Add them to the
-          server environment before selecting this courier.
+          Its API credentials are not set, so dispatch will be refused. Add them on
+          this page before selecting this courier.
         </span>
       </p>
     )
@@ -127,8 +132,9 @@ function ConfigurationNote({ id, provider }: { id: string; provider: CourierProv
       <p id={id} className="flex items-start gap-1.5 text-xs text-muted-foreground">
         <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         <span>
-          Credentials are set, but no webhook token is configured. Dispatch works; delivery
-          statuses will only refresh on the scheduled sync rather than the moment they change.
+          Credentials are set, but no webhook secret is configured. Dispatch works;
+          delivery statuses will only refresh on the scheduled sync rather than the
+          moment they change.
         </span>
       </p>
     )
@@ -141,22 +147,32 @@ function ConfigurationNote({ id, provider }: { id: string; provider: CourierProv
   )
 }
 
-export default function CourierSettingsPage() {
+export function CourierSelectionCard({
+  onDirtyChange,
+}: {
+  onDirtyChange?: (dirty: boolean) => void
+}) {
   const { data: settings, isLoading, error } = useStoreSettings()
   const { data: config, isLoading: configLoading, error: configError } = useCourierConfig()
   const updateSettings = useUpdateStoreSettings()
 
-  const draft = useSettingsDraft<{ courierProvider: CourierProvider }>(
-    settings ? { courierProvider: settings.courierProvider } : undefined,
-    DEFAULT_COURIER_SETTINGS,
-  )
+  /** The merchant's pending choice. Null means "showing what the server has". */
+  const [selected, setSelected] = useState<CourierProvider | null>(null)
 
-  const blocker = useUnsavedChangesGuard(draft.isDirty)
+  const stored = settings?.courierProvider ?? 'STEADFAST'
+  const value = selected ?? stored
+  const dirty = selected !== null && selected !== stored
+
+  const choose = (next: CourierProvider) => {
+    setSelected(next)
+    onDirtyChange?.(next !== stored)
+  }
 
   const save = async () => {
     try {
-      await updateSettings.mutateAsync({ courierProvider: draft.value.courierProvider })
-      draft.markSaved(draft.value)
+      await updateSettings.mutateAsync({ courierProvider: value })
+      setSelected(null)
+      onDirtyChange?.(false)
       toast({ title: 'Courier updated' })
     } catch (err) {
       /*
@@ -173,33 +189,25 @@ export default function CourierSettingsPage() {
   }
 
   if (isLoading || configLoading) {
-    return (
-      <div className="flex flex-col gap-4">
-        <PageHeader title={TITLE} description={DESCRIPTION} />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    )
+    return <Skeleton className="h-64 w-full" />
   }
 
   /*
    * A failed load is said, not rendered around.
    *
    * Both queries resolve to undefined on failure, which without this branch left
-   * the page drawing an empty courier card over a live Save bar — a card that
+   * the page drawing an empty courier card over a live Save button — a card that
    * claims this shop has no couriers to choose from, which is a different and
-   * wrong statement. The draft would meanwhile be seeded from
-   * DEFAULT_COURIER_SETTINGS, showing STEADFAST selected on a shop that may be
-   * set to something else entirely.
+   * wrong statement.
    */
   if (error || configError) {
     const failure = error ?? configError
     return (
-      <div className="flex flex-col gap-4">
-        <PageHeader title={TITLE} description={DESCRIPTION} />
+      <Card className="p-4">
         <p className="text-sm text-destructive">
           {failure instanceof Error ? failure.message : 'Could not load the courier settings.'}
         </p>
-      </div>
+      </Card>
     )
   }
 
@@ -214,48 +222,56 @@ export default function CourierSettingsPage() {
   const activeProvider = config?.configured
 
   return (
-    <div className="flex flex-col gap-4">
-      <PageHeader title={TITLE} description={DESCRIPTION} />
+    <Card className="flex flex-col gap-4 p-4">
+      <div className="flex flex-col gap-0.5">
+        <span className="flex items-center gap-1.5 font-medium text-foreground">
+          <Truck className="size-4" aria-hidden /> Courier service
+        </span>
+        <span className="text-xs text-muted-foreground">
+          Orders you dispatch go to the courier selected here. Parcels already on their
+          way stay with the courier carrying them, whatever you choose now.
+        </span>
+      </div>
 
-      <Card className="flex flex-col gap-4 p-4">
-        <div className="flex flex-col gap-0.5">
-          <span className="flex items-center gap-1.5 font-medium text-foreground">
-            <Truck className="size-4" aria-hidden /> Courier service
-          </span>
-          <span className="text-xs text-muted-foreground">
-            Orders you dispatch go to the courier selected here. Parcels already on their way stay
-            with the courier carrying them, whatever you choose now.
-          </span>
-        </div>
-
-        {/*
-          * A server that reports no providers at all is a deployment fault, not
-          * an empty list to render a bare card around. Saying so beats an
-          * apparently-working page with nothing in it, which reads as "this shop
-          * has no couriers" — something that is never true.
-          */}
-        {providers.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            The server reported no courier integrations. Check that the courier providers are
-            registered on the server before dispatching orders.
-          </p>
-        ) : (
+      {/*
+        * A server that reports no providers at all is a deployment fault, not an
+        * empty list to render a bare card around. Saying so beats an
+        * apparently-working page with nothing in it, which reads as "this shop
+        * has no couriers" — something that is never true.
+        */}
+      {providers.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          The server reported no courier integrations. Check that the courier providers
+          are registered on the server before dispatching orders.
+        </p>
+      ) : (
         <RadioGroup
-          value={draft.value.courierProvider}
-          onValueChange={(value) =>
-            draft.set({ courierProvider: value as CourierProvider })
-          }
+          value={value}
+          onValueChange={(next) => choose(next as CourierProvider)}
           className="flex flex-col gap-2"
         >
           {providers.map((provider) => {
             const noteId = `courier-${provider.id}-note`
             const isActive = provider.id === activeProvider
+            /*
+             * A disabled courier cannot be chosen — the server refuses a
+             * dispatch through one, so offering it here would only produce a
+             * save that works followed by dispatches that do not.
+             *
+             * The exception is the one currently selected: it stays selectable
+             * so the radio can still show what the shop is actually set to.
+             * (The server separately refuses switching THAT one off, so this
+             * state is reachable only by editing the database by hand.)
+             */
+            const selectable = provider.enabled || provider.id === stored
             return (
               <Label
                 key={provider.id}
                 htmlFor={`courier-${provider.id}`}
-                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${
-                  draft.value.courierProvider === provider.id
+                className={`flex items-start gap-3 rounded-md border p-3 transition-colors ${
+                  selectable ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+                } ${
+                  value === provider.id
                     ? 'border-primary bg-accent/40'
                     : 'border-border hover:border-input hover:bg-accent/20'
                 }`}
@@ -263,6 +279,7 @@ export default function CourierSettingsPage() {
                 <RadioGroupItem
                   id={`courier-${provider.id}`}
                   value={provider.id}
+                  disabled={!selectable}
                   className="mt-1"
                   aria-describedby={noteId}
                 />
@@ -279,27 +296,24 @@ export default function CourierSettingsPage() {
             )
           })}
         </RadioGroup>
-        )}
+      )}
 
-        {/*
-          * Stated up front rather than only on the refusal. A merchant who reads
-          * this before selecting understands why the save was refused; one who
-          * only meets it as an error has to work that out from the message.
-          */}
-        <p className="text-xs text-muted-foreground">
-          You cannot change courier while parcels are still in transit with the current one. Wait
-          for them to be delivered or cancelled — the save will tell you how many are left.
-        </p>
-      </Card>
+      {/*
+        * Stated up front rather than only on the refusal. A merchant who reads
+        * this before selecting understands why the save was refused; one who only
+        * meets it as an error has to work that out from the message.
+        */}
+      <p className="text-xs text-muted-foreground">
+        You cannot change courier while parcels are still in transit with the current
+        one. Wait for them to be delivered or cancelled — the save will tell you how
+        many are left.
+      </p>
 
-      <EditorActions
-        isDirty={draft.isDirty}
-        isSaving={updateSettings.isPending}
-        onReset={draft.reset}
-        onSave={() => void save()}
-      />
-
-      <UnsavedChangesDialog blocker={blocker} />
-    </div>
+      <div className="flex justify-end">
+        <Button onClick={() => void save()} disabled={!dirty || updateSettings.isPending}>
+          {updateSettings.isPending ? 'Saving…' : 'Save Courier'}
+        </Button>
+      </div>
+    </Card>
   )
 }

@@ -6,8 +6,8 @@
  * courier currently holds, and whether it is configured at all — have somewhere
  * to live that is not bolted onto a list of orders.
  *
- * WHICH courier is chosen on UI → Courier Setting, not here. This page reports
- * on the choice; that one makes it.
+ * WHICH courier is chosen on UI → Integrations, not here. This page reports on
+ * the choice; that one makes it and holds the credentials behind it.
  */
 import { Link } from 'react-router'
 import { PageHeader } from '@/components/ui/page-header'
@@ -36,8 +36,8 @@ export default function CourierPage() {
           <span className="text-sm text-muted-foreground">
             This shop is set to {courierName}, so parcels are handed over by hand and recorded on
             each order. Change this on{' '}
-            <Link className="underline underline-offset-2" to="/ui/courier-settings">
-              Courier Setting
+            <Link className="underline underline-offset-2" to="/ui/integrations">
+              Integrations
             </Link>
             .
           </span>

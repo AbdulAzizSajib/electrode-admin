@@ -22,10 +22,6 @@ const AttributesPage = lazy(() => import('@/features/catalog/attributes/attribut
 const AttributeFormPage = lazy(() => import('@/features/catalog/attributes/attribute-form-page'))
 const TaxRulesPage = lazy(() => import('@/features/catalog/tax-rules/tax-rules-page'))
 const TaxRuleFormPage = lazy(() => import('@/features/catalog/tax-rules/tax-rule-form-page'))
-const CollectionsPage = lazy(() => import('@/features/catalog/collections/collections-page'))
-const CollectionFormPage = lazy(
-  () => import('@/features/catalog/collections/collection-form-page'),
-)
 const BundleDealsPage = lazy(() => import('@/features/catalog/bundle-deals/bundle-deals-page'))
 const BundleDealFormPage = lazy(
   () => import('@/features/catalog/bundle-deals/bundle-deal-form-page'),
@@ -92,6 +88,7 @@ const LandingPageFormPage = lazy(
   () => import('@/features/ui/landing-pages/landing-page-form-page'),
 )
 const HomeSliderPage = lazy(() => import('@/features/ui/home-slider/home-slider-page'))
+const HomeSectionsPage = lazy(() => import('@/features/ui/home-sections/home-sections-page'))
 const HeaderLinksPage = lazy(() => import('@/features/ui/header-links/header-links-page'))
 const FooterLinksPage = lazy(() => import('@/features/ui/footer-links/footer-links-page'))
 const CatalogSettingsPage = lazy(
@@ -100,9 +97,7 @@ const CatalogSettingsPage = lazy(
 const CheckoutSettingsPage = lazy(
   () => import('@/features/ui/checkout-settings/checkout-settings-page'),
 )
-const CourierSettingsPage = lazy(
-  () => import('@/features/ui/courier-settings/courier-settings-page'),
-)
+const IntegrationsPage = lazy(() => import('@/features/ui/integrations/integrations-page'))
 const SiteSettingsPage = lazy(() => import('@/features/ui/site-settings/site-settings-page'))
 const SeoGeneralPage = lazy(() => import('@/features/seo/general/seo-general-page'))
 const SeoIndexingPage = lazy(() => import('@/features/seo/indexing/seo-indexing-page'))
@@ -188,9 +183,6 @@ export function AppRouter() {
           <Route path="/catalog/tax-rules" element={<TaxRulesPage />} />
           <Route path="/catalog/tax-rules/new" element={<TaxRuleFormPage />} />
           <Route path="/catalog/tax-rules/:taxRuleId" element={<TaxRuleFormPage />} />
-          <Route path="/catalog/collections" element={<CollectionsPage />} />
-          <Route path="/catalog/collections/new" element={<CollectionFormPage />} />
-          <Route path="/catalog/collections/:collectionId" element={<CollectionFormPage />} />
           <Route path="/catalog/bundle-deals" element={<BundleDealsPage />} />
           <Route path="/catalog/bundle-deals/new" element={<BundleDealFormPage />} />
           <Route path="/catalog/bundle-deals/:bundleDealId" element={<BundleDealFormPage />} />
@@ -277,6 +269,7 @@ export function AppRouter() {
             <Route path="/ui/landing-pages/new" element={<LandingPageFormPage />} />
             <Route path="/ui/landing-pages/:landingPageId" element={<LandingPageFormPage />} />
             <Route path="/ui/home-slider" element={<HomeSliderPage />} />
+            <Route path="/ui/home-sections" element={<HomeSectionsPage />} />
             <Route path="/ui/banners" element={<BannersPage />} />
             <Route path="/ui/banners/new" element={<BannerFormPage />} />
             <Route path="/ui/banners/:bannerId" element={<BannerFormPage />} />
@@ -284,7 +277,18 @@ export function AppRouter() {
             <Route path="/ui/footer-links" element={<FooterLinksPage />} />
             <Route path="/ui/catalog-settings" element={<CatalogSettingsPage />} />
             <Route path="/ui/checkout-settings" element={<CheckoutSettingsPage />} />
-            <Route path="/ui/courier-settings" element={<CourierSettingsPage />} />
+            <Route path="/ui/integrations" element={<IntegrationsPage />} />
+            {/*
+              * The former Courier Setting path. Kept as a redirect rather than
+              * deleted: it is bookmarked, and it was linked from the Courier
+              * report page for as long as that page has existed. A 404 here
+              * would read as the feature having been removed rather than
+              * renamed.
+              */}
+            <Route
+              path="/ui/courier-settings"
+              element={<Navigate to="/ui/integrations" replace />}
+            />
             <Route path="/ui/fonts" element={<FontsListPage />} />
             <Route path="/ui/fonts/new" element={<FontFormPage />} />
             <Route path="/ui/fonts/:fontId" element={<FontFormPage />} />
