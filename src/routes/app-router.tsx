@@ -125,6 +125,7 @@ const StaffUserFormPage = lazy(
 )
 const RoleFormPage = lazy(() => import('@/features/settings/roles-permissions/role-form-page'))
 const AuditLogsPage = lazy(() => import('@/features/settings/audit-logs/audit-logs-page'))
+const StoragePage = lazy(() => import('@/features/settings/storage/storage-page'))
 
 const NotFoundPage = lazy(() => import('@/routes/not-found-page'))
 
@@ -322,6 +323,7 @@ export function AppRouter() {
             <Route path="/settings/staff" element={<StaffUsersPage />} />
             <Route path="/settings/staff/:userId" element={<StaffUserFormPage />} />
             <Route path="/settings/audit-logs" element={<AuditLogsPage />} />
+            <Route path="/settings/storage" element={<StoragePage />} />
           </Route>
           <Route element={<RoleGuard roles={['OWNER']} />}>
             <Route path="/settings/roles" element={<RolesPermissionsPage />} />

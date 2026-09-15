@@ -1,13 +1,24 @@
 import * as React from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { ScrollText } from 'lucide-react'
+import { ScrollText, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { DataTable } from '@/components/ui/data-table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { useAuditLogs, AUDIT_ACTIONS, type AuditAction, type AuditLogEntry } from '@/lib/api/audit-logs'
+import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
+import { toast } from '@/components/ui/use-toast'
+import { RequireRole } from '@/routes/guards'
+import { useSessionStore } from '@/lib/store/session-store'
+import {
+  useAuditLogs,
+  useDeleteAuditLogs,
+  AUDIT_ACTIONS,
+  type AuditAction,
+  type AuditLogEntry,
+} from '@/lib/api/audit-logs'
 import { formatDateTime } from '@/lib/utils/format'
 
 /** Pretty-prints a recorded state blob, or null when the entry has none. */
@@ -59,6 +70,18 @@ export default function AuditLogsPage() {
   const [page, setPage] = React.useState(1)
   const [pageSize, setPageSize] = React.useState(20)
   const [selected, setSelected] = React.useState<AuditLogEntry | null>(null)
+  const [rawSelection, setSelection] = React.useState<string[]>([])
+
+  const deleteMutation = useDeleteAuditLogs()
+  const confirmDialog = useConfirmDialog()
+
+  /*
+   * The same role `RequireRole` below gates the button on, read directly
+   * because the checkbox column is a prop rather than a child — it cannot be
+   * wrapped. UI only: the backend rejects a non-OWNER purge with 403 regardless
+   * of what this returns.
+   */
+  const canPurge = useSessionStore((s) => s.user?.role) === 'OWNER'
 
   const { data, isLoading, isError, refetch } = useAuditLogs({
     page,
@@ -68,6 +91,48 @@ export default function AuditLogsPage() {
     from: from || undefined,
     to: to || undefined,
   })
+
+  /*
+   * The selection, narrowed to the rows currently on screen.
+   *
+   * Derived during render rather than cleared from an effect on page/filter
+   * change: an entry the merchant can no longer see must never be purged, and
+   * deriving makes that structural rather than dependent on an effect firing
+   * before the next click.
+   */
+  const visibleIds = React.useMemo(
+    () => new Set((data?.data ?? []).map((row) => row.id)),
+    [data],
+  )
+  const selection = React.useMemo(
+    () => rawSelection.filter((id) => visibleIds.has(id)),
+    [rawSelection, visibleIds],
+  )
+
+  const purgeSelected = () =>
+    confirmDialog.confirm(async () => {
+      const count = selection.length
+      try {
+        const { deleted } = await deleteMutation.mutateAsync(selection)
+        setSelection([])
+        toast({
+          title: `${deleted} ${deleted === 1 ? 'entry' : 'entries'} deleted`,
+          // Worth stating outright: the count can be lower than what was
+          // selected if another session got there first, and the purge itself
+          // adds a row. Neither is a failure, but both look like one.
+          description:
+            deleted < count
+              ? `${count - deleted} had already been removed. The purge itself is recorded as a new entry.`
+              : 'The purge itself is recorded as a new entry.',
+        })
+      } catch (err) {
+        toast({
+          title: 'Could not delete entries',
+          description: err instanceof Error ? err.message : undefined,
+          variant: 'destructive',
+        })
+      }
+    })
 
   const columns: ColumnDef<AuditLogEntry>[] = [
     { accessorKey: 'createdAt', header: 'Date', cell: ({ row }) => formatDateTime(row.original.createdAt) },
@@ -93,7 +158,10 @@ export default function AuditLogsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Audit Logs" description="A read-only record of admin actions across the store." />
+      <PageHeader
+        title="Audit Logs"
+        description="A record of admin actions across the store. Entries are written automatically and cannot be edited."
+      />
 
       <DataTable
         columns={columns}
@@ -103,8 +171,29 @@ export default function AuditLogsPage() {
         onRetry={() => refetch()}
         emptyState={{ icon: ScrollText, title: 'No audit entries yet' }}
         onRowClick={setSelected}
+        /*
+         * Selection is offered to everyone who can reach this page, but the
+         * action it feeds is OWNER-only below. Hiding the checkboxes from an
+         * ADMIN would be tidier; showing them with no available action would be
+         * worse. So the column is gated on the same role as the button.
+         */
+        selection={canPurge ? selection : undefined}
+        onSelectionChange={canPurge ? setSelection : undefined}
+        getRowId={canPurge ? (row) => row.id : undefined}
         toolbar={
           <div className="flex flex-wrap items-center gap-2">
+            <RequireRole roles={['OWNER']}>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-8"
+                disabled={selection.length === 0 || deleteMutation.isPending}
+                onClick={purgeSelected}
+              >
+                <Trash2 className="mr-1.5 size-3.5" />
+                Delete{selection.length > 0 ? ` (${selection.length})` : ''}
+              </Button>
+            </RequireRole>
             <Select value={action} onValueChange={(v) => { setAction(v as 'all' | AuditAction); setPage(1) }}>
               <SelectTrigger className="h-8 w-40"><SelectValue placeholder="Action" /></SelectTrigger>
               <SelectContent>
@@ -141,6 +230,21 @@ export default function AuditLogsPage() {
       />
 
       <ChangeDetailDialog entry={selected} onClose={() => setSelected(null)} />
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onOpenChange={confirmDialog.setOpen}
+        title={`Delete ${selection.length} audit ${selection.length === 1 ? 'entry' : 'entries'}?`}
+        /*
+         * Names the real consequence rather than the generic one. An audit
+         * entry is the record of what someone did; deleting it removes the only
+         * evidence that the action happened.
+         */
+        description="This permanently removes the record of those actions. The deletion is itself recorded, but what was deleted cannot be recovered."
+        confirmLabel="Delete"
+        loading={confirmDialog.pending}
+        onConfirm={confirmDialog.handleConfirm}
+      />
     </div>
   )
 }

@@ -47,7 +47,7 @@ export const TableHead = React.forwardRef<HTMLTableCellElement, React.ComponentP
     <th
       ref={ref}
       className={cn(
-        'h-8 whitespace-nowrap px-3 text-left align-middle text-xs font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0',
+        'h-10 whitespace-nowrap px-3 text-left align-middle text-xs font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0',
         className,
       )}
       {...props}

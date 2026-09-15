@@ -90,6 +90,31 @@ async function markAllAsRead(): Promise<void> {
   await request<{ success: boolean }>('/notifications/read-all', { method: 'PATCH' })
 }
 
+/**
+ * Bulk delete, by explicit id.
+ *
+ * POST rather than DELETE-with-body: a DELETE body is legal but dropped by
+ * enough proxies that the backend would see a missing `ids` array and report it
+ * as a validation error. The backend scopes the delete to the signed-in user,
+ * so an id belonging to someone else simply matches nothing.
+ *
+ * Returns how many rows were actually removed, which can be fewer than the ids
+ * sent — another session may already have cleared some.
+ */
+async function deleteNotifications(ids: string[]): Promise<{ deleted: number }> {
+  const res = await request<{ deleted: number }>('/notifications/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  })
+  return res.data
+}
+
+/** Clears every already-read notification. Unread ones are deliberately kept. */
+async function deleteAllRead(): Promise<{ deleted: number }> {
+  const res = await request<{ deleted: number }>('/notifications/all-read', { method: 'DELETE' })
+  return res.data
+}
+
 export function useNotifications(params: NotificationListParams = {}) {
   return useQuery({ queryKey: queryKeys.notifications.list(params), queryFn: () => listNotifications(params) })
 }
@@ -111,4 +136,14 @@ export function useMarkNotificationRead() {
 export function useMarkAllNotificationsRead() {
   const client = useQueryClient()
   return useMutation({ mutationFn: markAllAsRead, onSuccess: () => invalidateNotifications(client) })
+}
+
+export function useDeleteNotifications() {
+  const client = useQueryClient()
+  return useMutation({ mutationFn: deleteNotifications, onSuccess: () => invalidateNotifications(client) })
+}
+
+export function useDeleteReadNotifications() {
+  const client = useQueryClient()
+  return useMutation({ mutationFn: deleteAllRead, onSuccess: () => invalidateNotifications(client) })
 }

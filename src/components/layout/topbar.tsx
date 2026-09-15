@@ -74,7 +74,7 @@ export function Topbar({ soundMuted, onToggleSound }: TopbarProps) {
       <div className="ml-auto flex items-center gap-2">
         <div className="relative hidden sm:block">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search…" className="h-8 w-56 pl-7" />
+          <Input placeholder="Search…" className="h-10 w-56 pl-7" />
         </div>
 
         <Tooltip>

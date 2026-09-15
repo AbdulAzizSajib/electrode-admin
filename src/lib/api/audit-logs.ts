@@ -1,5 +1,5 @@
 /** Real backend audit-log calls — follows the same envelope/error pattern as `categories.ts`. */
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
 import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
@@ -77,9 +77,33 @@ async function listAuditLogs(params: AuditLogListParams = {}): Promise<Paginated
   }
 }
 
+/**
+ * Prunes selected entries. OWNER only — the backend rejects ADMIN with 403.
+ *
+ * The purge is itself recorded as a new `DELETE` entry naming the removed ids,
+ * so the list will show one more row after this resolves than a naive
+ * "selected minus deleted" count would predict. That is deliberate: it is what
+ * keeps a pruned trail distinguishable from one that was never written.
+ */
+async function deleteAuditLogs(ids: string[]): Promise<{ deleted: number }> {
+  const res = await request<{ deleted: number }>('/audit-logs/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  })
+  return res.data
+}
+
 export function useAuditLogs(params: AuditLogListParams = {}) {
   return useQuery({
     queryKey: queryKeys.auditLogs.list(params),
     queryFn: () => listAuditLogs(params),
+  })
+}
+
+export function useDeleteAuditLogs() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: deleteAuditLogs,
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.auditLogs.all }),
   })
 }

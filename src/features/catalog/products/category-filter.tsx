@@ -81,7 +81,7 @@ export function CategoryFilter({ tree, value, onChange }: CategoryFilterProps) {
             value={chain[levelIndex] ?? 'all'}
             onValueChange={(v) => handleSelect(levelIndex, v === 'all' ? null : v)}
           >
-            <SelectTrigger className="h-8 w-auto min-w-36 max-w-56">
+            <SelectTrigger className="h-10 w-auto min-w-36 max-w-56">
               <SelectValue placeholder="Category" />
             </SelectTrigger>
             <SelectContent>

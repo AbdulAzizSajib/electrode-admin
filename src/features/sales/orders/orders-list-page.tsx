@@ -324,7 +324,7 @@ export default function OrdersListPage() {
         toolbar={
           <>
             <Select value={status} onValueChange={changeView((v: string) => { setStatus(v); setPage(1) })}>
-              <SelectTrigger className="h-8 w-40">
+              <SelectTrigger className="h-10 w-40">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -335,7 +335,7 @@ export default function OrdersListPage() {
               </SelectContent>
             </Select>
             <Select value={channel} onValueChange={changeView((v: string) => { setChannel(v); setPage(1) })}>
-              <SelectTrigger className="h-8 w-40">
+              <SelectTrigger className="h-10 w-40">
                 <SelectValue placeholder="Source" />
               </SelectTrigger>
               <SelectContent>

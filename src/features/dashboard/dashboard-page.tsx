@@ -77,6 +77,9 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      <div  className="flex items-center justify-between">
+
+     
       <PageHeader title="Dashboard" description="An overview of your store's performance." />
 
       {/*
@@ -93,6 +96,7 @@ export default function DashboardPage() {
           ))}
         </TabsList>
       </Tabs>
+       </div>
 
       {summaryFailed && (
         <Card>

@@ -93,15 +93,21 @@ const toValues = (category: Category): FormValues => ({
 function toInput(values: OutputValues): CategoryInput {
   const input: CategoryInput = {
     name: values.name,
-    description: values.description || undefined,
+    /*
+     * Sent even when empty. An omitted key means "leave unchanged" under the
+     * partial upsert, so omitting a blank field would make clearing one
+     * impossible from this form — the merchant would empty the box, save, and
+     * watch the old text come back.
+     */
+    description: values.description ?? '',
+    /*
+     * `image` is the exception: the backend validates it with `z.url()`, which
+     * refuses `''`, so a cleared image cannot be expressed as an empty string
+     * and has to stay omitted.
+     */
     image: values.image || undefined,
     status: values.status,
     sortOrder: values.sortOrder,
-    /*
-     * Sent even when empty, unlike `description` above. An omitted key means
-     * "leave unchanged" under the partial upsert, so omitting a blank field
-     * would make clearing an SEO title impossible from this form.
-     */
     seoTitle: values.seoTitle ?? '',
     seoDescription: values.seoDescription ?? '',
   }

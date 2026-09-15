@@ -58,7 +58,7 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
   })
 
   return (
-    <nav className="flex flex-col gap-2 px-2 py-2 ">
+    <nav className="flex flex-col gap-2 px-4 py-5  ">
       {NAV_SECTIONS.filter((section) => isNavNodeVisible(section.roles, role)).map((section) => {
         const Icon = section.icon
 

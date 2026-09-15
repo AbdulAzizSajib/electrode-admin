@@ -248,7 +248,7 @@ export default function ProductsListPage() {
                 resetPage()
               }}
             >
-              <SelectTrigger className="h-8 w-auto min-w-32 max-w-48">
+              <SelectTrigger className="h-10 w-auto min-w-32 max-w-48">
                 <SelectValue placeholder="Brand" />
               </SelectTrigger>
               <SelectContent>
@@ -267,7 +267,7 @@ export default function ProductsListPage() {
                 resetPage()
               }}
             >
-              <SelectTrigger className="h-8 w-auto min-w-32">
+              <SelectTrigger className="h-10 w-auto min-w-32">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>

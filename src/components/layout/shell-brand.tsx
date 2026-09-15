@@ -33,8 +33,10 @@ export function ShellBrand({ collapsed = false }: { collapsed?: boolean }) {
   // to the initial — the name shortened, not a mark standing in for it.
   if (collapsed) {
     return (
-      <span className="w-full text-center text-sm font-semibold text-black">
+      <span className="w-full text-center text-xl font-semibold text-black">
         {storeName.charAt(0).toUpperCase()}
+        {accent.charAt(0).toUpperCase()}
+
       </span>
     )
   }
@@ -43,7 +45,7 @@ export function ShellBrand({ collapsed = false }: { collapsed?: boolean }) {
   // free text, so a long one has to end in an ellipsis rather than push the
   // lockup out of its own box.
   return (
-    <span className="min-w-0 truncate text-xl font-semibold text-Black text-center ">
+    <span className="min-w-0 truncate text-xl font-bold text-Black text-center px-4">
       {storeName}
       {accent && <span className="ml-1">{accent}</span>}
     </span>

@@ -39,8 +39,15 @@ const toValues = (brand: Brand): FormValues => ({
 function toInput(values: FormValues): BrandInput {
   return {
     name: values.name,
+    /*
+     * `logo` stays `undefined` when blank: the backend validates it with
+     * `z.url()`, which refuses `''`, so a cleared logo cannot be expressed as an
+     * empty string. Clearing one is not reachable from this form today.
+     */
     logo: values.logo || undefined,
-    description: values.description || undefined,
+    // `''` rather than omitted, so an emptied description actually clears the
+    // column — an omitted key means "leave unchanged" to the backend.
+    description: values.description ?? '',
     status: values.status,
   }
 }

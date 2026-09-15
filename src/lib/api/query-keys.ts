@@ -130,6 +130,8 @@ export const queryKeys = {
   roles: { all: ['roles'] as const, list: (p?: object) => ['roles', 'list', p] as const, detail: (id: string) => ['roles', 'detail', id] as const },
   permissions: { all: ['permissions'] as const, list: (p?: object) => ['permissions', 'list', p] as const },
   auditLogs: { all: ['audit-logs'] as const, list: (p?: object) => ['audit-logs', 'list', p] as const },
+  /** Derived, read-only: database size and Cloudinary usage. Nothing invalidates it — see `useStorageUsage`. */
+  storage: { all: ['storage'] as const, usage: ['storage', 'usage'] as const },
 
   /**
    * The shared live poll. Not under `dashboard` because it outlives any one page — the pending

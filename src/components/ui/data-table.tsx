@@ -199,7 +199,7 @@ export function DataTable<TData>({
               value={searchValue ?? ''}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder={searchPlaceholder}
-              className="h-8 max-w-64"
+              className="h-10 max-w-72"
             />
           )}
           {toolbar}

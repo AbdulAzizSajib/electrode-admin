@@ -19,6 +19,7 @@ import {
   TicketPercent,
   ShoppingBag,
   Boxes,
+  HardDrive,
   ArrowLeftRight,
   Factory,
   ClipboardList,
@@ -312,6 +313,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Roles & Permissions', path: '/settings/roles', icon: ShieldCheck, roles: ['OWNER'] },
       { label: 'Staff Users', path: '/settings/staff', icon: UserCog },
       { label: 'Audit Logs', path: '/settings/audit-logs', icon: ScrollText },
+      { label: 'Storage', path: '/settings/storage', icon: HardDrive },
     ],
   },
 ]

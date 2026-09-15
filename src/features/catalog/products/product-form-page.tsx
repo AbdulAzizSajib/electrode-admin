@@ -810,7 +810,9 @@ export default function ProductFormPage() {
       name: values.name,
       sku: values.sku,
       description: values.description,
-      shortDescription: values.shortDescription || undefined,
+      // `''` not `undefined` when emptied, for the reason given on `unit`/`badge`
+      // below — an emptied Overview has to actually clear the column.
+      shortDescription: values.shortDescription ?? '',
       seoTitle: values.seoTitle ?? '',
       seoDescription: values.seoDescription ?? '',
       type: values.type,
@@ -828,8 +830,17 @@ export default function ProductFormPage() {
       bundleDealId: values.bundleDealId ?? null,
       tags: values.tags ?? [],
 
-      unit: values.unit?.trim() || undefined,
-      badge: values.badge?.trim() || undefined,
+      /*
+       * Sent as `''` rather than omitted when cleared.
+       *
+       * An omitted key means "leave unchanged" to the backend, and that is also
+       * the only way to clear a value — so `|| undefined` made these
+       * write-once: a merchant could set a "New" badge but never take it off,
+       * and the storefront kept rendering it after a save that reported
+       * success. Same reasoning as `seoTitle`/`seoDescription` above.
+       */
+      unit: values.unit?.trim() ?? '',
+      badge: values.badge?.trim() ?? '',
       isRefundable: values.isRefundable,
       hasWarranty: values.hasWarranty,
       video: video.url,

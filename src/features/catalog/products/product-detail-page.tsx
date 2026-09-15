@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/ui/empty-state'
+import { RichText } from '@/components/ui/rich-text'
+import { isBlankHtml } from '@/lib/utils/sanitize-html'
 import { ConfirmDialog, useConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/components/ui/use-toast'
 import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
@@ -120,8 +122,17 @@ export default function ProductDetailPage() {
               <CardTitle>Description</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
-              {product.shortDescription && <p className="text-sm font-medium text-foreground">{product.shortDescription}</p>}
-              <p className="text-sm text-foreground">{product.description}</p>
+              {/*
+                Both columns hold rich text from the editor, so they are
+                rendered as markup rather than printed as JSX text — the latter
+                showed the merchant a literal `<p>…</p>`. `isBlankHtml` rather
+                than a truthiness check: an emptied editor can still store
+                `<p><br></p>`, which is not worth a heading's worth of space.
+              */}
+              {!isBlankHtml(product.shortDescription) && (
+                <RichText html={product.shortDescription!} className="font-medium" />
+              )}
+              {!isBlankHtml(product.description) && <RichText html={product.description!} />}
             </CardContent>
           </Card>
 

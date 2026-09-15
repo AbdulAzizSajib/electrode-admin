@@ -5,11 +5,11 @@ React 19 + Vite SPA using React Router data routing, TanStack Query, React Hook 
 ## Commands
 
 ```bash
-pnpm dev
-pnpm build
-pnpm lint
-pnpm test
-pnpm exec vitest run src/path/to/file.test.tsx
+npm run dev
+npm run build
+npm run lint
+npm run test
+npx vitest run src/path/to/file.test.tsx
 ```
 
 The API runs at `http://localhost:5000`; the admin dev server runs at `http://localhost:5173`. This app is its own Git repository.

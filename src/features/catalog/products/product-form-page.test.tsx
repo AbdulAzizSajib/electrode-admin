@@ -23,7 +23,7 @@ import userEvent from '@testing-library/user-event'
  *
  * Everything below the page is stubbed — the API hooks, the router, the rich
  * text editor. What is being tested is the page's own decisions (what it
- * submits, what it refuses, where it navigates), not Tiptap's rendering or
+ * submits, what it refuses, where it navigates), not the editor's rendering or
  * react-query's caching.
  */
 
@@ -125,7 +125,7 @@ vi.mock('@/components/layout/breadcrumb-context', () => ({ useBreadcrumbLabel: (
 vi.mock('@/components/ui/use-toast', () => ({ toast: vi.fn() }))
 
 /**
- * Tiptap in jsdom is slow and contributes nothing here: the page only ever sees
+ * The editor in jsdom is slow and contributes nothing here: the page only sees
  * this control's `value`/`onChange`, so a textarea exercises the same contract.
  */
 vi.mock('@/components/forms/rich-text-editor', () => ({
@@ -488,6 +488,47 @@ describe('ProductFormPage', () => {
       await user.click(screen.getByRole('button', { name: 'Build the product code from the name' }))
 
       expect((screen.getByLabelText('Product code') as HTMLInputElement).value).toBe('')
+    })
+  })
+
+  describe('clearing an optional text field', () => {
+    /*
+     * These fields were write-once. The page built its payload with
+     * `values.badge?.trim() || undefined`, and an omitted key means "leave
+     * unchanged" to the backend — so emptying the box produced a save that
+     * reported success and changed nothing. A merchant could put a "New" badge
+     * on a product and then never take it off; the storefront kept rendering it.
+     *
+     * Asserted as `''` specifically, not just "not the old value": `''` is the
+     * only way to express "clear this" under the partial update.
+     */
+    it.each([
+      ['Badge', 'badge'],
+      ['Sold in', 'unit'],
+    ])('sends an emptied %s as "" so the column is actually cleared', async (label, key) => {
+      stub.productId = 'p-1'
+      stub.product = { ...PRODUCT, badge: 'New', unit: '1 piece' }
+      const user = userEvent.setup()
+      render(<ProductFormPage />)
+
+      await user.clear(screen.getByLabelText(label))
+      await user.click(saveAndContinue())
+
+      await waitFor(() => expect(updateMutate).toHaveBeenCalled())
+      expect(lastUpdateInput().input[key]).toBe('')
+    })
+
+    it('still sends a filled badge as typed', async () => {
+      stub.productId = 'p-1'
+      stub.product = { ...PRODUCT }
+      const user = userEvent.setup()
+      render(<ProductFormPage />)
+
+      await user.type(screen.getByLabelText('Badge'), 'Hot')
+      await user.click(saveAndContinue())
+
+      await waitFor(() => expect(updateMutate).toHaveBeenCalled())
+      expect(lastUpdateInput().input.badge).toBe('Hot')
     })
   })
 

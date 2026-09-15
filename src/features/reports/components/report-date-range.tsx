@@ -7,10 +7,12 @@ import { rangePresets, type DateRangeValue } from '@/features/reports/report-uti
  *
  * Built from two native `<input type="date">` plus preset buttons rather than
  * antd's `RangePicker`. The design called for the antd control on the grounds
- * that `dayjs` ships with antd and so costs nothing — under pnpm's strict
- * node_modules layout it does not: `dayjs` is antd's own dependency and is not
- * hoisted, so importing it would mean adding a direct dependency the proposal
- * rules out.
+ * that `dayjs` ships with antd and so costs nothing — under the pnpm layout
+ * this repo used at the time it did not: `dayjs` was antd's own dependency and
+ * was not hoisted, so importing it would have meant adding a direct dependency
+ * the proposal ruled out. (The repo installs with npm now, which hoists, so
+ * `dayjs` may resolve incidentally — it is still not a declared dependency and
+ * must not be imported.)
  *
  * Native date inputs turn out to be the better fit anyway: they produce and
  * consume `YYYY-MM-DD` strings directly, which is exactly the wire format the

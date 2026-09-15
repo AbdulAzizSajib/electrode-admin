@@ -47,7 +47,7 @@ vi.mock('@/lib/api/uploads', () => ({
 vi.mock('@/components/ui/use-toast', () => ({ toast: vi.fn() }))
 
 /**
- * Tiptap in jsdom is slow and contributes nothing here: the page only ever sees
+ * The editor in jsdom is slow and contributes nothing here: the page only sees
  * this control's `value`/`onChange`, so a textarea exercises the same contract.
  */
 vi.mock('@/components/forms/rich-text-editor', () => ({
