@@ -1,10 +1,13 @@
-import { ArrowDown, ArrowUp, GripVertical, TriangleAlert } from 'lucide-react'
+import * as React from 'react'
+import { ArrowDown, ArrowUp, ChevronDown, GripVertical, TriangleAlert } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/use-toast'
 import {
   EditorActions,
@@ -27,15 +30,26 @@ import {
   type HomeConfig,
   type HomeSection,
   type HomeSectionKey,
+  type Newsletter,
 } from '@/lib/api/store-settings'
 
 /**
  * Which sections the website's home page is built from, and in what order.
  *
- * Writes ONLY `homeConfig`. `PATCH /settings` is a partial upsert, so this page and the other
- * settings editors are saved independently without any of them clobbering another — the same
- * disjoint-field-set arrangement Catalog Setting, Checkout Setting, Header Links and Footer Links
- * already rely on.
+ * Writes `homeConfig` AND `newsletter`, and nothing else. `PATCH /settings` is a partial upsert, so
+ * this page and the other settings editors are saved independently without any of them clobbering
+ * another — the same disjoint-field-set arrangement Catalog Setting, Checkout Setting, Header Links
+ * and Footer Links already rely on.
+ *
+ * Two keys rather than one because they are one decision for a merchant even though they are two
+ * columns: whether the newsletter block exists, and what it says. The wording used to live on
+ * Footer Links, back when the block was welded into the storefront footer and the only way to
+ * remove it was to empty its heading. It is a home page section now, so its copy is here, beside
+ * the switch that governs it.
+ *
+ * DISJOINTNESS STILL HOLDS — this was a move, not an addition. Footer Links no longer sends
+ * `newsletter`, so exactly one editor writes it, which is the property the arrangement needs. If
+ * you are adding a third key here, check nobody else writes it first.
  *
  * Every switch here is reversible at no cost, which is why none of them asks for confirmation:
  * turning a section off removes it from the home page and nothing else. The products, banners,
@@ -53,6 +67,14 @@ const DESCRIPTION =
 /** Look-up from key to the merchant-facing name and description. */
 const SECTION_INFO = new Map(HOME_SECTION_REGISTRY.map((section) => [section.key, section]))
 
+/** Everything this page owns, held as one draft so dirty-tracking stays one flag. */
+interface HomeSectionsDraft {
+  sections: HomeConfig
+  newsletter: Newsletter
+}
+
+const EMPTY_NEWSLETTER: Newsletter = { heading: '', subtext: '', placeholder: '', buttonLabel: '' }
+
 /**
  * One section: what it is, where it sits, and whether it is shown.
  *
@@ -68,6 +90,7 @@ function SectionRow({
   dragHandleProps,
   onMove,
   onToggle,
+  settings,
 }: {
   section: HomeSection
   index: number
@@ -75,16 +98,28 @@ function SectionRow({
   dragHandleProps: DragHandleProps
   onMove: (from: number, to: number) => void
   onToggle: (enabled: boolean) => void
+  /** This section's own fields, revealed by a disclosure control. Omit for a section with none. */
+  settings?: React.ReactNode
 }) {
   const info = SECTION_INFO.get(section.key)
   const switchId = `home-section-${section.key}`
+  const panelId = `home-section-${section.key}-settings`
+  const [open, setOpen] = React.useState(false)
 
   return (
+    /*
+     * A fragment, so the settings panel below is a SIBLING of the draggable row rather than a
+     * child of it. That is not a layout preference — a text input inside a `draggable` ancestor
+     * cannot be selected with the mouse in Chrome or Firefox, because the drag intercepts the
+     * gesture. Keeping the panel out of that subtree fixes it structurally; `draggable={false}`
+     * or a `stopPropagation` on the panel would also work today and would quietly stop working.
+     */
+    <>
     <div
       {...dragHandleProps}
       className={`flex items-center gap-3 rounded-md border border-border bg-card p-3 ${
         section.enabled ? '' : 'opacity-60'
-      }`}
+      } ${settings && open ? 'rounded-b-none' : ''}`}
     >
       {/* Presentational: the drag affordance lives on the whole row, and the
           buttons beside it are what a keyboard reaches. */}
@@ -98,6 +133,25 @@ function SectionRow({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
+        {/*
+          Only the sections that have something to configure get this, and only the newsletter
+          does today. Deliberately NOT gated on `section.enabled`: a merchant may well write the
+          copy before switching the block on, and hiding the fields behind the switch would make
+          that impossible. The dimmed row is signal enough that it is off.
+        */}
+        {settings ? (
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            onClick={() => setOpen((wasOpen) => !wasOpen)}
+            aria-expanded={open}
+            aria-controls={panelId}
+            aria-label={`${open ? 'Hide' : 'Show'} ${info?.label ?? section.key} settings`}
+          >
+            <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+          </Button>
+        ) : null}
         <Button
           type="button"
           size="icon"
@@ -126,6 +180,94 @@ function SectionRow({
         />
       </div>
     </div>
+
+    {settings && open ? (
+      <div
+        id={panelId}
+        className="flex flex-col gap-3 rounded-b-md border border-t-0 border-border bg-muted/40 p-3"
+      >
+        {settings}
+      </div>
+    ) : null}
+    </>
+  )
+}
+
+/**
+ * The newsletter block's wording.
+ *
+ * Here rather than on Footer Links because the block is no longer in the footer — it is a home
+ * page section, and its copy belongs beside the switch that decides whether it appears at all.
+ *
+ * Every field may be left empty. The storefront renders the form regardless and simply omits a
+ * line it has no text for, so emptying the heading is NOT how a merchant removes this block —
+ * the switch on the row above is. That used to be the only way, and it was an accident rather
+ * than a design.
+ */
+function NewsletterFields({
+  value,
+  onChange,
+}: {
+  value: Newsletter
+  onChange: (patch: Partial<Newsletter>) => void
+}) {
+  return (
+    <>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="newsletter-heading">Heading</Label>
+        <Input
+          id="newsletter-heading"
+          value={value.heading}
+          onChange={(e) => onChange({ heading: e.target.value })}
+          placeholder="Join our newsletter"
+          maxLength={200}
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="newsletter-subtext">Supporting text</Label>
+        <Textarea
+          id="newsletter-subtext"
+          value={value.subtext}
+          onChange={(e) => onChange({ subtext: e.target.value })}
+          placeholder="Tell customers what they get for signing up."
+          maxLength={500}
+          rows={2}
+        />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="newsletter-placeholder">Input placeholder</Label>
+          <Input
+            id="newsletter-placeholder"
+            value={value.placeholder ?? ''}
+            onChange={(e) => onChange({ placeholder: e.target.value })}
+            placeholder="Email"
+            maxLength={100}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="newsletter-button">Button label</Label>
+          <Input
+            id="newsletter-button"
+            value={value.buttonLabel ?? ''}
+            onChange={(e) => onChange({ buttonLabel: e.target.value })}
+            placeholder="Subscribe"
+            maxLength={50}
+          />
+        </div>
+      </div>
+
+      {/*
+        Said plainly, because the form looks like it works and does not. A merchant who believes
+        they are collecting addresses and is not has a worse problem than one who knows.
+      */}
+      <p className="text-xs text-muted-foreground">
+        Sign-ups are not collected anywhere yet — the form is shown, but nothing is stored when a
+        customer submits it.
+      </p>
+    </>
   )
 }
 
@@ -144,13 +286,26 @@ export default function HomeSectionsPage() {
    * what the backend's own reconciliation does on the read path. Without this the merchant would
    * simply never see the new section, and could not switch it on.
    */
-  const draft = useSettingsDraft<HomeConfig>(
-    data && (data.homeConfig ?? DEFAULT_HOME_CONFIG),
-    DEFAULT_HOME_CONFIG,
+  const draft = useSettingsDraft<HomeSectionsDraft>(
+    data && {
+      sections: data.homeConfig ?? DEFAULT_HOME_CONFIG,
+      newsletter: data.newsletter ?? EMPTY_NEWSLETTER,
+    },
+    { sections: DEFAULT_HOME_CONFIG, newsletter: EMPTY_NEWSLETTER },
   )
   const blocker = useUnsavedChangesGuard(draft.isDirty)
 
-  const stored = draft.value
+  /*
+   * One draft holding both, so dirty-tracking and the unsaved-changes guard cover a wording edit
+   * exactly as they cover a reorder. `useSettingsDraft` is unchanged — it holds one value, and one
+   * value is what it gets.
+   */
+  const stored = draft.value.sections
+  const { newsletter } = draft.value
+  const setSections = (next: HomeConfig) => draft.set({ ...draft.value, sections: next })
+  const setNewsletter = (patch: Partial<Newsletter>) =>
+    draft.set({ ...draft.value, newsletter: { ...newsletter, ...patch } })
+
   const known = new Set<HomeSectionKey>(HOME_SECTION_REGISTRY.map((s) => s.key))
 
   /*
@@ -170,9 +325,9 @@ export default function HomeSectionsPage() {
 
   const handleSave = async () => {
     try {
-      // One key and only one — see the note at the top of this file.
-      await updateMutation.mutateAsync({ homeConfig: sections })
-      draft.markSaved(sections)
+      // Two keys and only two — see the note at the top of this file.
+      await updateMutation.mutateAsync({ homeConfig: sections, newsletter })
+      draft.markSaved({ sections, newsletter })
       toast({ title: 'Home sections saved' })
     } catch (err) {
       // The draft is deliberately left as it was: a merchant whose save failed
@@ -230,7 +385,7 @@ export default function HomeSectionsPage() {
         <ReorderableList
           items={sections}
           getKey={(section) => section.key}
-          onReorder={draft.set}
+          onReorder={setSections}
           className="flex flex-col gap-2"
           renderItem={(section, dragHandleProps, index) => (
             <SectionRow
@@ -238,13 +393,18 @@ export default function HomeSectionsPage() {
               index={index}
               count={sections.length}
               dragHandleProps={dragHandleProps}
-              onMove={(from, to) => draft.set(moveItem(sections, from, to))}
+              onMove={(from, to) => setSections(moveItem(sections, from, to))}
               onToggle={(enabled) =>
-                draft.set(
+                setSections(
                   sections.map((entry) =>
                     entry.key === section.key ? { ...entry, enabled } : entry,
                   ),
                 )
+              }
+              settings={
+                section.key === 'NEWSLETTER' ? (
+                  <NewsletterFields value={newsletter} onChange={setNewsletter} />
+                ) : undefined
               }
             />
           )}

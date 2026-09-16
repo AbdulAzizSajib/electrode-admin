@@ -34,19 +34,25 @@ import {
   SETTINGS_LIMITS,
   SOCIAL_PLATFORMS,
   type FooterColumn,
-  type Newsletter,
   type SocialLink,
   type SocialPlatform,
 } from '@/lib/api/store-settings'
 
 /**
- * The storefront footer: its link columns, social icons, newsletter copy, and
- * the brand/contact block on either end.
+ * The storefront footer: its link columns, social icons, and the brand/contact
+ * block on either end.
  *
  * Writes everything EXCEPT `mainNav` and `announcementBar`, which belong to
- * Header Links. The two field sets are disjoint and `PATCH /settings` is a
- * partial upsert, so both pages can be saved in any order without either losing
- * the other's work.
+ * Header Links, and `newsletter`, which belongs to Home Sections. The field
+ * sets are disjoint and `PATCH /settings` is a partial upsert, so the pages can
+ * be saved in any order without any of them losing another's work.
+ *
+ * THE NEWSLETTER IS NOT HERE ANY MORE, and this is where people will look for
+ * it. It used to be a strip welded into the top of the footer, on every page,
+ * removable only by emptying its heading. It is now a home page section a
+ * merchant switches, orders and words on UI → Home Sections. Nothing on this
+ * page may write `newsletter` again — two editors owning one column is exactly
+ * what the disjoint-field-set rule exists to prevent.
  *
  * The contact fields here are the same three columns the Store Settings page
  * writes. Both go through the same partial patch, so last-write-wins is the
@@ -57,14 +63,11 @@ import {
 interface FooterDraft {
   footerColumns: FooterColumn[]
   socialLinks: SocialLink[]
-  newsletter: Newsletter
   aboutText: string
   contactEmail: string
   contactPhone: string
   address: string
 }
-
-const EMPTY_NEWSLETTER: Newsletter = { heading: '', subtext: '', placeholder: '', buttonLabel: '' }
 
 export default function FooterLinksPage() {
   const { data, isLoading, error } = useStoreSettings()
@@ -74,7 +77,6 @@ export default function FooterLinksPage() {
     data && {
       footerColumns: data.footerColumns ?? [],
       socialLinks: data.socialLinks ?? [],
-      newsletter: data.newsletter ?? EMPTY_NEWSLETTER,
       aboutText: data.aboutText ?? '',
       contactEmail: data.contactEmail ?? '',
       contactPhone: data.contactPhone ?? '',
@@ -83,7 +85,6 @@ export default function FooterLinksPage() {
     {
       footerColumns: [],
       socialLinks: [],
-      newsletter: EMPTY_NEWSLETTER,
       aboutText: '',
       contactEmail: '',
       contactPhone: '',
@@ -93,7 +94,7 @@ export default function FooterLinksPage() {
   const blocker = useUnsavedChangesGuard(draft.isDirty)
   const [rowErrors, setRowErrors] = React.useState<Record<string, string>>({})
 
-  const { footerColumns, socialLinks, newsletter } = draft.value
+  const { footerColumns, socialLinks } = draft.value
   const patch = (next: Partial<FooterDraft>) => draft.set({ ...draft.value, ...next })
 
   const updateColumn = (index: number, next: Partial<FooterColumn>) =>
@@ -140,7 +141,6 @@ export default function FooterLinksPage() {
       await updateMutation.mutateAsync({
         footerColumns,
         socialLinks,
-        newsletter,
         ...(draft.value.aboutText.trim() ? { aboutText: draft.value.aboutText.trim() } : {}),
         ...(draft.value.contactEmail.trim() ? { contactEmail: draft.value.contactEmail.trim() } : {}),
         ...(draft.value.contactPhone.trim() ? { contactPhone: draft.value.contactPhone.trim() } : {}),
@@ -160,7 +160,7 @@ export default function FooterLinksPage() {
   if (isLoading) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader title="Footer links" description="The columns, contact details and newsletter at the bottom of every page." />
+        <PageHeader title="Footer links" description="The columns and contact details at the bottom of every page." />
         <Skeleton className="h-96 w-full" />
       </div>
     )
@@ -169,7 +169,7 @@ export default function FooterLinksPage() {
   if (error) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader title="Footer links" description="The columns, contact details and newsletter at the bottom of every page." />
+        <PageHeader title="Footer links" description="The columns and contact details at the bottom of every page." />
         <p className="text-sm text-destructive">
           {error instanceof Error ? error.message : 'Could not load the footer settings.'}
         </p>
@@ -181,7 +181,7 @@ export default function FooterLinksPage() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Footer links"
-        description="The columns, contact details, social icons and newsletter at the bottom of every storefront page."
+        description="The columns, contact details and social icons at the bottom of every storefront page. The newsletter signup moved to Home Sections."
       />
 
       {/* Copyright is shown but not edited here, so it comes from the stored
@@ -420,51 +420,6 @@ export default function FooterLinksPage() {
         ))}
       </EditorSection>
 
-      <EditorSection title="Newsletter" description="The signup strip at the top of the footer.">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="flex flex-col gap-1.5 md:col-span-2">
-            <Label htmlFor="nl-heading">Heading</Label>
-            <Input
-              id="nl-heading"
-              value={newsletter.heading}
-              onChange={(e) => patch({ newsletter: { ...newsletter, heading: e.target.value } })}
-              placeholder="Join Our Newsletter For ৳10 Off"
-              maxLength={200}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5 md:col-span-2">
-            <Label htmlFor="nl-subtext">Supporting text</Label>
-            <Textarea
-              id="nl-subtext"
-              value={newsletter.subtext}
-              onChange={(e) => patch({ newsletter: { ...newsletter, subtext: e.target.value } })}
-              rows={2}
-              maxLength={500}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="nl-placeholder">Input placeholder</Label>
-            <Input
-              id="nl-placeholder"
-              value={newsletter.placeholder ?? ''}
-              onChange={(e) => patch({ newsletter: { ...newsletter, placeholder: e.target.value } })}
-              placeholder="Email"
-              maxLength={100}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="nl-button">Button label</Label>
-            <Input
-              id="nl-button"
-              value={newsletter.buttonLabel ?? ''}
-              onChange={(e) => patch({ newsletter: { ...newsletter, buttonLabel: e.target.value } })}
-              placeholder="Subscribe"
-              maxLength={50}
-            />
-          </div>
-        </div>
-      </EditorSection>
-
       <EditorActions
         isDirty={draft.isDirty}
         isSaving={updateMutation.isPending}
@@ -493,15 +448,13 @@ function FooterPreview({
         <span className="text-xs font-medium text-muted-foreground">Preview</span>
         {isDirty && <span className="text-xs text-warning">Unsaved — not live yet</span>}
       </div>
+      {/*
+        No newsletter strip any more. It used to sit above these columns, here and on the
+        storefront; it is a home page section now, edited on UI → Home Sections. A preview that
+        still showed it would be telling the merchant something untrue about their own footer.
+      */}
       <div className="bg-[#1560bd] p-4 text-white">
-        <div className="border-b border-white/20 pb-3">
-          <p className="text-sm font-semibold">
-            {draft.newsletter.heading || <em className="opacity-60">No newsletter heading</em>}
-          </p>
-          <p className="text-xs opacity-80">{draft.newsletter.subtext}</p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 pt-3 text-xs sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-4 text-xs sm:grid-cols-3 lg:grid-cols-5">
           <div>
             <p className="mb-1.5 font-semibold">Brand</p>
             <p className="line-clamp-4 opacity-80">{draft.aboutText}</p>

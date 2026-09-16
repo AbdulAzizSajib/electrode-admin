@@ -352,6 +352,7 @@ export type HomeSectionKey =
   | 'NEW_ARRIVALS'
   | 'TESTIMONIALS'
   | 'BLOG'
+  | 'NEWSLETTER'
 
 /** One section's placement and visibility. Position in `HomeConfig` is its order. */
 export interface HomeSection {
@@ -437,6 +438,21 @@ export const HOME_SECTION_REGISTRY: {
     key: 'BLOG',
     label: 'Recent blog posts',
     description: 'Your latest published articles.',
+  },
+  /*
+   * LAST, matching the backend registry exactly — the two orders are what a
+   * merchant sees before they reorder anything, and disagreeing would mean this
+   * panel showing one default while the website renders another.
+   *
+   * The label and description are ours to word; only the KEY is fixed. The
+   * backend's `HOME_SECTION_KEYS` is explicit that a key is permanent once
+   * released, because stored configurations name sections by these strings.
+   */
+  {
+    key: 'NEWSLETTER',
+    label: 'Newsletter signup',
+    description:
+      'The email signup band. It used to sit in your footer on every page; it is now a home page section you can move or switch off.',
   },
 ]
 
@@ -703,6 +719,8 @@ export interface StoreSettings {
   address: string | null
   logoUrl: string | null
   footerLogoUrl: string | null
+  /** The browser-tab icon. Null means the merchant chose none and the website falls back to its own. */
+  faviconUrl: string | null
   /**
    * Which of the two things each brand slot shows, decided independently.
    *
@@ -821,6 +839,17 @@ export interface StoreSettingsInput {
   address?: string
   logoUrl?: string
   footerLogoUrl?: string
+  /**
+   * The browser-tab icon. `| null` unlike the two logo URLs above, and that
+   * difference is load-bearing rather than an inconsistency.
+   *
+   * Every other optional key here says "leave unchanged" by being omitted, so
+   * there is no way to express REMOVE for a field whose empty value is not
+   * itself valid — which is why clearing a logo through this panel does nothing
+   * today. The backend makes `faviconUrl` nullable specifically to fix that, so
+   * send `null` to take an icon down. Never `''`: the backend rejects it.
+   */
+  faviconUrl?: string | null
   /** Sent unconditionally by the site-settings editor — a mode always has a value. */
   headerBrandMode?: BrandDisplayMode
   footerBrandMode?: BrandDisplayMode

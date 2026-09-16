@@ -75,9 +75,11 @@ function toFormValues(s: StoreSettings): Values {
  * storefront configuration untouched — sending them back would risk clobbering config this page
  * never shows the user.
  *
- * Those blocks are now edited under UI → Header Links (`mainNav`, `announcementBar`) and UI →
- * Footer Links (the rest). The same partial-patch property is what lets all three pages write to
- * one endpoint without overwriting each other, so this omission is load-bearing, not leftover.
+ * Those blocks are now edited under UI → Header Links (`mainNav`, `announcementBar`), UI → Footer
+ * Links (`footerColumns`, `socialLinks`) and UI → Home Sections (`newsletter`, which moved there
+ * with the signup block itself — it is a home page section now, not part of the footer). The same
+ * partial-patch property is what lets all of those pages write to one endpoint without overwriting
+ * each other, so this omission is load-bearing, not leftover.
  *
  * `contactEmail`/`contactPhone`/`address` ARE editable in both places: they belong to the store,
  * but a merchant looking for "the phone number in my footer" looks in the footer editor. Both send

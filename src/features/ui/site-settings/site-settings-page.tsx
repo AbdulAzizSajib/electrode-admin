@@ -63,6 +63,12 @@ interface SiteDraft {
   logoUrl: string
   footerLogoUrl: string
   /**
+   * The browser-tab icon. Empty means "no icon chosen" and is SENT AS NULL,
+   * not omitted — see `save()`. That is what makes Clear actually clear, and it
+   * is the one field on this page where that works.
+   */
+  faviconUrl: string
+  /**
    * Which of the two things each brand slot shows.
    *
    * Held in the draft alongside the artwork rather than derived from it: the
@@ -94,6 +100,7 @@ const EMPTY_DRAFT: SiteDraft = {
   siteNameAccent: '',
   logoUrl: '',
   footerLogoUrl: '',
+  faviconUrl: '',
   headerBrandMode: DEFAULT_BRAND_DISPLAY.headerBrandMode,
   footerBrandMode: DEFAULT_BRAND_DISPLAY.footerBrandMode,
   headerLogoHeight: LOGO_HEIGHT_LIMITS.headerDefault,
@@ -236,6 +243,7 @@ export default function SiteSettingsPage() {
       siteNameAccent: data.siteNameAccent ?? '',
       logoUrl: data.logoUrl ?? '',
       footerLogoUrl: data.footerLogoUrl ?? '',
+      faviconUrl: data.faviconUrl ?? '',
       /*
        * Seeded from the mirrored defaults, because the admin read returns the
        * row as-is: a store that has never chosen a mode sends null here, and
@@ -260,9 +268,11 @@ export default function SiteSettingsPage() {
   const setTheme = (patch: Partial<Theme>) => set({ theme: { ...value.theme, ...patch } })
 
   /** Which logo slot an upload is in flight for, so only that one shows a spinner. */
-  const [uploading, setUploading] = React.useState<'logoUrl' | 'footerLogoUrl' | null>(null)
+  const [uploading, setUploading] = React.useState<
+    'logoUrl' | 'footerLogoUrl' | 'faviconUrl' | null
+  >(null)
 
-  const handleUpload = async (slot: 'logoUrl' | 'footerLogoUrl', file: File) => {
+  const handleUpload = async (slot: 'logoUrl' | 'footerLogoUrl' | 'faviconUrl', file: File) => {
     setUploading(slot)
     try {
       const { url } = await uploadMutation.mutateAsync(file)
@@ -329,6 +339,22 @@ export default function SiteSettingsPage() {
     if (value.siteNameAccent.trim()) input.siteNameAccent = value.siteNameAccent.trim()
     if (value.logoUrl.trim()) input.logoUrl = value.logoUrl.trim()
     if (value.footerLogoUrl.trim()) input.footerLogoUrl = value.footerLogoUrl.trim()
+    /*
+     * ALWAYS SENT, and as `null` when empty — not omitted like the two logos
+     * directly above. This is the one field on this page whose Clear button
+     * actually clears.
+     *
+     * The omit-when-empty rule those two follow cannot express "remove this":
+     * an omitted key means LEAVE UNCHANGED under the backend's partial upsert,
+     * so emptying a logo here and saving leaves the stored URL exactly where it
+     * was. That is a real bug for `logoUrl`/`footerLogoUrl` today — it is not
+     * being fixed here, because those columns reject null and changing that is
+     * a backend change of its own.
+     *
+     * `faviconUrl` is nullable on the backend precisely so this works. Never
+     * send `''`: it is rejected as a malformed URL.
+     */
+    input.faviconUrl = value.faviconUrl.trim() || null
     /*
      * `siteUrl`, `metaTitle` and `metaDescription` are deliberately NOT sent
      * any more — SEO → General owns them now. Still loaded into this page's
@@ -506,6 +532,45 @@ export default function SiteSettingsPage() {
                 <NoArtworkNote />
               ))}
           </div>
+        </div>
+
+        {/*
+          Outside the two-column grid above, because the favicon belongs to
+          NEITHER slot — it is the site's mark, not the header's or the footer's,
+          and it has no display mode to pair with. Putting it in one of those
+          columns would read as "the header's icon".
+        */}
+        <div className="mt-6 flex max-w-sm flex-col gap-2 border-t border-border pt-6">
+          <LogoField
+            label="Favicon"
+            url={value.faviconUrl}
+            busy={uploading === 'faviconUrl'}
+            onPick={(file) => handleUpload('faviconUrl', file)}
+            onClear={() => set({ faviconUrl: '' })}
+          />
+          {/*
+            Three things a merchant cannot work out from the field itself: how small it renders
+            (artwork picked for a header will be a smudge), what clearing it does (falls back to
+            the website's own icon, never a blank tab), and — the one that would otherwise cost
+            somebody an afternoon — that an SVG will upload happily and then not work.
+
+            Verified against the real upload route: a PNG comes back as `image/png` and an ICO as
+            `image/x-icon`, both of which browsers accept. An SVG is stored by Cloudinary as a
+            `raw` asset, served as `application/octet-stream` with its extension stripped, and a
+            browser will not render that as an icon. The upload SUCCEEDS, so nothing fails loudly
+            — the tab icon just never appears. Hence naming the formats that work rather than
+            leaving `accept="image/*"` to imply all of them do.
+
+            The same is true of an SVG logo in the two slots above; not addressed here because
+            those fields predate this change.
+          */}
+          <p className="text-xs text-muted-foreground">
+            The small icon shown in a browser tab, a bookmark and search results. It renders about
+            16–32px across, so a square image works best — a wide header logo will not be readable
+            at that size. Use a <strong>PNG or an .ico</strong>: an SVG will upload but will not
+            show up as an icon. Clear it and your website falls back to its own icon; the tab is
+            never left blank.
+          </p>
         </div>
       </EditorSection>
 
