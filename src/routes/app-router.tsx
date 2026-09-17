@@ -49,6 +49,9 @@ const OrderCreatePage = lazy(() => import('@/features/sales/orders/order-create-
 const OrderDocumentPage = lazy(
   () => import('@/features/sales/orders/documents/order-document-page'),
 )
+const BulkDocumentPage = lazy(
+  () => import('@/features/sales/orders/documents/bulk-document-page'),
+)
 const ReturnsPage = lazy(() => import('@/features/sales/returns/returns-page'))
 const ReturnDetailPage = lazy(() => import('@/features/sales/returns/return-detail-page'))
 const RefundsPage = lazy(() => import('@/features/sales/refunds/refunds-page'))
@@ -346,6 +349,15 @@ export function AppRouter() {
           path="/sales/orders/:orderId/print/:document"
           element={<OrderDocumentPage />}
         />
+
+        {/* The same document types for a selection rather than one order, and
+            outside ShellLayout for the same reason. Registered ABOVE nothing in
+            particular — it cannot collide with the per-order route above, whose
+            path carries an :orderId segment where this one has the literal
+            "print". Reached from the orders list bulk bar, so likewise absent
+            from nav-config.ts.
+            See openspec/changes/add-bulk-order-document-printing. */}
+        <Route path="/sales/orders/print/:document" element={<BulkDocumentPage />} />
       </Route>
     </Routes>
   )

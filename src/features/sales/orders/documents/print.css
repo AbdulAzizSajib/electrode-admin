@@ -186,6 +186,36 @@
   }
 }
 
+/* ---- batch ---- */
+
+/*
+ * A batch prints one document per sheet.
+ *
+ * `break-after` rather than a fixed wrapper height: a height hard-codes A4 and
+ * breaks thermal outright, because thermal is a continuous roll whose page
+ * length is whatever the content is. Delegating the break to the print
+ * pipeline lets the same rule serve both papers — on a roll it is a feed
+ * break, on A4 a new sheet. See design.md Decision 3.
+ *
+ * The legacy `page-break-after` is kept alongside the modern property for the
+ * same reason the rules above pair them: coverage across print engines.
+ */
+.print-batch-item {
+  break-after: page;
+  page-break-after: always;
+  /* A document that fits one sheet must not be split across two. */
+  break-inside: avoid;
+}
+
+/*
+ * Without this the batch ends on a break, and the browser emits a final empty
+ * sheet — one wasted page per run, and on thermal a stretch of blank roll.
+ */
+.print-batch-item:last-child {
+  break-after: auto;
+  page-break-after: auto;
+}
+
 /* ---- print ---- */
 
 @media print {

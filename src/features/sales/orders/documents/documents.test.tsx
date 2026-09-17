@@ -14,6 +14,8 @@ import { setCurrencyFormat } from '@/lib/utils/format'
 import { PackingSlip } from './packing-slip'
 import { Invoice } from './invoice'
 import { ShippingLabel } from './shipping-label'
+import { composeBatch, parseSelectionIds } from './bulk-selection'
+import { BULK_PRINT_LIMIT } from './bulk-print-limit'
 
 const item = (over: Partial<OrderLineItem> = {}): OrderLineItem => ({
   productId: 'p1',
@@ -227,5 +229,87 @@ describe('ShippingLabel', () => {
     const text = container.textContent ?? ''
     expect(text).not.toContain('1,060')
     expect(text).not.toContain('1060')
+  })
+})
+
+/**
+ * Batch composition for a bulk print run.
+ *
+ * These pin what a run CONTAINS rather than how it renders: an order silently
+ * dropped from a batch, or printed twice, produces paper that looks entirely
+ * correct — the operator only finds out by recounting parcels against the
+ * selection they made.
+ */
+describe('bulk print selection', () => {
+  it('produces one document per selected order', () => {
+    const orders = [
+      order({ id: 'o1', orderNumber: 'ORD-1' }),
+      order({ id: 'o2', orderNumber: 'ORD-2' }),
+      order({ id: 'o3', orderNumber: 'ORD-3' }),
+    ]
+    const batch = composeBatch(['o1', 'o2', 'o3'], orders)
+
+    expect(batch.printable).toHaveLength(3)
+    expect(batch.excluded).toHaveLength(0)
+    expect(batch.unreachable).toBe(0)
+  })
+
+  it('excludes cancelled orders and reports them', () => {
+    // The merchant's workflow is filter-then-select-all, so a cancelled order
+    // in a batch means the filter did not do what they thought. Six selected
+    // and four printed has to be explained, not left to a recount.
+    const orders = [
+      order({ id: 'o1', orderNumber: 'ORD-1' }),
+      order({ id: 'o2', orderNumber: 'ORD-2', status: 'CANCELLED' }),
+      order({ id: 'o3', orderNumber: 'ORD-3' }),
+      order({ id: 'o4', orderNumber: 'ORD-4', status: 'CANCELLED' }),
+    ]
+    const batch = composeBatch(['o1', 'o2', 'o3', 'o4'], orders)
+
+    expect(batch.printable.map((o) => o.orderNumber)).toEqual(['ORD-1', 'ORD-3'])
+    expect(batch.excluded.map((o) => o.orderNumber)).toEqual(['ORD-2', 'ORD-4'])
+  })
+
+  it('leaves nothing printable when every selected order is cancelled', () => {
+    const orders = [
+      order({ id: 'o1', status: 'CANCELLED' }),
+      order({ id: 'o2', status: 'CANCELLED' }),
+    ]
+    const batch = composeBatch(['o1', 'o2'], orders)
+
+    expect(batch.printable).toHaveLength(0)
+    expect(batch.excluded).toHaveLength(2)
+  })
+
+  it('counts orders that could not be loaded without dropping the rest', () => {
+    // One unreachable order must not strand a packing session.
+    const batch = composeBatch(['o1', 'o2', 'o3'], [order({ id: 'o1' }), order({ id: 'o3' })])
+
+    expect(batch.printable).toHaveLength(2)
+    expect(batch.unreachable).toBe(1)
+  })
+
+  it('keeps every non-cancelled status printable', () => {
+    // Only CANCELLED is excluded: a pending order gets a slip when it is
+    // picked, and a delivered one may need its invoice reprinted.
+    const statuses = ['PENDING', 'CONFIRMED', 'PROCESSING', 'PACKED', 'SHIPPED', 'DELIVERED', 'COMPLETED'] as const
+    const orders = statuses.map((status, i) => order({ id: `o${i}`, status }))
+
+    expect(composeBatch(orders.map((o) => o.id), orders).printable).toHaveLength(statuses.length)
+  })
+
+  it('parses ids from the query string, dropping blanks and duplicates', () => {
+    // A duplicated id would print the same parcel's label twice; a blank
+    // segment from a trailing comma would query for the order with no id.
+    expect(parseSelectionIds('o1,o2,o3')).toEqual(['o1', 'o2', 'o3'])
+    expect(parseSelectionIds('o1, o2 ,,o3,')).toEqual(['o1', 'o2', 'o3'])
+    expect(parseSelectionIds('o1,o2,o1')).toEqual(['o1', 'o2'])
+    expect(parseSelectionIds('')).toEqual([])
+    expect(parseSelectionIds(null)).toEqual([])
+  })
+
+  it('caps a run at the stated limit', () => {
+    const ids = Array.from({ length: BULK_PRINT_LIMIT + 10 }, (_, i) => `o${i}`)
+    expect(parseSelectionIds(ids.join(','))).toHaveLength(BULK_PRINT_LIMIT)
   })
 })

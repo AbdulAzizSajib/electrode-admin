@@ -16,7 +16,7 @@
  * only, so admin cancellation goes through `updateOrderStatus` with `status: 'CANCELLED'` like any
  * other status change.
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
 import { request } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
@@ -391,6 +391,28 @@ export function useOrders(params: OrderListParams = {}) {
 
 export function useOrder(id: string | undefined) {
   return useQuery({ queryKey: queryKeys.orders.detail(id ?? ''), queryFn: () => getOrder(id!), enabled: !!id })
+}
+
+/**
+ * Several orders by id, for the bulk document print run.
+ *
+ * Deliberately the same key and the same fetcher as `useOrder`, so a batch
+ * shares the single-order cache in both directions: the orders list the
+ * operator came from has usually warmed part of the set, and a document printed
+ * in a batch can never be built from a different read than the same document
+ * printed alone.
+ *
+ * There is no batch endpoint behind this and it does not need one — the run is
+ * capped well below the point where N reads of a cached projection matter. See
+ * design.md Decision 2.
+ */
+export function useOrdersByIds(ids: string[]) {
+  return useQueries({
+    queries: ids.map((id) => ({
+      queryKey: queryKeys.orders.detail(id),
+      queryFn: () => getOrder(id),
+    })),
+  })
 }
 
 export function useUpdateOrderStatus() {

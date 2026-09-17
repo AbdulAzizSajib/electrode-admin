@@ -1,16 +1,23 @@
 import * as React from 'react'
 import { useNavigate } from 'react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import { AlertTriangle, Plus, ShoppingCart, Truck } from 'lucide-react'
+import { AlertTriangle, Plus, Printer, ShoppingCart, Truck } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DataTable } from '@/components/ui/data-table'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Thumbnail } from '@/components/ui/thumbnail'
 import { CourierStatusBadge } from '@/features/sales/courier/courier-status-badge'
 import { courierNeedsAttention } from '@/features/sales/courier/courier-presentation'
 import { DispatchDialog } from '@/features/sales/courier/dispatch-preview'
+import { BULK_PRINT_LIMIT } from '@/features/sales/orders/documents/bulk-print-limit'
 import { useConfiguredCourier } from '@/lib/api/courier'
 import { CHANNEL_LABEL, useOrders, type Order, type OrderChannel, type OrderStatus } from '@/lib/api/orders'
 import { formatCurrency, formatDate } from '@/lib/utils/format'
@@ -51,6 +58,20 @@ const shippingAddressSummary = (order: Order): string => {
   return [address.addressLine1, address.addressLine2, address.city, address.state].filter(Boolean).join(', ')
 }
 
+/**
+ * The three documents a selection can be printed as — the same three the order
+ * detail page offers for one order. Kept in step with `DocumentKind` in
+ * documents/print-frame.tsx by hand; the labels are plural here because a run
+ * produces one per selected order.
+ */
+const BULK_DOCUMENTS = [
+  { kind: 'packing-slip', label: 'Packing slips' },
+  { kind: 'invoice', label: 'Invoices' },
+  { kind: 'shipping-label', label: 'Shipping labels' },
+] as const
+
+type BulkDocumentKind = (typeof BULK_DOCUMENTS)[number]['kind']
+
 export default function OrdersListPage() {
   const navigate = useNavigate()
   const [search, setSearch] = React.useState('')
@@ -61,6 +82,17 @@ export default function OrdersListPage() {
 
   const [selection, setSelection] = React.useState<string[]>([])
   const [dispatchOpen, setDispatchOpen] = React.useState(false)
+
+  const overPrintLimit = selection.length > BULK_PRINT_LIMIT
+
+  /*
+   * The ids ride in the query string so a run that jams halfway can be reopened
+   * from browser history and printed again — location state would not survive
+   * that. See design.md Decision 1.
+   */
+  const printSelection = (kind: BulkDocumentKind) => {
+    navigate(`/sales/orders/print/${kind}?ids=${selection.join(',')}`)
+  }
 
   /*
    * The courier this shop dispatches through. The bulk action names it and is
@@ -294,6 +326,36 @@ export default function OrdersListPage() {
               <Truck /> Send to {courierName}
             </Button>
           )}
+
+          {/*
+           * One menu rather than three buttons, so the bar does not grow a row
+           * of actions beside the dispatch button.
+           *
+           * Over the cap it is disabled with the reason stated, rather than
+           * silently truncating the run or failing the navigation — see the
+           * note on BULK_PRINT_LIMIT for why a cap exists at all.
+           */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="lg" variant="outline" disabled={overPrintLimit}>
+                <Printer /> Print
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {BULK_DOCUMENTS.map(({ kind, label }) => (
+                <DropdownMenuItem key={kind} onSelect={() => printSelection(kind)}>
+                  {label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {overPrintLimit && (
+            <span className="text-sm text-muted-foreground">
+              Print handles up to {BULK_PRINT_LIMIT} orders at a time.
+            </span>
+          )}
+
           <Button size="lg" variant="ghost" onClick={() => setSelection([])}>
             Clear
           </Button>

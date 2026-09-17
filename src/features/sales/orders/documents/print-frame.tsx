@@ -79,10 +79,45 @@ interface PrintFrameProps {
   title: string
   /** Where the back button returns to. */
   backTo: string
+  /**
+   * Label for the back button. Defaults to the single-document wording; a
+   * batch is reached from the list, not from an order, so it says so.
+   */
+  backLabel?: string
+  /**
+   * How many documents the frame is rendering. Omitted for a single document.
+   * When set, the toolbar states the count — the one thing an operator checks
+   * before committing a batch to paper, the same reason the orders list states
+   * its selection count before a dispatch.
+   */
+  count?: number
+  /**
+   * Rendered above the documents and inside `no-print`, for anything the
+   * operator must see on screen but never on paper — a batch's exclusion
+   * notice, for instance.
+   */
+  notice?: React.ReactNode
   children: (size: PaperSize) => React.ReactNode
 }
 
-export function PrintFrame({ kind, title, backTo, children }: PrintFrameProps) {
+/**
+ * Serves one document or many.
+ *
+ * The multi-document mode is a mode rather than a `PrintFrameBulk` twin: the
+ * paper-size toggle, the persisted choice, the document-title effect and the
+ * `@page` body class all apply unchanged to a batch, and a second component
+ * would duplicate four behaviours that drift on the first change to any of
+ * them. Callers pass in what differs. See design.md Decision 5.
+ */
+export function PrintFrame({
+  kind,
+  title,
+  backTo,
+  backLabel = 'Back to order',
+  count,
+  notice,
+  children,
+}: PrintFrameProps) {
   const navigate = useNavigate()
   const [size, setSize] = usePaperSize(kind)
 
@@ -121,10 +156,15 @@ export function PrintFrame({ kind, title, backTo, children }: PrintFrameProps) {
           className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
         >
           <ArrowLeft className="size-4" />
-          Back to order
+          {backLabel}
         </button>
 
         <div className="flex items-center gap-2">
+          {count !== undefined && (
+            <span className="text-sm font-medium text-foreground">
+              {count} document{count === 1 ? '' : 's'}
+            </span>
+          )}
           <div className="inline-flex overflow-hidden rounded-md border border-border">
             {(['thermal', 'a4'] as const).map((option) => (
               <button
@@ -154,9 +194,22 @@ export function PrintFrame({ kind, title, backTo, children }: PrintFrameProps) {
         </div>
       </div>
 
-      <div className="print-doc" data-size={size}>
-        {children(size)}
-      </div>
+      {notice && (
+        <div className="no-print w-full max-w-[210mm]">{notice}</div>
+      )}
+
+      {/*
+       * A batch's children bring their own `.print-doc` wrapper per document,
+       * because each has to carry the page break. Wrapping them in a shared one
+       * would nest documents inside a single sheet's box and defeat that.
+       */}
+      {count === undefined ? (
+        <div className="print-doc" data-size={size}>
+          {children(size)}
+        </div>
+      ) : (
+        children(size)
+      )}
     </div>
   )
 }
