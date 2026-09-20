@@ -17,7 +17,15 @@ import { cn } from '@/lib/utils/cn'
  * make the first slightly tidier.
  */
 
-/** Storefront routes that exist as real pages, offered alongside published CMS pages. */
+/**
+ * Storefront routes that exist as real pages, offered alongside published CMS pages.
+ *
+ * ADDING ONE HERE DOES NOT COUPLE IT TO A HOME SECTION. Four of these targets are hidden from
+ * the storefront's header when the homepage section that fills them is switched off, and that
+ * is driven by `SECTION_LINKED_ROUTES` in `lib/api/store-settings.ts` — a separate, deliberate
+ * list. A route added to this picker is ungoverned until it is added there and in the
+ * storefront's mirror too. See openspec/changes/align-nav-links-with-home-sections.
+ */
 const STOREFRONT_ROUTES: { label: string; href: string }[] = [
   { label: 'Home', href: '/' },
   { label: 'Shop (all products)', href: '/products' },

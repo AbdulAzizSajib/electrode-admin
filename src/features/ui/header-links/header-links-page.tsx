@@ -1,5 +1,6 @@
 import * as React from 'react'
-import { ChevronDown, Plus, Trash2 } from 'lucide-react'
+import { Link } from 'react-router'
+import { ChevronDown, EyeOff, Plus, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -25,10 +26,16 @@ import {
 import {
   useStoreSettings,
   useUpdateStoreSettings,
+  findGoverningSection,
+  isNavHrefVisible,
+  DEFAULT_HOME_CONFIG,
+  DEFAULT_MIDDLE_BAR_LINKS,
   SETTINGS_LIMITS,
   type AnnouncementBar,
   type AnnouncementLink,
   type AnnouncementLinkSource,
+  type HomeConfig,
+  type MiddleBarLink,
   type NavItem,
 } from '@/lib/api/store-settings'
 
@@ -36,15 +43,23 @@ import {
  * The storefront header: its main navigation row and the announcement strip
  * above it.
  *
- * Writes ONLY `mainNav` and `announcementBar`. `PATCH /settings` is a partial
- * upsert, so this disjoint field set is what lets this page and Footer Links be
- * saved independently without either clobbering the other — no locking needed.
- * See design.md, "Header and footer editors write disjoint field sets".
+ * Writes ONLY `mainNav`, `announcementBar` and `middleBarLinks`. `PATCH /settings` is
+ * a partial upsert, so this disjoint field set is what lets this page and Footer
+ * Links be saved independently without either clobbering the other — no locking
+ * needed. See design.md, "Header and footer editors write disjoint field sets".
+ *
+ * THREE LISTS, ONE PER HEADER ROW, and they are laid out below in the order the
+ * storefront stacks them: the announcement strip, then the main row, then the
+ * navigation. `middleBarLinks` is the newest and is where Track Order now lives —
+ * it was an announcement-bar link until add-header-middle-bar-links, which is the
+ * wrong home for an action a returning shopper comes back to use, since that strip
+ * is hidden below `md` and disappears when the bar is switched off.
  */
 
 interface HeaderDraft {
   mainNav: NavItem[]
   announcementBar: AnnouncementBar
+  middleBarLinks: MiddleBarLink[]
 }
 
 /**
@@ -73,6 +88,37 @@ const SOURCE_FALLBACK_LABEL: Record<AnnouncementLinkSource, string> = {
   contactEmail: 'Email us',
 }
 
+/**
+ * Says that the storefront is not rendering this row, and why.
+ *
+ * A merchant who switches off "Recent blog posts" on Home Sections still has a "Blog" row here,
+ * and the storefront now hides it — so without this the link would vanish from their site with
+ * nothing on the screen that owns it saying so. Naming the section in the SAME WORDS the Home
+ * Sections screen uses is the point: the merchant is being sent there, and a section called one
+ * thing here and another there is worse than no notice.
+ *
+ * INFORMATIONAL, not an error. Deliberately not the `rowErrors` treatment — no destructive
+ * colour, no `role="alert"`, no red border on the row — because a suppression is a consequence
+ * of a choice the merchant made elsewhere, not something they must fix before saving. The row
+ * stays fully editable and the save is unaffected.
+ *
+ * See openspec/changes/align-nav-links-with-home-sections.
+ */
+function HiddenBySectionNotice({ sectionLabel }: { sectionLabel: string }) {
+  return (
+    <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+      <EyeOff className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+      <span>
+        Hidden on your site — the <span className="font-medium text-foreground">{sectionLabel}</span>{' '}
+        section is switched off.{' '}
+        <Link to="/ui/home-sections" className="font-medium text-foreground underline">
+          Home Sections
+        </Link>
+      </span>
+    </p>
+  )
+}
+
 export default function HeaderLinksPage() {
   const { data, isLoading, error, refetch } = useStoreSettings()
   const updateMutation = useUpdateStoreSettings()
@@ -81,14 +127,40 @@ export default function HeaderLinksPage() {
     data && {
       mainNav: data.mainNav ?? [],
       announcementBar: data.announcementBar ?? EMPTY_BAR,
+      /*
+       * Seeded from the backend's own default when the column has never been
+       * written, so the editor shows what the storefront is ACTUALLY rendering
+       * rather than an empty list. An empty array stored is a merchant who
+       * cleared the row and is left alone — `??` distinguishes the two, which
+       * is the whole reason the mirror exists.
+       */
+      middleBarLinks: data.middleBarLinks ?? DEFAULT_MIDDLE_BAR_LINKS,
     },
-    { mainNav: [], announcementBar: EMPTY_BAR },
+    { mainNav: [], announcementBar: EMPTY_BAR, middleBarLinks: [] },
   )
   const blocker = useUnsavedChangesGuard(draft.isDirty)
   const [rowErrors, setRowErrors] = React.useState<Record<string, string>>({})
 
-  const { mainNav, announcementBar } = draft.value
+  const { mainNav, announcementBar, middleBarLinks } = draft.value
   const barLinks = announcementBar.links ?? []
+
+  /*
+   * Which homepage sections are on, for the "hidden on your site" notices below.
+   *
+   * The SAVED value, never a draft — this page does not own `homeConfig` and must not send it,
+   * exactly as it treats `contactPhone`/`contactEmail` as read-only fact. It is also the honest
+   * source for what this notice claims: "hidden on your site" is a statement about what the
+   * storefront is serving right now, not about an unsaved edit on another screen.
+   *
+   * A store whose column has never been written falls back to the same all-enabled default the
+   * backend serves, so an unconfigured shop shows no notices rather than claiming everything is
+   * hidden.
+   */
+  const savedHomeConfig: HomeConfig = data?.homeConfig ?? DEFAULT_HOME_CONFIG
+
+  /** The section suppressing this target, or null when the storefront still renders it. */
+  const suppressedBy = (href: string) =>
+    isNavHrefVisible(href, savedHomeConfig) ? null : findGoverningSection(href)
 
   /**
    * The row's message, joined from whichever of its fields failed.
@@ -103,6 +175,7 @@ export default function HeaderLinksPage() {
       .join('. ') || undefined
 
   const setNav = (next: NavItem[]) => draft.set({ ...draft.value, mainNav: next })
+  const setMiddle = (next: MiddleBarLink[]) => draft.set({ ...draft.value, middleBarLinks: next })
   const setBar = (next: Partial<AnnouncementBar>) =>
     draft.set({ ...draft.value, announcementBar: { ...announcementBar, ...next } })
 
@@ -147,6 +220,16 @@ export default function HeaderLinksPage() {
       })
     })
 
+    // Same both-failures-per-row rule as everywhere else on this page: a row
+    // missing its label AND its target reports both, so the merchant does not
+    // learn about the second one on the next round trip.
+    middleBarLinks.forEach((link, i) => {
+      checkLabel(`mid-${i}`, link.label, 'link')
+      checkTarget(`mid-${i}`, link.href, 'link')
+      if (link.icon && tooLong(link.icon, SETTINGS_LIMITS.iconLength))
+        errors[`mid-${i}-icon`] = `Icon names are limited to ${SETTINGS_LIMITS.iconLength} characters`
+    })
+
     barLinks.forEach((link, i) => {
       // A `source`-bound row draws its displayed label from the store's contact
       // details, so a blank label there is not an error the merchant can act on
@@ -178,8 +261,10 @@ export default function HeaderLinksPage() {
       return
     }
     try {
+      // Three keys and only three — see the note at the top of this file.
       await updateMutation.mutateAsync({
         mainNav,
+        middleBarLinks,
         announcementBar: {
           ...announcementBar,
           // `announcementBarSchema` requires a non-empty label even on a
@@ -239,6 +324,7 @@ export default function HeaderLinksPage() {
       <HeaderPreview
         mainNav={mainNav}
         announcementBar={announcementBar}
+        middleBarLinks={middleBarLinks}
         contactPhone={data?.contactPhone ?? ''}
         contactEmail={data?.contactEmail ?? ''}
         isDirty={draft.isDirty}
@@ -360,6 +446,88 @@ export default function HeaderLinksPage() {
         </EditorSubsection>
       </EditorSection>
 
+      {/*
+        Between the announcement bar and the navigation, matching the order the
+        storefront stacks the three rows — so reading this page top to bottom is
+        reading the header top to bottom.
+      */}
+      <EditorSection
+        title="Middle bar links"
+        description="Links in the main header row, beside the cart. Shown on desktop only — the mobile menu and bottom bar carry their own actions."
+        onAdd={() => setMiddle([...middleBarLinks, { label: '', href: '' }])}
+        addLabel="Add link"
+        atCapacity={middleBarLinks.length >= SETTINGS_LIMITS.middleBarLinks}
+        capacityNote={`Up to ${SETTINGS_LIMITS.middleBarLinks} links — this row shares its space with the search box and your cart and account buttons.`}
+      >
+        {middleBarLinks.length === 0 && (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            No links. The row will show just your cart and account buttons.
+          </p>
+        )}
+
+        {middleBarLinks.map((link, index) => (
+          <EditorRow
+            key={index}
+            index={index}
+            count={middleBarLinks.length}
+            error={rowError(`mid-${index}`)}
+            removeLabel="Remove link"
+            onMove={(from, to) => setMiddle(moveItem(middleBarLinks, from, to))}
+            onRemove={() => setMiddle(middleBarLinks.filter((_, i) => i !== index))}
+          >
+            {(errorId) => (
+              /* Three fields, laid out exactly like the announcement bar's rows
+                 above — same widths, so the two lists do not read as two
+                 different kinds of control. No `source` picker: a link bound to
+                 the store's phone or email is a contact detail, and those
+                 belong in the strip above. */
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.2fr]">
+                <Input
+                  value={link.icon ?? ''}
+                  onChange={(e) =>
+                    setMiddle(
+                      middleBarLinks.map((l, i) =>
+                        i === index ? { ...l, icon: e.target.value } : l,
+                      ),
+                    )
+                  }
+                  placeholder="Icon (e.g. fa-solid:truck)"
+                  aria-label="Icon name"
+                  maxLength={SETTINGS_LIMITS.iconLength}
+                  aria-invalid={Boolean(rowErrors[`mid-${index}-icon`])}
+                  aria-describedby={rowErrors[`mid-${index}-icon`] ? errorId : undefined}
+                />
+                <Input
+                  value={link.label}
+                  onChange={(e) =>
+                    setMiddle(
+                      middleBarLinks.map((l, i) =>
+                        i === index ? { ...l, label: e.target.value } : l,
+                      ),
+                    )
+                  }
+                  placeholder="Label (e.g. Track Order)"
+                  aria-label="Link label"
+                  maxLength={SETTINGS_LIMITS.labelLength}
+                  aria-invalid={Boolean(rowErrors[`mid-${index}-label`])}
+                  aria-describedby={rowErrors[`mid-${index}-label`] ? errorId : undefined}
+                />
+                <LinkTargetInput
+                  value={link.href}
+                  onChange={(href) =>
+                    setMiddle(middleBarLinks.map((l, i) => (i === index ? { ...l, href } : l)))
+                  }
+                  aria-label="Link target"
+                  maxLength={SETTINGS_LIMITS.hrefLength}
+                  aria-invalid={Boolean(rowErrors[`mid-${index}-href`])}
+                  aria-describedby={rowErrors[`mid-${index}-href`] ? errorId : undefined}
+                />
+              </div>
+            )}
+          </EditorRow>
+        ))}
+      </EditorSection>
+
       <EditorSection
         title="Main navigation"
         description="The row of links under the search bar. Each can have one level of dropdown items."
@@ -407,6 +575,13 @@ export default function HeaderLinksPage() {
                       aria-describedby={rowErrors[`nav-${index}-href`] ? errorId : undefined}
                     />
                   </div>
+
+                  {(() => {
+                    const governing = suppressedBy(item.href)
+                    return governing ? (
+                      <HiddenBySectionNotice sectionLabel={governing.label} />
+                    ) : null
+                  })()}
 
                   {children.length > 0 && (
                     <div className="ml-4 flex flex-col gap-2 border-l border-border pl-3">
@@ -476,6 +651,15 @@ export default function HeaderLinksPage() {
                                 {childError}
                               </p>
                             )}
+
+                            {/* A child is suppressed on its own target, independently of its
+                                parent — the parent may well still render. */}
+                            {(() => {
+                              const governing = suppressedBy(child.href)
+                              return governing ? (
+                                <HiddenBySectionNotice sectionLabel={governing.label} />
+                              ) : null
+                            })()}
                           </div>
                         )
                       })}
@@ -534,12 +718,14 @@ export default function HeaderLinksPage() {
 function HeaderPreview({
   mainNav,
   announcementBar,
+  middleBarLinks,
   contactPhone,
   contactEmail,
   isDirty,
 }: {
   mainNav: NavItem[]
   announcementBar: AnnouncementBar
+  middleBarLinks: MiddleBarLink[]
   contactPhone: string
   contactEmail: string
   isDirty: boolean
@@ -579,6 +765,25 @@ function HeaderPreview({
             </span>
           </div>
         )}
+        {/*
+          The main row, shown only when the merchant has links in it — the row
+          itself always exists on the storefront, but previewing an empty strip
+          of chrome would be noise. The cart and account labels are fixed text
+          standing in for the real controls, which carry live counts this panel
+          has no access to.
+        */}
+        {middleBarLinks.length > 0 && (
+          <div className="flex flex-wrap items-center justify-end gap-4 border-b border-white/30 px-4 py-2.5 text-sm">
+            {middleBarLinks.map((link, i) => (
+              <span key={i} className="font-semibold">
+                {link.label || <em className="font-normal opacity-60">(no label)</em>}
+              </span>
+            ))}
+            <span className="opacity-70">My Cart</span>
+            <span className="opacity-70">Account</span>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-5 px-4 py-3 text-sm">
           <span className="border-r border-white/30 pr-5 opacity-70">Shop By Categories</span>
           {mainNav.length === 0 ? (

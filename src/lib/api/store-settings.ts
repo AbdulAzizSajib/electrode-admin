@@ -48,6 +48,33 @@ export interface AnnouncementBar {
   links?: AnnouncementLink[]
 }
 
+/**
+ * One link action in the header's MAIN row, beside the cart.
+ *
+ * Shaped like an `AnnouncementLink` minus `source`, and that omission is the distinction rather
+ * than an oversight: a link bound to the store's phone or email IS a contact detail, and contact
+ * details belong in the announcement strip above. These are ordinary links.
+ *
+ * The storefront renders these only from `md` up, inside the action group that already hides
+ * below it. See openspec/changes/add-header-middle-bar-links, design.md Decision 4.
+ */
+export interface MiddleBarLink extends NavChild {
+  /** An Iconify name, e.g. `fa-solid:truck`. */
+  icon?: string
+}
+
+/**
+ * Mirrors the backend's `DEFAULT_MIDDLE_BAR_LINKS`.
+ *
+ * Seeds the editor for a store whose column has never been written. The admin read returns the
+ * row as stored — unlike the public endpoint, which merges defaults — so without this mirror the
+ * panel could not tell "never configured" from "configured to exactly this". The same obligation
+ * `DEFAULT_HOME_CONFIG` and `DEFAULT_CATALOG_CONFIG` already carry.
+ */
+export const DEFAULT_MIDDLE_BAR_LINKS: MiddleBarLink[] = [
+  { icon: 'fa-solid:truck', label: 'Track Order', href: '/track-order' },
+]
+
 export interface FooterColumn {
   title: string
   /** Objects, never bare strings — a footer link without a target renders dead. */
@@ -201,6 +228,13 @@ export const SETTINGS_LIMITS = {
   footerColumns: 6,
   footerLinksPerColumn: 20,
   announcementLinks: 6,
+  /**
+   * Lower than `announcementLinks` on purpose. That bar is one wide row holding a truncating
+   * message; this row carries the brand, the search box and up to four built-in actions, and is
+   * the one that runs out of horizontal space first — the storefront already hides Wishlist and
+   * Compare below `lg` for that reason. See the backend's `middleBarLinksSchema`.
+   */
+  middleBarLinks: 4,
   socialLinks: 10,
   checkoutNotice: 300,
   /** `navChildSchema.label`, `footerColumnsSchema.title`, and the announcement link label. */
@@ -470,6 +504,65 @@ export const DEFAULT_HOME_CONFIG: HomeConfig = HOME_SECTION_REGISTRY.map(({ key 
   key,
   enabled: true,
 }))
+
+/**
+ * Which navigation targets the storefront hides when their homepage section is switched off.
+ *
+ * A merchant who disables "Recent blog posts" keeps a "Blog" link in their header unless
+ * something reconciles the two, and concludes the switch did not work. The storefront applies
+ * this rule at render time; this mirror is what lets BOTH editors say so before the merchant
+ * goes looking at their live site.
+ *
+ * MIRRORS `SECTION_LINKED_ROUTES` in `nextjs/src/lib/nav-sections.ts` and is kept in step by
+ * hand, like `HOME_SECTION_REGISTRY` above. Drift here is nothing like as dangerous as drift in
+ * that registry: a missing key there is silently deleted from the merchant's saved config by the
+ * next unrelated save, whereas a wrong entry here only makes a notice appear where no link is
+ * hidden, or fail to appear where one is — wrong and visible, never destructive.
+ *
+ * Keys are exact, whole-string matches on the stored `href`, and each is one of the
+ * `STOREFRONT_ROUTES` the target picker offers. ADDING A ROUTE TO THAT PICKER DOES NOT GOVERN
+ * IT — that takes an entry here and in the storefront's copy, deliberately.
+ *
+ * See openspec/changes/align-nav-links-with-home-sections, design.md Decisions 2 and 3.
+ */
+export const SECTION_LINKED_ROUTES: Readonly<Record<string, HomeSectionKey>> = {
+  '/blogs': 'BLOG',
+  '/deals': 'DEAL_OF_WEEK',
+  '/products?sort=new': 'NEW_ARRIVALS',
+  '/products?sort=best': 'BEST_SELLING',
+}
+
+/**
+ * The section that governs this link target, with the label both editors show for it.
+ *
+ * One lookup shared by Header Links and Home Sections so the two cannot name the same section
+ * differently — the merchant is being sent from one screen to the other, and a section called
+ * one thing on the page they left and another on the page they arrive at is worse than no
+ * notice at all. Returns `null` for an ungoverned target, which is most of them.
+ */
+export function findGoverningSection(href: string) {
+  const key = SECTION_LINKED_ROUTES[href]
+  if (!key) return null
+
+  const entry = HOME_SECTION_REGISTRY.find((section) => section.key === key)
+  return entry ? { key, label: entry.label } : null
+}
+
+/**
+ * Whether the storefront still renders a link to this target.
+ *
+ * `homeConfig` is the list to judge against — the SAVED one on Header Links, which does not own
+ * that field, and the LIVE DRAFT on Home Sections, where the merchant is mid-decision and the
+ * notice should track the switch they just flipped. A section missing from the list counts as
+ * enabled, matching the storefront.
+ */
+export function isNavHrefVisible(href: string, homeConfig: HomeConfig): boolean {
+  const governing = findGoverningSection(href)
+  if (!governing) return true
+
+  const section = homeConfig.find((entry) => entry.key === governing.key)
+  return section ? section.enabled : true
+}
 
 /* ------------------------------------------------------------------ *
  * SEO
@@ -751,6 +844,8 @@ export interface StoreSettings {
   footerColumns: FooterColumn[] | null
   socialLinks: SocialLink[] | null
   announcementBar: AnnouncementBar | null
+  /** Null until a merchant saves the header editor; the page seeds from DEFAULT_MIDDLE_BAR_LINKS. */
+  middleBarLinks: MiddleBarLink[] | null
   newsletter: Newsletter | null
   /**
    * Null until a merchant saves the page. The two editors seed their forms from
@@ -875,6 +970,7 @@ export interface StoreSettingsInput {
   footerColumns?: FooterColumn[]
   socialLinks?: SocialLink[]
   announcementBar?: AnnouncementBar
+  middleBarLinks?: MiddleBarLink[]
   newsletter?: Newsletter
 
   checkoutConfig?: CheckoutConfig

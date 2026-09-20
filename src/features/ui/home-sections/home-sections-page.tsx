@@ -1,5 +1,12 @@
 import * as React from 'react'
-import { ArrowDown, ArrowUp, ChevronDown, GripVertical, TriangleAlert } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  EyeOff,
+  GripVertical,
+  TriangleAlert,
+} from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -27,9 +34,11 @@ import {
   useUpdateStoreSettings,
   DEFAULT_HOME_CONFIG,
   HOME_SECTION_REGISTRY,
+  SECTION_LINKED_ROUTES,
   type HomeConfig,
   type HomeSection,
   type HomeSectionKey,
+  type NavItem,
   type Newsletter,
 } from '@/lib/api/store-settings'
 
@@ -67,6 +76,37 @@ const DESCRIPTION =
 /** Look-up from key to the merchant-facing name and description. */
 const SECTION_INFO = new Map(HOME_SECTION_REGISTRY.map((section) => [section.key, section]))
 
+/**
+ * Which header links each section would hide if it were switched off, by their stored labels.
+ *
+ * Built from the WHOLE nav regardless of what is currently enabled, because the caller asks per
+ * section and only shows the answer for the sections that are off. Dropdown children count: the
+ * storefront hides a child on its own target, so a section can be suppressing a link the
+ * merchant only sees one level down.
+ *
+ * A label the merchant left blank falls back to the target, since an empty string in a sentence
+ * naming what is hidden tells them nothing about which row to go and look at.
+ */
+function navLabelsBySection(mainNav: NavItem[]): Map<HomeSectionKey, string[]> {
+  const bySection = new Map<HomeSectionKey, string[]>()
+
+  const record = (item: { label: string; href: string }) => {
+    const key = SECTION_LINKED_ROUTES[item.href]
+    if (!key) return
+
+    const existing = bySection.get(key) ?? []
+    existing.push(item.label.trim() || item.href)
+    bySection.set(key, existing)
+  }
+
+  mainNav.forEach((item) => {
+    record(item)
+    item.children?.forEach(record)
+  })
+
+  return bySection
+}
+
 /** Everything this page owns, held as one draft so dirty-tracking stays one flag. */
 interface HomeSectionsDraft {
   sections: HomeConfig
@@ -91,6 +131,7 @@ function SectionRow({
   onMove,
   onToggle,
   settings,
+  hiddenNavLabels,
 }: {
   section: HomeSection
   index: number
@@ -100,6 +141,11 @@ function SectionRow({
   onToggle: (enabled: boolean) => void
   /** This section's own fields, revealed by a disclosure control. Omit for a section with none. */
   settings?: React.ReactNode
+  /**
+   * Header links this section is currently hiding, by label. Empty unless the section is off and
+   * the merchant has a link pointing at a destination this section fills.
+   */
+  hiddenNavLabels: string[]
 }) {
   const info = SECTION_INFO.get(section.key)
   const switchId = `home-section-${section.key}`
@@ -188,6 +234,23 @@ function SectionRow({
       >
         {settings}
       </div>
+    ) : null}
+
+    {/*
+      What switching this section off did BEYOND the home page.
+      The storefront hides a header link whose destination this section fills, so the merchant's
+      menu changed too — and this row is where they made that decision, so this is where it has
+      to be said. Outside the draggable row for the same reason the settings panel is.
+      See openspec/changes/align-nav-links-with-home-sections.
+    */}
+    {hiddenNavLabels.length > 0 ? (
+      <p className="flex items-start gap-1.5 px-3 pb-1 text-xs text-muted-foreground">
+        <EyeOff className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+        <span>
+          Also hiding {hiddenNavLabels.length === 1 ? 'the header link' : 'the header links'}{' '}
+          <span className="font-medium text-foreground">{hiddenNavLabels.join(', ')}</span>.
+        </span>
+      </p>
     ) : null}
     </>
   )
@@ -323,6 +386,17 @@ export default function HomeSectionsPage() {
 
   const allHidden = sections.every((section) => !section.enabled)
 
+  /*
+   * The header links each section would suppress, from the SAVED `mainNav` — this page does not
+   * own that field and must not send it.
+   *
+   * Looked up per row against the LIVE DRAFT's enabled flag, so flipping a switch updates the
+   * notice immediately rather than after a save. That is the opposite choice from the one Header
+   * Links makes, and deliberately: there the merchant is being told what their site is doing
+   * right now, here they are being shown the consequence of the switch under their finger.
+   */
+  const navLabels = navLabelsBySection(data?.mainNav ?? [])
+
   const handleSave = async () => {
     try {
       // Two keys and only two — see the note at the top of this file.
@@ -405,6 +479,9 @@ export default function HomeSectionsPage() {
                 section.key === 'NEWSLETTER' ? (
                   <NewsletterFields value={newsletter} onChange={setNewsletter} />
                 ) : undefined
+              }
+              hiddenNavLabels={
+                section.enabled ? [] : (navLabels.get(section.key) ?? [])
               }
             />
           )}
