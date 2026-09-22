@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { Link } from 'react-router'
 import {
   ArrowDown,
   ArrowUp,
@@ -38,6 +39,7 @@ import {
   type HomeConfig,
   type HomeSection,
   type HomeSectionKey,
+  HERO_VARIANT_OPTIONS,
   type NavItem,
   type Newsletter,
 } from '@/lib/api/store-settings'
@@ -176,6 +178,35 @@ function SectionRow({
           {info?.label ?? section.key}
         </Label>
         <span className="text-xs text-muted-foreground">{info?.description}</span>
+
+        {/*
+          READ-ONLY, and a link rather than a control. The hero's arrangement is
+          part of `homeConfig` and could be edited from this row — but it is
+          chosen on Home Slider, where a merchant can see each arrangement drawn
+          and where the artwork guidance moves with the choice. Offering it in
+          two places would mean two screens writing the same field with only one
+          of them able to show what the answer means.
+
+          The row still names the current arrangement, because a merchant
+          looking for the setting where the rest of the homepage's layout lives
+          must find a pointer rather than nothing.
+        */}
+        {section.key === 'HERO' && (
+          <span className="text-xs text-muted-foreground">
+            Layout:{' '}
+            <span className="text-foreground">
+              {HERO_VARIANT_OPTIONS.find((o) => o.value === (section.variant ?? 'SPLIT_THREE'))
+                ?.label ?? 'Slider with three tiles'}
+            </span>
+            {' · '}
+            <Link
+              to="/ui/home-slider"
+              className="relative underline underline-offset-2 hover:text-foreground"
+            >
+              Change on Home slider
+            </Link>
+          </span>
+        )}
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
@@ -376,6 +407,16 @@ export default function HomeSectionsPage() {
    * missing appended, enabled. The appended-at-the-end placement is a deliberate simplification of
    * the backend's rule (which splices at the registry position) — the merchant can see the new row
    * and drag it where they want, and the save then makes their choice explicit.
+   *
+   * THE FILTER KEEPS THE WHOLE ENTRY, and that is load-bearing rather than incidental. A stored
+   * section may carry fields this page does not edit — the hero's `variant`, chosen on Home
+   * Slider — and this page sends `homeConfig` back WHOLESALE on save. Rebuilding entries as
+   * `{ key, enabled }` here would therefore wipe the hero's layout on the next unrelated save from
+   * this screen: the merchant reorders their sections, and their hero silently reverts. The same
+   * hazard `reconcileHomeConfig` carries on the server. `hero-variant-preserved.test.tsx` guards it.
+   *
+   * The appended entries below carry no `variant` on purpose — a section the store has never saved
+   * has no layout to preserve, and the server resolves an absent one to that section's default.
    */
   const sections: HomeConfig = [
     ...stored.filter((section) => known.has(section.key)),

@@ -388,10 +388,68 @@ export type HomeSectionKey =
   | 'BLOG'
   | 'NEWSLETTER'
 
+/**
+ * The hero's LAYOUT — how its artwork is arranged, as distinct from the artwork
+ * itself, which is banners keyed by placement.
+ *
+ * MIRRORS `HERO_VARIANTS` in the backend's store-setting.constant.ts, IN ORDER,
+ * because position 0 is the default there and `SPLIT_THREE` holds it: that is
+ * the arrangement the storefront rendered before layouts were selectable.
+ * Reorder this and the picker offers a different default than the website uses.
+ *
+ * All four draw on the same three hero placements. A layout that does not
+ * render a slot simply does not read it — the banners stay on file untouched.
+ */
+export type HeroVariant = 'SPLIT_THREE' | 'SPLIT_ONE' | 'FULL_SLIDER' | 'SLIDER_STACK'
+
+/**
+ * The layout picker's options, in registry order, first one the default.
+ *
+ * The descriptions say what the merchant will SEE, not what the key is called.
+ * `SPLIT_THREE` and `SLIDER_STACK` use the same three slots and differ only in
+ * where they sit, which is why the picker draws each one as well as naming it —
+ * no sentence short enough for a label makes that difference legible.
+ */
+export const HERO_VARIANT_OPTIONS: { value: HeroVariant; label: string; description: string }[] = [
+  {
+    value: 'SPLIT_THREE',
+    label: 'Slider with three tiles',
+    description:
+      'A rotating slider on the left, two square tiles and one wide tile on the right. The standard layout.',
+  },
+  {
+    value: 'SPLIT_ONE',
+    label: 'Slider with one tile',
+    description:
+      'A rotating slider on the left and one large square image on the right. For a shop with one promotion to make at a time.',
+  },
+  {
+    value: 'FULL_SLIDER',
+    label: 'Full-width slider',
+    description:
+      'One wide rotating slider across the page and nothing else. The biggest single image, with nothing competing against it.',
+  },
+  {
+    value: 'SLIDER_STACK',
+    label: 'Slider above three tiles',
+    description:
+      'A full-width rotating slider with a row of three tiles beneath it. Fits the most promotions above the fold.',
+  },
+]
+
 /** One section's placement and visibility. Position in `HomeConfig` is its order. */
 export interface HomeSection {
   key: HomeSectionKey
   enabled: boolean
+  /**
+   * The section's layout, on sections that offer a choice — today `HERO` alone.
+   *
+   * Optional in the type, always present in practice: the backend resolves it
+   * on every read. The panel renders what it is given and never defaults it, so
+   * this panel and the live storefront cannot disagree about what a store looks
+   * like.
+   */
+  variant?: HeroVariant
 }
 
 /**
@@ -419,9 +477,16 @@ export const HOME_SECTION_REGISTRY: {
   description: string
 }[] = [
   {
+    /*
+     * The description no longer names the slider and its side tiles. It did,
+     * and that described ONE of four arrangements as though it were the only
+     * one — a store on the full-width slider has no side tiles at all. Which
+     * arrangement is in use is chosen on the Home Slider page, and that row
+     * links across to it.
+     */
     key: 'HERO',
     label: 'Hero banners',
-    description: 'The big banner area at the very top, with the slider and its side tiles.',
+    description: 'The big banner area at the very top of the home page.',
   },
   {
     key: 'BRAND_BAR',
@@ -499,6 +564,11 @@ export const HOME_SECTION_REGISTRY: {
  * endpoint, which merges defaults — so without this mirror the panel could not
  * tell "never configured" from "configured to exactly the default". The same
  * obligation `DEFAULT_CATALOG_CONFIG` above already carries.
+ *
+ * NO `variant` HERE, matching the backend's own default exactly. Absent already
+ * resolves to the section's default on read, so writing one in would create two
+ * representations of one state that would then have to be kept equivalent
+ * forever. See openspec/changes/add-hero-section-variants, design.md Decision 5.
  */
 export const DEFAULT_HOME_CONFIG: HomeConfig = HOME_SECTION_REGISTRY.map(({ key }) => ({
   key,

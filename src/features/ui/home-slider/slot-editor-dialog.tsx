@@ -24,6 +24,7 @@ import {
   type DimensionWarning,
   type HeroSlot,
 } from '@/features/ui/home-slider/hero-slots'
+import type { HeroVariant } from '@/lib/api/store-settings'
 import {
   useCreateBanner,
   useUpdateBanner,
@@ -48,6 +49,13 @@ import { useProducts } from '@/lib/api/products'
 
 interface SlotEditorDialogProps {
   slot: HeroSlot
+  /**
+   * The store's hero arrangement. The slot is already the one THIS arrangement
+   * renders, but the dimension check and the "renders at" figure both need the
+   * arrangement itself: a slot's painted size is a property of the layout, not
+   * of the placement.
+   */
+  variant: HeroVariant
   /** The banner being edited, or null when filling an empty slot. */
   banner: Banner | null
   /**
@@ -67,6 +75,7 @@ type LinkMode = 'url' | 'product'
 
 export function SlotEditorDialog({
   slot,
+  variant,
   banner,
   contentWidth,
   open,
@@ -102,7 +111,7 @@ export function SlotEditorDialog({
     setImageWarning(null)
     if (!file) return
     try {
-      setImageWarning(checkDimensions(slot, await readImageDimensions(file)))
+      setImageWarning(checkDimensions(variant, slot, await readImageDimensions(file)))
     } catch {
       // An unreadable file is the upload's problem to report, not this
       // check's — the warning is advisory and its absence must never block.
@@ -170,7 +179,7 @@ export function SlotEditorDialog({
               {' · '}
               {formatRatio(slot.recommended)}
               {' · renders at '}
-              {formatSize(renderedSize(slot.placement, contentWidth))}
+              {formatSize(renderedSize(variant, slot.placement, contentWidth))}
               {contentWidth === 'full' ? ' on a 1920px screen' : ` at your ${contentWidth}px content width`}
             </p>
             <SingleImageField
