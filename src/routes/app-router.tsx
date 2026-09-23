@@ -356,7 +356,7 @@ export function AppRouter() {
             path carries an :orderId segment where this one has the literal
             "print". Reached from the orders list bulk bar, so likewise absent
             from nav-config.ts.
-            See openspec/changes/add-bulk-order-document-printing. */}
+            See server/openspec/changes/add-bulk-order-document-printing. */}
         <Route path="/sales/orders/print/:document" element={<BulkDocumentPage />} />
       </Route>
     </Routes>

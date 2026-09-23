@@ -11,7 +11,7 @@
  * characters is the conservative ceiling and a CUID costs 26 with its
  * separator. Fifty leaves real headroom, and matches the courier dispatch batch
  * size already used in `courier.service.ts` so an operator learns one number
- * rather than two. See openspec/changes/add-bulk-order-document-printing
+ * rather than two. See server/openspec/changes/add-bulk-order-document-printing
  * design.md Decision 1.
  */
 export const BULK_PRINT_LIMIT = 50

@@ -56,7 +56,7 @@ export interface AnnouncementBar {
  * details belong in the announcement strip above. These are ordinary links.
  *
  * The storefront renders these only from `md` up, inside the action group that already hides
- * below it. See openspec/changes/add-header-middle-bar-links, design.md Decision 4.
+ * below it. See server/openspec/changes/add-header-middle-bar-links, design.md Decision 4.
  */
 export interface MiddleBarLink extends NavChild {
   /** An Iconify name, e.g. `fa-solid:truck`. */
@@ -399,8 +399,37 @@ export type HomeSectionKey =
  *
  * All four draw on the same three hero placements. A layout that does not
  * render a slot simply does not read it — the banners stay on file untouched.
+ *
+ * `SPLIT_ONE` was withdrawn on request; see the backend's `HERO_VARIANTS` for
+ * why and for what happens to a store that had chosen it. This union is the
+ * panel's mirror, so the picker simply stops offering it — and because the
+ * backend now REFUSES a write of it, offering it here would produce a 400 the
+ * merchant could not act on.
  */
-export type HeroVariant = 'SPLIT_THREE' | 'SPLIT_ONE' | 'FULL_SLIDER' | 'SLIDER_STACK'
+export type HeroVariant = 'SPLIT_THREE' | 'FULL_SLIDER' | 'SLIDER_STACK' | 'SPLIT_TALL'
+
+/**
+ * The featured-categories section's LAYOUT — how its tiles are arranged, as
+ * distinct from which categories appear.
+ *
+ *   GRID     the tiles in a wrapping grid, seven across at desktop  (DEFAULT)
+ *   SLIDER   the same tiles in one horizontal row that scrolls
+ *
+ * MIRRORS `FEATURED_CATEGORIES_VARIANTS` in the backend's
+ * store-setting.constant.ts, IN ORDER, for the reason `HeroVariant` above
+ * mirrors `HERO_VARIANTS`: position 0 is the default there, and the picker
+ * renders the tuple in order with the first pre-selected. Reorder this and the
+ * panel offers a different default than the website uses.
+ *
+ * See server/openspec/changes/add-featured-categories-layout.
+ */
+export type FeaturedCategoriesLayout = 'GRID' | 'SLIDER'
+
+/**
+ * Every layout any section offers. A section entry carries at most one, and
+ * which union it belongs to is decided by the entry's `key`.
+ */
+export type SectionLayout = HeroVariant | FeaturedCategoriesLayout
 
 /**
  * The layout picker's options, in registry order, first one the default.
@@ -418,12 +447,6 @@ export const HERO_VARIANT_OPTIONS: { value: HeroVariant; label: string; descript
       'A rotating slider on the left, two square tiles and one wide tile on the right. The standard layout.',
   },
   {
-    value: 'SPLIT_ONE',
-    label: 'Slider with one tile',
-    description:
-      'A rotating slider on the left and one large square image on the right. For a shop with one promotion to make at a time.',
-  },
-  {
     value: 'FULL_SLIDER',
     label: 'Full-width slider',
     description:
@@ -435,6 +458,37 @@ export const HERO_VARIANT_OPTIONS: { value: HeroVariant; label: string; descript
     description:
       'A full-width rotating slider with a row of three tiles beneath it. Fits the most promotions above the fold.',
   },
+  {
+    value: 'SPLIT_TALL',
+    label: 'Slider with tall tile',
+    description:
+      'A wide rotating slider on the left and one tall promotion filling the right third. One story, one offer.',
+  },
+]
+
+/**
+ * The featured-categories layout picker's options, in registry order, first
+ * one the default. Chosen on the Home Sections row — not on a page of its own
+ * like the hero's — because the choice moves no artwork guidance and the row
+ * already owns and writes `homeConfig`. See
+ * server/openspec/changes/add-featured-categories-layout, design.md Decision 2.
+ */
+export const FEATURED_CATEGORIES_LAYOUT_OPTIONS: {
+  value: FeaturedCategoriesLayout
+  label: string
+  description: string
+}[] = [
+  {
+    value: 'GRID',
+    label: 'Grid',
+    description: 'Every category tile at once, in rows that wrap. The standard layout.',
+  },
+  {
+    value: 'SLIDER',
+    label: 'Slider',
+    description:
+      'The same tiles in one row that customers scroll sideways. Keeps a long category list to one line.',
+  },
 ]
 
 /** One section's placement and visibility. Position in `HomeConfig` is its order. */
@@ -442,14 +496,18 @@ export interface HomeSection {
   key: HomeSectionKey
   enabled: boolean
   /**
-   * The section's layout, on sections that offer a choice — today `HERO` alone.
+   * The section's layout, on sections that offer a choice — `HERO` and
+   * `FEATURED_CATEGORIES`. Which values are legal depends on `key`; the type is
+   * the union of every section's layouts because one field serves every entry.
    *
    * Optional in the type, always present in practice: the backend resolves it
    * on every read. The panel renders what it is given and never defaults it, so
    * this panel and the live storefront cannot disagree about what a store looks
-   * like.
+   * like. (The one exception is the Home Sections page's ADMIN read, which is
+   * the raw row — that page falls back to the section's default for display
+   * only, and never writes the fallback.)
    */
-  variant?: HeroVariant
+  variant?: SectionLayout
 }
 
 /**
@@ -496,7 +554,9 @@ export const HOME_SECTION_REGISTRY: {
   {
     key: 'FEATURED_CATEGORIES',
     label: 'Featured categories',
-    description: 'The grid of category tiles customers browse from.',
+    // Not "the grid": the section has two layouts now, and this line must
+    // describe what it SHOWS whichever one is chosen.
+    description: 'The category tiles customers browse from — as a grid or a scrolling row.',
   },
   {
     key: 'BEST_SELLING',
@@ -593,7 +653,7 @@ export const DEFAULT_HOME_CONFIG: HomeConfig = HOME_SECTION_REGISTRY.map(({ key 
  * `STOREFRONT_ROUTES` the target picker offers. ADDING A ROUTE TO THAT PICKER DOES NOT GOVERN
  * IT — that takes an entry here and in the storefront's copy, deliberately.
  *
- * See openspec/changes/align-nav-links-with-home-sections, design.md Decisions 2 and 3.
+ * See server/openspec/changes/align-nav-links-with-home-sections, design.md Decisions 2 and 3.
  */
 export const SECTION_LINKED_ROUTES: Readonly<Record<string, HomeSectionKey>> = {
   '/blogs': 'BLOG',

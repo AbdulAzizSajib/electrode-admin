@@ -16,7 +16,7 @@
  * copy — this is the third hand-duplicated instance of the same invariant, and
  * all three must agree.
  *
- * See openspec/changes/add-font-library-and-admin-font, design.md Decision 7.
+ * See server/openspec/changes/add-font-library-and-admin-font, design.md Decision 7.
  */
 
 /** Matches the backend's FAMILY_PATTERN — letters, digits, spaces, hyphens. */

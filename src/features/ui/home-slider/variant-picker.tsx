@@ -1,36 +1,43 @@
-import * as RadioGroupPrimitive from '@radix-ui/react-radio-group'
 import { Card } from '@/components/ui/card'
+import { LayoutPicker } from '@/features/ui/components/layout-picker'
+import { HERO_RATIO, heroSlots } from '@/features/ui/home-slider/hero-slots'
 import { HERO_VARIANT_OPTIONS, type HeroVariant } from '@/lib/api/store-settings'
-import { cn } from '@/lib/utils/cn'
 
 /**
  * How the hero is arranged — picked by looking at it, not by reading a name.
  *
  * ── Why diagrams ─────────────────────────────────────────────────────────
  *
- * Two of the four arrangements use the same three slots and differ only in
+ * Two of the arrangements use the same three slots and differ only in
  * where those slots sit. No label fits that difference, and no sentence short
  * enough to sit under a radio button carries it either. So each option draws
  * itself: plain boxes at the real ratios, in the same proportions the slot grid
  * below renders at full size.
  *
- * Inline SVG rather than screenshots — four images would need re-cutting every
+ * Inline SVG rather than screenshots — one image per layout would need re-cutting every
  * time a ratio moved, with nothing to enforce it, and they would be one more
  * thing that can silently disagree with the storefront.
  *
- * ── Why a radio group and not a Select ───────────────────────────────────
+ * ── What lives here and what does not ────────────────────────────────────
  *
- * Partly because four options are faster to read than to open. Mostly because
- * a Radix `Select` mounted before its record has loaded clears react-hook-form's
- * `values` reset and silently blocks the save — a failure this panel has hit
- * before. A radio group carries the same roving focus and arrow-key movement
- * without that.
+ * The CARD SHELL — the radio group, the selected and pending states, and the
+ * two layout rules that kept going wrong — is `LayoutPicker`, shared with the
+ * featured-categories picker. What is here is everything hero-specific: the
+ * diagrams, drawn against the hero's own 19:8 box, and the per-layout artwork
+ * sizes in each card's footer.
  *
- * See openspec/changes/add-hero-section-variants-admin, design.md Decision 3.
+ * See openspec/changes/add-hero-section-variants-admin, design.md Decision 3,
+ * and server/openspec/changes/add-featured-categories-layout, design.md Decision 3.
  */
 
-/** Shared drawing constants, so the four diagrams line up with each other. */
-const BOX = { w: 200, h: 78 }
+/**
+ * Shared drawing constants, so the diagrams line up with each other.
+ *
+ * The box is `HERO_RATIO` — the one every layout paints on the storefront —
+ * so the diagrams show the real fact that the layouts differ only inside it.
+ * 190 x 80 is exactly 19:8.
+ */
+const BOX = { w: 190, h: 190 / HERO_RATIO }
 const GAP = 4
 
 interface DiagramProps {
@@ -91,9 +98,9 @@ function SplitThreeDiagram({ className }: DiagramProps) {
   )
 }
 
-/** Slider left, one square tile filling the 43% column. */
-function SplitOneDiagram({ className }: DiagramProps) {
-  const side = BOX.w * 0.43
+/** Slider left at two thirds, one tall tile filling the right third. */
+function SplitTallDiagram({ className }: DiagramProps) {
+  const side = BOX.w / 3
   const slider = BOX.w - side - GAP
 
   return (
@@ -113,11 +120,11 @@ function FullSliderDiagram({ className }: DiagramProps) {
   )
 }
 
-/** Full-width panel above a row of three tiles. */
+/** A row of three 43:20 tiles along the bottom, the panel filling what is above. */
 function SliderStackDiagram({ className }: DiagramProps) {
-  const sliderH = BOX.h * 0.58
-  const tileH = BOX.h - sliderH - GAP
   const tileW = (BOX.w - GAP * 2) / 3
+  const tileH = tileW / (43 / 20)
+  const sliderH = BOX.h - tileH - GAP
 
   return (
     <svg viewBox={`0 0 ${BOX.w} ${BOX.h}`} className={className} role="presentation">
@@ -138,19 +145,26 @@ function SliderStackDiagram({ className }: DiagramProps) {
 
 const DIAGRAMS: Record<HeroVariant, (props: DiagramProps) => React.JSX.Element> = {
   SPLIT_THREE: SplitThreeDiagram,
-  SPLIT_ONE: SplitOneDiagram,
   FULL_SLIDER: FullSliderDiagram,
   SLIDER_STACK: SliderStackDiagram,
+  SPLIT_TALL: SplitTallDiagram,
 }
 
 export function VariantPicker({
   value,
   onChange,
-  disabled,
+  saving,
 }: {
   value: HeroVariant
   onChange: (variant: HeroVariant) => void
-  disabled?: boolean
+  /**
+   * The layout currently being written, or null.
+   *
+   * NOT a plain `disabled` boolean, and not the shared settings mutation's
+   * `isPending` — see the comment on `savingVariant` in home-slider-page.tsx
+   * and the header of `LayoutPicker`.
+   */
+  saving?: HeroVariant | null
 }) {
   return (
     <Card className="flex flex-col gap-3 p-4">
@@ -162,42 +176,39 @@ export function VariantPicker({
         </p>
       </div>
 
-      <RadioGroupPrimitive.Root
+      <LayoutPicker
+        options={HERO_VARIANT_OPTIONS}
         value={value}
-        onValueChange={(next) => onChange(next as HeroVariant)}
-        disabled={disabled}
-        aria-label="Hero layout"
-        className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
-      >
-        {HERO_VARIANT_OPTIONS.map((option) => {
-          const Diagram = DIAGRAMS[option.value]
-          const selected = option.value === value
-
-          return (
-            <RadioGroupPrimitive.Item
-              key={option.value}
-              value={option.value}
-              className={cn(
-                'flex flex-col gap-2 rounded-md border p-3 text-left transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                'disabled:cursor-not-allowed disabled:opacity-50',
-                selected
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-muted-foreground/40',
-              )}
-            >
-              <Diagram
-                className={cn(
-                  'h-auto w-full',
-                  selected ? 'text-primary' : 'text-muted-foreground',
-                )}
-              />
-              <span className="text-sm font-medium text-foreground">{option.label}</span>
-              <span className="text-xs text-muted-foreground">{option.description}</span>
-            </RadioGroupPrimitive.Item>
-          )
-        })}
-      </RadioGroupPrimitive.Root>
+        onChange={onChange}
+        saving={saving}
+        label="Hero layout"
+        // One column per layout at xl, so the set reads as one row. Keep this
+        // equal to `HERO_VARIANT_OPTIONS.length`.
+        columns={4}
+        diagram={(variant, { className }) => {
+          const Diagram = DIAGRAMS[variant]
+          return <Diagram className={className} />
+        }}
+        /*
+          The artwork sizes THIS layout asks for, so a merchant can see what
+          changing to it would cost them before they change. The same figures
+          the slot headings below carry, from the same `heroSlots()` call — a
+          merchant comparing layouts is usually deciding whether they already
+          have artwork that fits. One row for FULL_SLIDER and up to three for
+          the others; three is the maximum any layout has, since
+          `HERO_PLACEMENTS` has three entries and no layout renders a slot twice.
+        */
+        footer={(variant) =>
+          heroSlots(variant).map((slot) => (
+            <span key={slot.placement} className="flex justify-between gap-2">
+              <span className="truncate">{slot.label}</span>
+              <span className="shrink-0">
+                {slot.recommended.width} × {slot.recommended.height}
+              </span>
+            </span>
+          ))
+        }
+      />
     </Card>
   )
 }

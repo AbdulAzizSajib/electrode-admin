@@ -17,7 +17,7 @@
  *
  * The credential forms are generated from what the server declares, so adding an
  * integration is a server change and a card assignment here — not a new form.
- * See openspec/changes/rename-courier-setting-to-integrations, design.md
+ * See server/openspec/changes/rename-courier-setting-to-integrations, design.md
  * Decisions 4 and 11.
  */
 import { useState } from 'react'

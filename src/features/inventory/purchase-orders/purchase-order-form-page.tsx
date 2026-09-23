@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useFieldArray, useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Plus, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Alert } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -85,6 +85,24 @@ const schema = z.object({
         variantId: z.string().optional(),
         quantity: z.coerce.number().min(1, 'Quantity must be at least 1'),
         unitCost: z.coerce.number().min(0, 'Cost cannot be negative'),
+        /*
+         * Staged selling prices: what this line PROPOSES for the item, applied
+         * by a goods receipt rather than on save.
+         *
+         * STRINGS, NOT `coerce.number()`, and that is the point. Empty has to
+         * stay distinguishable from zero: empty means "this line has no
+         * opinion about that price" and sends nothing, while 0 is a real
+         * staged price of zero. `z.coerce.number()` collapses '' to 0 and
+         * would make every untouched line stage a free product.
+         */
+        stagedOfferPrice: z
+          .string()
+          .optional()
+          .refine((v) => !v || (Number(v) >= 0 && Number.isFinite(Number(v))), 'Enter a price of 0 or more'),
+        stagedSellingPrice: z
+          .string()
+          .optional()
+          .refine((v) => !v || (Number(v) >= 0 && Number.isFinite(Number(v))), 'Enter a price of 0 or more'),
       }),
     )
     .min(1, 'Add at least one line item'),
@@ -98,6 +116,312 @@ type OutputValues = z.output<typeof schema>
  * whichever field the cursor happened to be over.
  */
 const blurOnWheel = (event: React.WheelEvent<HTMLInputElement>) => event.currentTarget.blur()
+
+/**
+ * A blank line. Staged prices start EMPTY, never pre-filled with the item's
+ * current prices — see design.md Decision 5: filling them would make every
+ * line carry a proposal equal to the price already in place, "no opinion"
+ * would become unrepresentable, and every receipt would write prices it was
+ * never asked to.
+ */
+const NEW_LINE = {
+  productId: '',
+  variantId: undefined,
+  quantity: 1,
+  unitCost: 0,
+  stagedOfferPrice: '',
+  stagedSellingPrice: '',
+} as const
+
+/**
+ * A staged price on its way to the API: empty means "no opinion" and is sent as
+ * `undefined`, so the server writes null and the receipt changes nothing.
+ *
+ * NOT `Number('') === 0`. Collapsing empty to zero would make every untouched
+ * line stage a free product — which is why the form holds these as strings.
+ */
+const stagedToPayload = (value: string | undefined): number | undefined =>
+  value === undefined || value === '' ? undefined : Number(value)
+
+/** Money is `Decimal(12, 2)`; every figure these helpers produce matches. */
+const round2 = (value: number) => Math.round(value * 100) / 100
+
+/**
+ * The two price computations, MIRRORED from the server's
+ * `purchase-order.cost.ts` — `markupOnCost` and `adjustByAmount`.
+ *
+ * THE SERVER IS THE AUTHORITY. It is mirrored here rather than fetched because
+ * each is one multiplication or addition plus a round, and a round trip per
+ * keystroke to compute `cost × 1.25` would be worse than the duplication.
+ * `scripts/verify-cost-basis.ts` pins the server's versions, including the two
+ * refusals below. If either ever grows a branch, the honest fix is an endpoint,
+ * not a bigger mirror.
+ *
+ * `markupOnCost` returns null for a non-positive cost: a percentage of nothing
+ * is nothing, and proposing 0.00 for an uncosted line would look like a
+ * computed answer. `adjustByAmount` clamps at zero, because every reader of
+ * these Decimal columns assumes a non-negative price.
+ *
+ * See openspec/changes/add-purchase-order-pricing, design.md Decision 4.
+ */
+const markupOnCost = (unitCost: number, percent: number): number | null =>
+  unitCost <= 0 ? null : round2(unitCost * (1 + percent / 100))
+
+const adjustByAmount = (price: number, delta: number): number => round2(Math.max(0, price + delta))
+
+/**
+ * What the form needs from a resolved product: its own prices, and its
+ * variants' (each of which may override any of the three).
+ */
+interface ResolvedProduct {
+  purchasePrice?: number | string | null
+  offerPrice?: number | string | null
+  sellingPrice?: number | string | null
+  variants?: {
+    id?: string
+    purchasePrice?: number | string | null
+    offerPrice?: number | string | null
+    sellingPrice?: number | string | null
+  }[]
+}
+
+/** One item's prices as the catalog currently holds them. */
+interface ItemPrices {
+  purchasePrice: number | null
+  offerPrice: number | null
+  sellingPrice: number | null
+}
+
+/**
+ * The prices to show for a line, variant-then-parent FIELD BY FIELD.
+ *
+ * Mirrors `resolveItemPrices` on the server, and for the same reason it is per
+ * field there: a variant may set its own offer price and inherit its parent's
+ * regular price, so picking "the variant if there is one" for all three at once
+ * would show blanks for the ones it does not override. Showing one precedence
+ * while the receipt acts on another is the failure this avoids.
+ */
+const resolveItemPrices = (
+  product: { purchasePrice?: number | null; offerPrice?: number | null; sellingPrice?: number | null } | undefined,
+  variant: { purchasePrice?: number | null; offerPrice?: number | null; sellingPrice?: number | null } | undefined,
+): ItemPrices => {
+  const pick = (field: keyof ItemPrices) => variant?.[field] ?? product?.[field] ?? null
+
+  return {
+    purchasePrice: pick('purchasePrice'),
+    offerPrice: pick('offerPrice'),
+    sellingPrice: pick('sellingPrice'),
+  }
+}
+
+/**
+ * The pricing panel for one line: what the item costs and sells for today, and
+ * what this order should change it to.
+ *
+ * ── Why a second row rather than more columns ────────────────────────
+ *
+ * The line table already carries seven columns. Five more per line would mean
+ * horizontal scrolling to reach the delete button — making the common case
+ * (cost a line, save) worse to serve the occasional one (reprice while
+ * costing). A row that opens on demand keeps the table as it was, and matches
+ * what repricing is: per line, occasional, absent until asked for.
+ *
+ * ── Current and staged are deliberately different things ───────────────
+ *
+ * The three figures on the left are READ-ONLY and live — they are what the
+ * catalogue holds right now. The two inputs on the right are PROPOSALS, empty
+ * until the merchant sets one, and applied only when the order's goods are
+ * received. An empty input means "leave that price alone"; that is why they are
+ * never pre-filled with the current values (design.md Decision 5).
+ *
+ * See openspec/changes/add-purchase-order-pricing, design.md Decisions 5 and 5a.
+ */
+function LinePricing({
+  control,
+  index,
+  lineLabel,
+  prices,
+  unitCost,
+  onCompute,
+}: {
+  control: ReturnType<typeof useForm<Values, unknown, OutputValues>>['control']
+  index: number
+  lineLabel: string
+  prices: ItemPrices
+  unitCost: number
+  onCompute: (field: 'stagedOfferPrice' | 'stagedSellingPrice', value: number) => void
+}) {
+  const [markupPercent, setMarkupPercent] = React.useState('25')
+  const [adjustAmount, setAdjustAmount] = React.useState('')
+  const [hint, setHint] = React.useState<string | null>(null)
+
+  const applyMarkup = () => {
+    const proposed = markupOnCost(unitCost, Number(markupPercent) || 0)
+
+    // Declines rather than proposing 0.00 — see `markupOnCost`.
+    if (proposed === null) {
+      setHint('Enter this line’s unit cost first — a markup needs something to mark up.')
+      return
+    }
+
+    setHint(null)
+    onCompute('stagedOfferPrice', proposed)
+  }
+
+  const applyAdjust = (field: 'stagedOfferPrice' | 'stagedSellingPrice', current: string | undefined) => {
+    const delta = Number(adjustAmount)
+    if (!adjustAmount || !Number.isFinite(delta)) return
+
+    // Adjusts what is in the field, falling back to the price in place — so
+    // "+20" on an untouched line means twenty above what it sells for today.
+    const fallback = field === 'stagedOfferPrice' ? prices.offerPrice : prices.sellingPrice
+    const base = current !== undefined && current !== '' ? Number(current) : (fallback ?? 0)
+
+    setHint(null)
+    onCompute(field, adjustByAmount(base, delta))
+  }
+
+  const money = (value: number | null) => (value === null ? '—' : formatCurrency(value))
+
+  return (
+    <div className="flex flex-col gap-3 bg-muted/40 px-4 py-3 md:flex-row md:items-start md:gap-8">
+      <div className="flex flex-col gap-1 text-xs">
+        <span className="font-medium text-foreground">Currently in the catalogue</span>
+        <div className="flex gap-4 tabular-nums text-muted-foreground">
+          <span>
+            Cost <span className="text-foreground">{money(prices.purchasePrice)}</span>
+          </span>
+          <span>
+            Offer <span className="text-foreground">{money(prices.offerPrice)}</span>
+          </span>
+          <span>
+            Regular <span className="text-foreground">{money(prices.sellingPrice)}</span>
+          </span>
+        </div>
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <span className="text-xs font-medium text-foreground">
+          New prices when this order is received{' '}
+          <span className="font-normal text-muted-foreground">
+            — leave blank to keep the current price
+          </span>
+        </span>
+
+        <div className="flex flex-wrap items-end gap-3">
+          {(
+            [
+              ['stagedOfferPrice', 'New offer price'],
+              ['stagedSellingPrice', 'New regular price'],
+            ] as const
+          ).map(([name, label]) => (
+            <FormField
+              key={name}
+              control={control}
+              name={`items.${index}.${name}`}
+              render={({ field }) => (
+                <FormItem className="w-40">
+                  <FormLabel className="text-xs font-normal text-muted-foreground">{label}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      inputMode="decimal"
+                      placeholder="No change"
+                      className="tabular-nums"
+                      aria-label={`${label} for ${lineLabel}`}
+                      onWheel={blurOnWheel}
+                      {...field}
+                      value={field.value ?? ''}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          ))}
+
+          <div className="flex items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label htmlFor={`markup-${index}`} className="text-xs font-normal text-muted-foreground">
+                Markup on cost
+              </label>
+              <div className="flex items-center gap-1">
+                <Input
+                  id={`markup-${index}`}
+                  type="number"
+                  step="1"
+                  min="0"
+                  inputMode="decimal"
+                  className="w-20 tabular-nums"
+                  aria-label={`Markup percentage for ${lineLabel}`}
+                  onWheel={blurOnWheel}
+                  value={markupPercent}
+                  onChange={(event) => setMarkupPercent(event.target.value)}
+                />
+                <span className="text-xs text-muted-foreground">%</span>
+                <Button type="button" variant="outline" size="sm" onClick={applyMarkup}>
+                  Apply
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label htmlFor={`adjust-${index}`} className="text-xs font-normal text-muted-foreground">
+                Adjust by
+              </label>
+              <div className="flex items-center gap-1">
+                <Input
+                  id={`adjust-${index}`}
+                  type="number"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="±0.00"
+                  className="w-24 tabular-nums"
+                  aria-label={`Adjustment amount for ${lineLabel}`}
+                  onWheel={blurOnWheel}
+                  value={adjustAmount}
+                  onChange={(event) => setAdjustAmount(event.target.value)}
+                />
+                <FormField
+                  control={control}
+                  name={`items.${index}.stagedOfferPrice`}
+                  render={({ field }) => (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => applyAdjust('stagedOfferPrice', field.value)}
+                    >
+                      Offer
+                    </Button>
+                  )}
+                />
+                <FormField
+                  control={control}
+                  name={`items.${index}.stagedSellingPrice`}
+                  render={({ field }) => (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => applyAdjust('stagedSellingPrice', field.value)}
+                    >
+                      Regular
+                    </Button>
+                  )}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {hint && <p className="text-xs text-destructive">{hint}</p>}
+      </div>
+    </div>
+  )
+}
 
 /**
  * The variant picker for one line, and the only place the form learns whether a
@@ -124,13 +448,27 @@ function VariantCell({
   index: number
   productId: string
   lineLabel: string
-  onResolved: (productId: string, variantIds: string[]) => void
+  /**
+   * Reports what arrived: the variant ids for validation, and the product row
+   * itself so the parent can resolve the line's prices and seed its unit cost.
+   *
+   * The product is passed up rather than re-fetched in the parent because this
+   * is already the one query per distinct product, cached by react-query — the
+   * form learns everything it knows about a product through here.
+   */
+  onResolved: (productId: string, variantIds: string[], product: ResolvedProduct) => void
 }) {
   const { data: product, isFetching } = useProduct(productId || undefined)
   const variants = React.useMemo(() => product?.variants ?? [], [product])
 
   React.useEffect(() => {
-    if (product) onResolved(productId, variants.map((v) => v.id).filter((id): id is string => !!id))
+    if (product) {
+      onResolved(
+        productId,
+        variants.map((v) => v.id).filter((id): id is string => !!id),
+        product as ResolvedProduct,
+      )
+    }
   }, [product, productId, variants, onResolved])
 
   const options = React.useMemo<ComboboxOption[]>(
@@ -289,16 +627,34 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
    * of stock after its stock arrived.
    */
   const [variantIdsByProduct, setVariantIdsByProduct] = React.useState<Record<string, string[]>>({})
-  const rememberVariants = React.useCallback((productId: string, variantIds: string[]) => {
-    setVariantIdsByProduct((prev) =>
-      prev[productId]?.length === variantIds.length && prev[productId]?.every((id, i) => id === variantIds[i])
-        ? prev
-        : { ...prev, [productId]: variantIds },
-    )
-  }, [])
+  /*
+   * The resolved product row per picked product, so a line can show the item's
+   * current prices and seed its unit cost from the cost basis. Filled by the
+   * same variant-picker fetch that fills `variantIdsByProduct` — no extra query.
+   */
+  const [productById, setProductById] = React.useState<Record<string, ResolvedProduct>>({})
+  const rememberVariants = React.useCallback(
+    (productId: string, variantIds: string[], product: ResolvedProduct) => {
+      setVariantIdsByProduct((prev) =>
+        prev[productId]?.length === variantIds.length && prev[productId]?.every((id, i) => id === variantIds[i])
+          ? prev
+          : { ...prev, [productId]: variantIds },
+      )
+      setProductById((prev) => (prev[productId] === product ? prev : { ...prev, [productId]: product }))
+    },
+    [],
+  )
   // Index of a row appended by "Add item", so the keyboard lands in it instead
   // of leaving the merchant to reach for the mouse on every line.
   const [focusRow, setFocusRow] = React.useState<number | null>(null)
+  /*
+   * Which lines have their pricing panel open, by row index.
+   *
+   * Closed by default: a line that stages nothing is the common case, and the
+   * panel being absent until asked for is what keeps the table readable
+   * (design.md Decision 5a).
+   */
+  const [pricingOpen, setPricingOpen] = React.useState<Record<number, boolean>>({})
 
   const form = useForm<Values, unknown, OutputValues>({
     resolver: zodResolver(schema),
@@ -316,6 +672,10 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
             variantId: i.variantId ?? undefined,
             quantity: i.quantity,
             unitCost: Number(i.unitCost),
+            // A stored proposal shows as itself; an absent one stays EMPTY
+            // rather than becoming '0', which would stage a free product.
+            stagedOfferPrice: i.stagedOfferPrice == null ? '' : String(Number(i.stagedOfferPrice)),
+            stagedSellingPrice: i.stagedSellingPrice == null ? '' : String(Number(i.stagedSellingPrice)),
           })),
         }
       : {
@@ -324,7 +684,7 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
           shippingCost: undefined,
           taxAmount: undefined,
           status: 'DRAFT',
-          items: [{ productId: '', variantId: undefined, quantity: 1, unitCost: 0 }],
+          items: [NEW_LINE],
         },
   })
 
@@ -359,6 +719,66 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
     setPickedProducts((prev) => (prev.some((p) => p.value === option.value) ? prev : [...prev, option]))
   }
 
+  /** The item a line names: its variant when it has one, else the product. */
+  const linePrices = (index: number): ItemPrices => {
+    const item = watchedItems?.[index]
+    const product = item?.productId ? productById[item.productId] : undefined
+    const variant = item?.variantId ? product?.variants?.find((v) => v.id === item.variantId) : undefined
+
+    return resolveItemPrices(
+      product && {
+        purchasePrice: product.purchasePrice == null ? null : Number(product.purchasePrice),
+        offerPrice: product.offerPrice == null ? null : Number(product.offerPrice),
+        sellingPrice: product.sellingPrice == null ? null : Number(product.sellingPrice),
+      },
+      variant && {
+        purchasePrice: variant.purchasePrice == null ? null : Number(variant.purchasePrice),
+        offerPrice: variant.offerPrice == null ? null : Number(variant.offerPrice),
+        sellingPrice: variant.sellingPrice == null ? null : Number(variant.sellingPrice),
+      },
+    )
+  }
+
+  /*
+   * Seeds a line's Unit cost from the item's CURRENT COST BASIS when its
+   * product or variant changes.
+   *
+   * The figure a merchant needs is the one the product already records —
+   * `purchasePrice` means "what the stock on hand cost" since
+   * add-weighted-average-cost-basis — and it was one field away while the form
+   * opened every line at 0.
+   *
+   * SEEDED ONCE PER PRODUCT/VARIANT CHOICE, never re-applied. The key is what
+   * the line names, so typing a cost does not re-trigger it and an unrelated
+   * re-render cannot overwrite what the merchant typed. Changing the product or
+   * the variant is a different item and does re-seed.
+   *
+   * An item with NO cost basis seeds nothing rather than writing 0 — a null
+   * cost is unknown, and 0 would look like a supplier who charged nothing.
+   *
+   * See openspec/changes/add-purchase-order-pricing, design.md Decision 5.
+   */
+  const seededRef = React.useRef<Record<number, string>>({})
+
+  React.useEffect(() => {
+    watchedItems?.forEach((item, index) => {
+      if (!item?.productId) return
+
+      const key = `${item.productId}::${item.variantId ?? ''}`
+      if (seededRef.current[index] === key) return
+
+      const { purchasePrice } = linePrices(index)
+      // Recorded even when there is nothing to seed, so a null-cost item is not
+      // re-examined on every render.
+      seededRef.current[index] = key
+
+      if (purchasePrice !== null) {
+        form.setValue(`items.${index}.unitCost`, purchasePrice, { shouldDirty: true })
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedItems, productById])
+
   const lineAmount = (index: number) => {
     const item = watchedItems?.[index]
     return (Number(item?.quantity) || 0) * (Number(item?.unitCost) || 0)
@@ -374,7 +794,7 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
 
   const addItem = () => {
     setFocusRow(fields.length)
-    append({ productId: '', variantId: undefined, quantity: 1, unitCost: 0 })
+    append({ ...NEW_LINE })
   }
 
   const onSubmit = async (values: OutputValues) => {
@@ -399,7 +819,15 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
                 item.productId !== original.productId ||
                 (item.variantId || undefined) !== (original.variantId ?? undefined) ||
                 item.quantity !== original.quantity ||
-                item.unitCost !== Number(original.unitCost)
+                item.unitCost !== Number(original.unitCost) ||
+                // A staged price is part of the line's state, so editing or
+                // clearing one has to count as a change — otherwise the save
+                // would skip the amend and the proposal would never reach the
+                // server.
+                stagedToPayload(item.stagedOfferPrice) !==
+                    (original.stagedOfferPrice == null ? undefined : Number(original.stagedOfferPrice)) ||
+                stagedToPayload(item.stagedSellingPrice) !==
+                    (original.stagedSellingPrice == null ? undefined : Number(original.stagedSellingPrice))
               )
             })
 
@@ -414,6 +842,8 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
                   variantId: item.variantId || undefined,
                   quantity: item.quantity,
                   unitCost: item.unitCost,
+                  stagedOfferPrice: stagedToPayload(item.stagedOfferPrice),
+                  stagedSellingPrice: stagedToPayload(item.stagedSellingPrice),
                 })),
               },
             })
@@ -471,6 +901,9 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
             variantId: item.variantId || undefined,
             quantity: item.quantity,
             unitCost: item.unitCost,
+            // Absent when the merchant staged nothing — see `stagedToPayload`.
+            stagedOfferPrice: stagedToPayload(item.stagedOfferPrice),
+            stagedSellingPrice: stagedToPayload(item.stagedSellingPrice),
           })),
           shippingCost: values.shippingCost,
           taxAmount: values.taxAmount,
@@ -555,7 +988,13 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
                         </TableRow>
                       ))
                     : fields.map((field, index) => (
-                        <TableRow key={field.id} className="hover:bg-transparent">
+                        /*
+                         * A fragment per line: the pricing panel below is a
+                         * SIBLING <TableRow>, not a cell inside this one, so it
+                         * spans the full width without disturbing the columns.
+                         */
+                        <React.Fragment key={field.id}>
+                        <TableRow className="hover:bg-transparent">
                           <TableCell>
                             <FormField
                               control={form.control}
@@ -671,6 +1110,25 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
                             {formatCurrency(lineAmount(index))}
                           </TableCell>
                           <TableCell>
+                            <div className="flex items-center gap-1">
+                            {/*
+                              Opens this line's pricing panel. Beside the delete
+                              button rather than in a column of its own, so the
+                              table's width is unchanged (design.md 5a).
+                            */}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-expanded={!!pricingOpen[index]}
+                              aria-label={`${pricingOpen[index] ? 'Hide' : 'Show'} prices for ${lineName(index)}`}
+                              title="Selling prices"
+                              onClick={() => setPricingOpen((prev) => ({ ...prev, [index]: !prev[index] }))}
+                            >
+                              <ChevronDown
+                                className={`size-4 transition-transform ${pricingOpen[index] ? 'rotate-180' : ''}`}
+                              />
+                            </Button>
                             <Button
                               type="button"
                               variant="ghost"
@@ -690,8 +1148,30 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
                             >
                               <Trash2 className="size-4" />
                             </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
+
+                        {pricingOpen[index] && (
+                          <TableRow className="hover:bg-transparent">
+                            <TableCell colSpan={isEdit ? 8 : 7} className="p-0">
+                              <LinePricing
+                                control={form.control}
+                                index={index}
+                                lineLabel={lineName(index)}
+                                prices={linePrices(index)}
+                                unitCost={Number(watchedItems?.[index]?.unitCost) || 0}
+                                onCompute={(name, value) =>
+                                  form.setValue(`items.${index}.${name}`, String(value), {
+                                    shouldDirty: true,
+                                    shouldValidate: true,
+                                  })
+                                }
+                              />
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        </React.Fragment>
                       ))}
                 </TableBody>
               </Table>

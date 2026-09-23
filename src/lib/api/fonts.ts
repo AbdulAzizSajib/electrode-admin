@@ -9,7 +9,7 @@
  * `<link>` on every page of the shop, and a client-side field would route
  * around it.
  *
- * See openspec/changes/add-font-library-and-admin-font.
+ * See server/openspec/changes/add-font-library-and-admin-font.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ListParams, type PaginatedResponse } from '@/lib/api/client'

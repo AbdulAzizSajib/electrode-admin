@@ -58,20 +58,43 @@ vi.mock('@/lib/api/suppliers', () => ({
  * has to fetch the detail below.
  */
 const PRODUCT_DETAIL: Record<string, Record<string, unknown>> = {
-  'p-1': { id: 'p-1', name: 'Fast Charger', variants: [] },
+  /*
+   * The three prices matter to the pricing panel below: `p-1` has a full set,
+   * `p-3` has no cost basis at all (the seed must leave the field alone), and
+   * `p-2`'s variants override some prices and inherit others — which is the
+   * per-field precedence the panel has to get right.
+   */
+  'p-1': {
+    id: 'p-1',
+    name: 'Fast Charger',
+    variants: [],
+    purchasePrice: 90,
+    offerPrice: 150,
+    sellingPrice: 180,
+  },
   'p-2': {
     id: 'p-2',
     name: 'Q86 Retro',
+    purchasePrice: 88,
+    offerPrice: 150,
+    sellingPrice: 175,
     variants: [
-      { id: 'v-red', name: 'Red', sku: 'q86-red' },
+      { id: 'v-red', name: 'Red', sku: 'q86-red', purchasePrice: 120, offerPrice: 200 },
       { id: 'v-white', name: 'White', sku: 'q86-white' },
     ],
   },
+  'p-3': { id: 'p-3', name: 'No Cost Item', variants: [], offerPrice: 150, sellingPrice: 180 },
 }
 
 vi.mock('@/lib/api/products', () => ({
   useProducts: () => ({
-    data: { data: [{ id: 'p-1', name: 'Fast Charger' }, { id: 'p-2', name: 'Q86 Retro' }] },
+    data: {
+      data: [
+        { id: 'p-1', name: 'Fast Charger' },
+        { id: 'p-2', name: 'Q86 Retro' },
+        { id: 'p-3', name: 'No Cost Item' },
+      ],
+    },
     isFetching: false,
   }),
   useProduct: (id?: string) => ({ data: id ? PRODUCT_DETAIL[id] : undefined, isFetching: false }),
@@ -313,5 +336,196 @@ describe('PurchaseOrderFormPage — what the money adds up to', () => {
     expect(screen.getByText(`Shipping: ${formatCurrency(50)}`)).toBeTruthy()
     expect(screen.getByText(`Tax: ${formatCurrency(20)}`)).toBeTruthy()
     expect(screen.getByText(`Total: ${formatCurrency(370)}`)).toBeTruthy()
+  })
+})
+
+/**
+ * The line-level pricing panel: what it seeds, what it sends, and the two
+ * refusals.
+ *
+ * The seed and the staged inputs are the parts that fail quietly. A cost seeded
+ * over a figure the merchant typed loses their entry with no error; a staged
+ * input that sends `0` instead of nothing would reprice every product on the
+ * order to free the moment its goods arrive. Both are asserted on what the page
+ * actually SENDS, not on what it renders.
+ *
+ * See openspec/changes/add-purchase-order-pricing.
+ */
+describe('PurchaseOrderFormPage — the line pricing panel', () => {
+  /** Picks a product into row 0 and opens its pricing panel. */
+  const openPricingFor = async (user: ReturnType<typeof userEvent.setup>, label: string) => {
+    await user.click(screen.getByLabelText('Product for line 1'))
+    await user.click(await screen.findByRole('option', { name: label }))
+    await user.click(await screen.findByRole('button', { name: new RegExp(`Show prices for ${label}`, 'i') }))
+  }
+
+  it('seeds unit cost from the item’s cost basis, and never over a typed figure', async () => {
+    const user = userEvent.setup()
+    render(<PurchaseOrderFormPage />)
+
+    await user.click(screen.getByLabelText('Product for line 1'))
+    await user.click(await screen.findByRole('option', { name: 'Fast Charger' }))
+
+    const cost = screen.getByLabelText('Unit cost for Fast Charger') as HTMLInputElement
+    await waitFor(() => expect(cost.value).toBe('90'))
+
+    // The merchant overwrites it with what the supplier actually charged; a
+    // later re-render must not put the cost basis back.
+    await user.clear(cost)
+    await user.type(cost, '95')
+    await user.type(screen.getByLabelText('Quantity for Fast Charger'), '0')
+
+    await waitFor(() => expect((screen.getByLabelText('Unit cost for Fast Charger') as HTMLInputElement).value).toBe('95'))
+  })
+
+  it('leaves unit cost alone for an item with no cost basis', async () => {
+    const user = userEvent.setup()
+    render(<PurchaseOrderFormPage />)
+
+    const cost = screen.getByLabelText('Unit cost for line 1') as HTMLInputElement
+    await user.clear(cost)
+    await user.type(cost, '42')
+
+    await user.click(screen.getByLabelText('Product for line 1'))
+    await user.click(await screen.findByRole('option', { name: 'No Cost Item' }))
+
+    // A null cost basis is unknown, not zero — writing 0 here would read as a
+    // supplier who charged nothing.
+    await waitFor(() =>
+      expect((screen.getByLabelText('Unit cost for No Cost Item') as HTMLInputElement).value).toBe('42'),
+    )
+  })
+
+  it('shows the item’s current prices, with a variant’s own taking precedence', async () => {
+    const user = userEvent.setup()
+    render(<PurchaseOrderFormPage />)
+
+    await openPricingFor(user, 'Q86 Retro')
+    await user.click(screen.getByLabelText('Variant for Q86 Retro'))
+    await user.click(await screen.findByRole('option', { name: 'Red' }))
+
+    // Red sets its own cost and offer price and inherits the parent's regular
+    // price — the per-field precedence, not whole-row.
+    await waitFor(() => expect(screen.getByText(formatCurrency(120))).toBeTruthy())
+    expect(screen.getByText(formatCurrency(200))).toBeTruthy()
+    expect(screen.getByText(formatCurrency(175))).toBeTruthy()
+  })
+
+  it('sends no staged prices for a line the merchant left alone', async () => {
+    const user = userEvent.setup()
+    render(<PurchaseOrderFormPage />)
+
+    await user.click(screen.getByLabelText('Supplier'))
+    await user.click(await screen.findByRole('option', { name: /Anker BD/ }))
+    await user.click(screen.getByLabelText('Product for line 1'))
+    await user.click(await screen.findByRole('option', { name: 'Fast Charger' }))
+    await user.click(screen.getByRole('button', { name: /create purchase order/i }))
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalled())
+    const [item] = createMutate.mock.calls[0][0].items
+    // Absent, not 0: absent means "no opinion" and the receipt changes nothing.
+    expect(item.stagedOfferPrice).toBeUndefined()
+    expect(item.stagedSellingPrice).toBeUndefined()
+  })
+
+  it('sends a staged price the merchant sets, and only that one', async () => {
+    const user = userEvent.setup()
+    render(<PurchaseOrderFormPage />)
+
+    await user.click(screen.getByLabelText('Supplier'))
+    await user.click(await screen.findByRole('option', { name: /Anker BD/ }))
+    await openPricingFor(user, 'Fast Charger')
+
+    await user.type(screen.getByLabelText('New offer price for Fast Charger'), '170')
+    await user.click(screen.getByRole('button', { name: /create purchase order/i }))
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalled())
+    const [item] = createMutate.mock.calls[0][0].items
+    expect(item.stagedOfferPrice).toBe(170)
+    // The regular price was never touched, so the receipt must leave it alone.
+    expect(item.stagedSellingPrice).toBeUndefined()
+  })
+
+  it('computes a markup on the line’s unit cost', async () => {
+    const user = userEvent.setup()
+    render(<PurchaseOrderFormPage />)
+
+    await openPricingFor(user, 'Fast Charger')
+
+    const cost = screen.getByLabelText('Unit cost for Fast Charger') as HTMLInputElement
+    await waitFor(() => expect(cost.value).toBe('90'))
+    await user.clear(cost)
+    await user.type(cost, '120')
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    const staged = screen.getByLabelText('New offer price for Fast Charger') as HTMLInputElement
+    await waitFor(() => expect(staged.value).toBe('150'))
+  })
+
+  it('declines a markup on a line with no cost, rather than proposing zero', async () => {
+    const user = userEvent.setup()
+    render(<PurchaseOrderFormPage />)
+
+    await openPricingFor(user, 'Fast Charger')
+
+    const cost = screen.getByLabelText('Unit cost for Fast Charger') as HTMLInputElement
+    await waitFor(() => expect(cost.value).toBe('90'))
+    await user.clear(cost)
+    await user.type(cost, '0')
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    expect(await screen.findByText(/unit cost first/i)).toBeTruthy()
+    expect((screen.getByLabelText('New offer price for Fast Charger') as HTMLInputElement).value).toBe('')
+  })
+
+  it('adjusts a staged price by a fixed amount, up and down, never below zero', async () => {
+    const user = userEvent.setup()
+    render(<PurchaseOrderFormPage />)
+
+    await openPricingFor(user, 'Fast Charger')
+
+    const staged = screen.getByLabelText('New offer price for Fast Charger') as HTMLInputElement
+    const delta = screen.getByLabelText('Adjustment amount for Fast Charger')
+
+    await user.type(staged, '150')
+    await user.type(delta, '20')
+    await user.click(screen.getByRole('button', { name: 'Offer' }))
+    await waitFor(() => expect(staged.value).toBe('170'))
+
+    await user.clear(delta)
+    await user.type(delta, '-50')
+    await user.click(screen.getByRole('button', { name: 'Offer' }))
+    await waitFor(() => expect(staged.value).toBe('120'))
+
+    // A decrease larger than the price clamps rather than going negative.
+    await user.clear(delta)
+    await user.type(delta, '-500')
+    await user.click(screen.getByRole('button', { name: 'Offer' }))
+    await waitFor(() => expect(staged.value).toBe('0'))
+  })
+
+  it('does not re-evaluate a computed price when the cost later changes', async () => {
+    const user = userEvent.setup()
+    render(<PurchaseOrderFormPage />)
+
+    await openPricingFor(user, 'Fast Charger')
+
+    const cost = screen.getByLabelText('Unit cost for Fast Charger') as HTMLInputElement
+    await waitFor(() => expect(cost.value).toBe('90'))
+    await user.clear(cost)
+    await user.type(cost, '120')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    const staged = screen.getByLabelText('New offer price for Fast Charger') as HTMLInputElement
+    await waitFor(() => expect(staged.value).toBe('150'))
+
+    // A helper fills a field; it does not install a rule. Were the markup
+    // stored instead, a receipt could apply a price the line never showed.
+    await user.clear(cost)
+    await user.type(cost, '200')
+    await waitFor(() => expect((screen.getByLabelText('Unit cost for Fast Charger') as HTMLInputElement).value).toBe('200'))
+    expect((screen.getByLabelText('New offer price for Fast Charger') as HTMLInputElement).value).toBe('150')
   })
 })

@@ -102,7 +102,7 @@ const SOURCE_FALLBACK_LABEL: Record<AnnouncementLinkSource, string> = {
  * of a choice the merchant made elsewhere, not something they must fix before saving. The row
  * stays fully editable and the save is unaffected.
  *
- * See openspec/changes/align-nav-links-with-home-sections.
+ * See server/openspec/changes/align-nav-links-with-home-sections.
  */
 function HiddenBySectionNotice({ sectionLabel }: { sectionLabel: string }) {
   return (

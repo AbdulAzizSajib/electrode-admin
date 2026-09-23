@@ -30,7 +30,7 @@ export const FONTS_PATH = '/ui/fonts'
  *     replacement picker. The retry then does the two calls the design
  *     specifies: PATCH the settings onto the replacement, then delete.
  *
- * See openspec/changes/add-font-library-and-admin-font, design.md Decision 5.
+ * See server/openspec/changes/add-font-library-and-admin-font, design.md Decision 5.
  */
 export default function FontsListPage() {
   const navigate = useNavigate()

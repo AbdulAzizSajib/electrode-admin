@@ -26,7 +26,7 @@ import { DEFAULT_THEME, useStoreSettings } from '@/lib/api/store-settings'
  * panel looked like before the font was configurable — so the pre-resolution
  * frame reads as normal rather than as a flash of something wrong.
  *
- * See openspec/changes/add-font-library-and-admin-font, design.md Decision 7.
+ * See server/openspec/changes/add-font-library-and-admin-font, design.md Decision 7.
  */
 
 /** Identifies the injected link so it is replaced, never duplicated. */

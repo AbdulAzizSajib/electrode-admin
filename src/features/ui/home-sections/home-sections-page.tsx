@@ -43,6 +43,7 @@ import {
   type NavItem,
   type Newsletter,
 } from '@/lib/api/store-settings'
+import { CategoryLayoutPicker } from '@/features/ui/home-sections/category-layout-picker'
 
 /**
  * Which sections the website's home page is built from, and in what order.
@@ -272,7 +273,7 @@ function SectionRow({
       The storefront hides a header link whose destination this section fills, so the merchant's
       menu changed too — and this row is where they made that decision, so this is where it has
       to be said. Outside the draggable row for the same reason the settings panel is.
-      See openspec/changes/align-nav-links-with-home-sections.
+      See server/openspec/changes/align-nav-links-with-home-sections.
     */}
     {hiddenNavLabels.length > 0 ? (
       <p className="flex items-start gap-1.5 px-3 pb-1 text-xs text-muted-foreground">
@@ -519,6 +520,43 @@ export default function HomeSectionsPage() {
               settings={
                 section.key === 'NEWSLETTER' ? (
                   <NewsletterFields value={newsletter} onChange={setNewsletter} />
+                ) : section.key === 'FEATURED_CATEGORIES' ? (
+                  /*
+                   * THIS SECTION'S LAYOUT IS CHOSEN HERE; THE HERO'S IS NOT.
+                   *
+                   * The hero's picker lives on Home Slider because choosing a
+                   * hero layout changes the upload sizes and slot shapes, which
+                   * only that page can show — a merchant who picks it where those
+                   * consequences are invisible never notices they changed. None
+                   * of that applies to grid-versus-slider for category tiles:
+                   * the tiles are the same size in both, there is no artwork
+                   * guidance to move, and nothing a dedicated screen could draw
+                   * that the two small diagrams cannot. So the tidy answer the
+                   * hero had to reject is right here — the page that owns and
+                   * writes `homeConfig` also edits this field of it, and no
+                   * second writer of that column is introduced.
+                   *
+                   * Written through the same per-section path as the enabled
+                   * switch, so it rides the draft, the unsaved-changes guard,
+                   * and the one Save bar. An unrecognised stored value shows as
+                   * the default for DISPLAY only — the resolve rule the server
+                   * and storefront apply — and is never written back until the
+                   * merchant chooses. Offered whether or not the section is on,
+                   * for the reason on `settings` above.
+                   *
+                   * See server/openspec/changes/add-featured-categories-layout,
+                   * design.md Decisions 2 and 6.
+                   */
+                  <CategoryLayoutPicker
+                    value={section.variant === 'SLIDER' ? 'SLIDER' : 'GRID'}
+                    onChange={(variant) =>
+                      setSections(
+                        sections.map((entry) =>
+                          entry.key === section.key ? { ...entry, variant } : entry,
+                        ),
+                      )
+                    }
+                  />
                 ) : undefined
               }
               hiddenNavLabels={

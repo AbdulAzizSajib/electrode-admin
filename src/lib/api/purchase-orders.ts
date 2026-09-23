@@ -34,6 +34,33 @@ export interface PurchaseOrderLineItem {
   unitCost: string
   /** Decimal column — arrives as a string from the API. */
   totalCost: string
+  /**
+   * Selling prices this line PROPOSES for the item, applied by a goods receipt
+   * rather than when the line is saved.
+   *
+   * Null means "this line has no opinion about that price" — which is what an
+   * untouched line means, and why the form's staged inputs start EMPTY rather
+   * than pre-filled with the current prices. Applied once, on the first
+   * receipt against the line, and not cleared afterwards.
+   *
+   * Decimal columns — strings from the API, like `unitCost` above.
+   */
+  stagedOfferPrice: string | null
+  stagedSellingPrice: string | null
+  /**
+   * The item's prices as the catalog holds them RIGHT NOW, resolved
+   * variant-then-parent field by field. Derived on every read and stored
+   * nowhere: a later product edit changes these and changes nothing about the
+   * order, and they never affect `unitCost`/`totalCost`/any total.
+   *
+   * Numbers, not Decimal strings — the server resolves and converts them
+   * rather than passing columns through, as it does for the settlement figures.
+   */
+  itemPrices?: {
+    purchasePrice: number | null
+    offerPrice: number | null
+    sellingPrice: number | null
+  }
 }
 
 export interface PurchaseOrder {
@@ -70,7 +97,15 @@ export interface PurchaseOrder {
 export interface PurchaseOrderCreateInput {
   supplierId: string
   /** `variantId` is omitted for a simple product and required for a variable one — see `PurchaseOrderLineItem.variantId`. */
-  items: Array<{ productId: string; variantId?: string; quantity: number; unitCost: number }>
+  items: Array<{
+    productId: string
+    variantId?: string
+    quantity: number
+    unitCost: number
+    /** Omit for "no opinion"; a receipt applies what is sent. */
+    stagedOfferPrice?: number
+    stagedSellingPrice?: number
+  }>
   shippingCost?: number
   taxAmount?: number
   notes?: string
@@ -92,7 +127,20 @@ export interface PurchaseOrderCreateInput {
  * recorded as paid, with no way to raise it.
  */
 export interface PurchaseOrderAmendInput {
-  items: Array<{ id?: string; productId: string; variantId?: string; quantity: number; unitCost: number }>
+  items: Array<{
+    id?: string
+    productId: string
+    variantId?: string
+    quantity: number
+    unitCost: number
+    /**
+     * Omitting these CLEARS the line's staged prices — an amendment sends the
+     * line's whole state, so the server writes absent back to null rather than
+     * keeping a proposal the merchant removed from the form.
+     */
+    stagedOfferPrice?: number
+    stagedSellingPrice?: number
+  }>
 }
 
 /** Line items aren't editable via update — use `amendPurchaseOrderItems` for those. Only these scalar fields, plus a pre-receipt status transition. */

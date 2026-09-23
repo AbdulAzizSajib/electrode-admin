@@ -193,7 +193,38 @@ export default function PurchaseOrderDetailPage() {
             <TableBody>
               {po.items.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell className="font-medium text-foreground">{item.product.name}</TableCell>
+                  <TableCell className="font-medium text-foreground">
+                    {item.product.name}
+                    {/*
+                      What this line will do — or already did — to the item's
+                      selling prices.
+                      
+                      A line that staged nothing gains nothing here: the common
+                      case is silent, so a label appearing at all means this
+                      order changes a price. "Sets" before any of the line has
+                      arrived, "Set" once it has, because a staged price is
+                      applied on the FIRST receipt against the line and not
+                      re-applied afterwards.
+                      
+                      See openspec/changes/add-purchase-order-pricing.
+                    */}
+                    {(item.stagedOfferPrice != null || item.stagedSellingPrice != null) && (
+                      <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                        {item.receivedQuantity > 0 ? 'Set' : 'Sets'}{' '}
+                        {[
+                          item.stagedOfferPrice != null
+                            ? `offer ${formatCurrency(Number(item.stagedOfferPrice))}`
+                            : null,
+                          item.stagedSellingPrice != null
+                            ? `regular ${formatCurrency(Number(item.stagedSellingPrice))}`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                        {item.receivedQuantity > 0 ? '' : ' on receipt'}
+                      </span>
+                    )}
+                  </TableCell>
                   {/* An em dash, not blank: a simple product has no variant to name,
                       which is different from one whose variant went unrecorded. */}
                   <TableCell className="text-muted-foreground">{item.variant?.name ?? '—'}</TableCell>

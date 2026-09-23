@@ -35,12 +35,55 @@ import type { HeroVariant } from '@/lib/api/store-settings'
  * than being overloaded — a call site that still passes no layout should fail
  * to compile, not silently quote the default's numbers.
  *
+ * ── Why one box ─────────────────────────────────────────────────────────
+ *
+ * EVERY LAYOUT PAINTS THE SAME OUTER BOX. Only the arrangement inside differs.
+ * The reference is SPLIT_THREE, whose height is its side column — two square
+ * tiles over a 43:20 promo, 0.415 x row + 8px — and the other two layouts fit
+ * inside a box of that shape rather than choosing their own: FULL_SLIDER fills
+ * it with one panel, SLIDER_STACK puts a row of 43:20 tiles along the bottom
+ * and lets its slider take what is left, and SPLIT_TALL stands one 19:24 tile
+ * in the right third — a third of the row at 19:24 is the box's height exactly.
+ *
+ * Before this the three layouts were 579, 459 and 811px tall at a 1440 content
+ * width. A merchant trying layouts saw the entire page below the hero jump by
+ * up to 350px on every click, which reads as the layouts being different
+ * PAGES rather than different arrangements of one hero.
+ *
+ * `HERO_RATIO` (19:8) is that box. It is the column's ratio to within 4px at
+ * every content width from 1140 to 1920 — the 8px gap keeps it from being an
+ * exact ratio, and CSS `aspect-ratio` cannot express "+8px". The test asserts
+ * the three heights agree within that.
+ *
+ * ── Why stated upload sizes ─────────────────────────────────────
+ *
+ * The SHAPES here are derived; the SIZE each slot asks a merchant to export is
+ * not. `recommended` was 2x the widest rendering, which is exactly right and
+ * unusable: it produced 1720x1290, 644x644, 1320x614 and 1002x752. A merchant
+ * reading "644 px × 644 px" cannot tell whether they misread it, and types it
+ * into an image editor wrong. So each layout STATES a round size per slot in
+ * `HERO_GEOMETRY[...].upload`.
+ *
+ * Two invariants replace what the derivation guaranteed for free, and
+ * `hero-slots.test.ts` enforces both for every slot of every layout:
+ *
+ *   1. WHOLE PIXELS on both axes — no merchant can export a 614.3px image.
+ *   2. Within `RATIO_TOLERANCE` of the slot's real ratio. If a stated size
+ *      drifted past that, artwork cut to the size THIS PANEL ASKED FOR would
+ *      trip the panel's own crop warning — the page calling its own advice
+ *      wrong, which is worse than no advice.
+ *
+ * The undersized check still compares against `widest()`, not against the
+ * stated size, so lowering a stated figure below what the slot paints is caught
+ * as blur rather than passing silently.
+ *
  * THIS STAYS ONE SOURCE driving four things that would otherwise drift apart:
  * the size guidance beside each upload control, the aspect ratio of the empty
  * placeholder, the threshold the upload warning checks against, and the
  * "renders at" figure the editor shows for the merchant's own width.
  *
- * MUST MATCH `frontend/src/components/home/hero/` EXACTLY, layout by layout.
+ * MUST MATCH `nextjs/src/components/home/hero/` EXACTLY, layout by layout.
+ * (The openspec docs call that directory `frontend/`; the workspace is `nextjs/`.)
  * Each component there carries its geometry in a comment block for this file to
  * copy. See openspec/changes/add-hero-section-variants-admin, design.md
  * Decisions 1 and 7.
@@ -65,6 +108,14 @@ export const WIDEST_CONTENT_WIDTH = 1600
  */
 export const FULL_WIDTH_REFERENCE = 1920
 
+/**
+ * The outer box every layout paints, as width : height. See "Why one box" in
+ * the header. MUST MATCH `lg:aspect-19/8` on the storefront's HeroFullSlider
+ * and HeroSliderStack — SPLIT_THREE does not declare it because its box IS
+ * this ratio, derived from its tiles.
+ */
+export const HERO_RATIO = 19 / 8
+
 export type HeroPlacement = Extract<
   BannerPlacement,
   'HERO_SLIDER' | 'HERO_SIDE' | 'HERO_PROMO'
@@ -79,21 +130,37 @@ export interface Size {
  * One layout's geometry, in the same terms its storefront component uses.
  *
  * `sideColumnFraction` is the share of the row the right-hand column takes in
- * the two split layouts; the wide layouts leave it undefined because they have
- * no side column. `sliderRatio` is likewise only meaningful where the slider
- * has a ratio of its own rather than stretching to a column's height.
+ * the split layout; the wide layouts leave it undefined because they have no
+ * side column. `stacked` marks those wide layouts: the slider spans the row and
+ * any tiles sit in a grid beneath it, all inside the shared `HERO_RATIO` box.
+ *
+ * NO LAYOUT HAS A SLIDER RATIO OF ITS OWN. In every layout the slider stretches
+ * to whatever the box leaves it — beside the side column in SPLIT_THREE,
+ * above the tile row in SLIDER_STACK, the whole box in FULL_SLIDER. That is
+ * what keeps the three heights equal.
  */
 interface HeroGeometry {
   /** The share of the row a right-hand column takes, where there is one. */
   sideColumnFraction?: number
-  /** The slider's own aspect ratio, where it has one rather than stretching. */
-  sliderRatio?: number
+  /** The wide arrangement: slider across the row, tiles in a grid beneath. */
+  stacked?: true
   /** How many banners each slot renders. `null` = unbounded. */
   capacity: { HERO_SLIDER: number | null; HERO_SIDE: number; HERO_PROMO: number }
   /** Each rendered tile's aspect ratio. */
   tileRatio: { HERO_SIDE: number; HERO_PROMO: number }
   /** Tiles per row, for the layouts whose tiles sit in a grid. */
   tilesPerRow: number
+  /**
+   * What this layout tells a merchant to export, per slot, in whole pixels.
+   *
+   * STATED, NOT DERIVED, and that is the whole point of it — see the
+   * "Why stated upload sizes" block in this module's header. Every pair here
+   * must be a WHOLE NUMBER on both axes and must sit within `RATIO_TOLERANCE`
+   * of the slot's real ratio, or artwork cut to the size this panel asked for
+   * would draw the panel's own crop warning. `hero-slots.test.ts` asserts both,
+   * for every slot of every layout.
+   */
+  upload: { HERO_SLIDER: Size; HERO_SIDE: Size; HERO_PROMO: Size }
 }
 
 export const HERO_GEOMETRY: Record<HeroVariant, HeroGeometry> = {
@@ -107,35 +174,78 @@ export const HERO_GEOMETRY: Record<HeroVariant, HeroGeometry> = {
     capacity: { HERO_SLIDER: null, HERO_SIDE: 2, HERO_PROMO: 1 },
     tileRatio: { HERO_SIDE: 1, HERO_PROMO: 43 / 20 },
     tilesPerRow: 2,
+    // 4:3, 1:1 and 43:20 exactly. The promo is 1720x800 rather than a rounder
+    // 1700x790 because 43:20 divides 1720 cleanly and nothing else near that
+    // size does.
+    upload: {
+      HERO_SLIDER: { width: 1800, height: 1350 },
+      HERO_SIDE: { width: 1400, height: 1400 },
+      HERO_PROMO: { width: 1720, height: 800 },
+    },
   },
 
-  /**
-   * Slider left, ONE square tile filling the same 43% column. Square rather
-   * than portrait so the hero stays about as tall as the default — 592px
-   * against 579 at a 1440 content width — instead of pushing the first product
-   * row most of a screen further down.
-   */
-  SPLIT_ONE: {
-    sideColumnFraction: 0.43,
-    capacity: { HERO_SLIDER: null, HERO_SIDE: 1, HERO_PROMO: 0 },
-    tileRatio: { HERO_SIDE: 1, HERO_PROMO: 43 / 20 },
-    tilesPerRow: 1,
-  },
-
-  /** One slider across the whole row at 3:1, and nothing else. */
+  /** One slider filling the whole 19:8 box, and nothing else. */
   FULL_SLIDER: {
-    sliderRatio: 3,
+    stacked: true,
     capacity: { HERO_SLIDER: null, HERO_SIDE: 0, HERO_PROMO: 0 },
     tileRatio: { HERO_SIDE: 1, HERO_PROMO: 43 / 20 },
     tilesPerRow: 3,
+    // 2850x1200 is 19:8 exactly, and comfortably over the 1536px this paints
+    // at its widest. The two unrendered slots keep SPLIT_THREE's sizes so the
+    // "not used by this layout" group has a figure to show.
+    upload: {
+      HERO_SLIDER: { width: 2850, height: 1200 },
+      HERO_SIDE: { width: 1400, height: 1400 },
+      HERO_PROMO: { width: 1720, height: 800 },
+    },
   },
 
-  /** Full-width 3:1 slider above a row of three 4:3 tiles. */
+  /**
+   * A row of three 43:20 tiles along the bottom of the 19:8 box, and a slider
+   * stretching to fill what is above them.
+   *
+   * The tiles are 43:20 — the same shape as SPLIT_THREE's promo tile — so a
+   * merchant's promo artwork renders uncropped in both layouts. Fitting a
+   * whole extra row into the shared box is what makes the slider short here:
+   * 1376x355 at a 1440 content width, about 3.9:1.
+   */
   SLIDER_STACK: {
-    sliderRatio: 3,
+    stacked: true,
     capacity: { HERO_SLIDER: null, HERO_SIDE: 2, HERO_PROMO: 1 },
-    tileRatio: { HERO_SIDE: 4 / 3, HERO_PROMO: 4 / 3 },
+    tileRatio: { HERO_SIDE: 43 / 20, HERO_PROMO: 43 / 20 },
     tilesPerRow: 3,
+    // 3100x800 is 3.875:1, within 0.3% of the 3.86:1 the slider paints at its
+    // widest. All three tiles are one shape and ask for one file — the same
+    // file as SPLIT_THREE's promo.
+    upload: {
+      HERO_SLIDER: { width: 3100, height: 800 },
+      HERO_SIDE: { width: 1720, height: 800 },
+      HERO_PROMO: { width: 1720, height: 800 },
+    },
+  },
+
+  /**
+   * Slider left, one TALL tile filling the right third.
+   *
+   * The tile is a third of the row at 19:24 — chosen because (row / 3) x
+   * (24 / 19) is row x 8 / 19, the shared box's height exactly. So this is the
+   * one layout whose height matches SPLIT_THREE's to the pixel rather than to
+   * within a rounding gap. The slider stretches to it, as in every split
+   * layout, and is about 1.56:1 as a result.
+   */
+  SPLIT_TALL: {
+    sideColumnFraction: 1 / 3,
+    capacity: { HERO_SLIDER: null, HERO_SIDE: 0, HERO_PROMO: 1 },
+    tileRatio: { HERO_SIDE: 19 / 24, HERO_PROMO: 19 / 24 },
+    tilesPerRow: 1,
+    // 950x1200 is 19:24 exactly; 1560x1000 is within 0.1% of the 1.559:1 the
+    // slider paints at its widest. HERO_SIDE is unrendered here and keeps
+    // SPLIT_THREE's size so the "not used by this layout" group has a figure.
+    upload: {
+      HERO_SLIDER: { width: 1560, height: 1000 },
+      HERO_SIDE: { width: 1400, height: 1400 },
+      HERO_PROMO: { width: 950, height: 1200 },
+    },
   },
 }
 
@@ -171,14 +281,19 @@ export function renderedSize(
   const geometry = HERO_GEOMETRY[variant]
   const row = (contentWidth === 'full' ? FULL_WIDTH_REFERENCE : contentWidth) - CONTENT_PADDING
 
-  // The wide layouts: the slider is the whole row and the tiles, where there
-  // are any, sit in a grid beneath it.
-  if (geometry.sliderRatio !== undefined) {
+  // The wide layouts: the box is `HERO_RATIO`, the tiles (where there are
+  // any) sit in a grid along its bottom, and the slider takes what is above
+  // them — the whole box when there are none.
+  if (geometry.stacked) {
+    const box = row / HERO_RATIO
+    const tile = (row - HERO_GAP * (geometry.tilesPerRow - 1)) / geometry.tilesPerRow
+
     if (placement === 'HERO_SLIDER') {
-      return { width: Math.round(row), height: Math.round(row / geometry.sliderRatio) }
+      const hasTiles = geometry.capacity.HERO_SIDE + geometry.capacity.HERO_PROMO > 0
+      const tileRow = hasTiles ? tile / geometry.tileRatio.HERO_SIDE + HERO_GAP : 0
+      return { width: Math.round(row), height: Math.round(box - tileRow) }
     }
 
-    const tile = (row - HERO_GAP * (geometry.tilesPerRow - 1)) / geometry.tilesPerRow
     return {
       width: Math.round(tile),
       height: Math.round(tile / geometry.tileRatio[placement]),
@@ -205,12 +320,13 @@ export function renderedSize(
   }
 
   // HERO_SLIDER: takes what the side column leaves and stretches to its height,
-  // so the two columns share a bottom edge at every content width.
-  const sideTileHeight = renderedSize(variant, 'HERO_SIDE', contentWidth).height
-  const columnHeight =
-    geometry.capacity.HERO_PROMO > 0
-      ? sideTileHeight + HERO_GAP + renderedSize(variant, 'HERO_PROMO', contentWidth).height
-      : sideTileHeight
+  // so the two columns share a bottom edge at every content width. The column
+  // is whichever tiles this layout renders, stacked with a gap between — both
+  // in SPLIT_THREE, the promo alone in SPLIT_TALL.
+  const parts = (['HERO_SIDE', 'HERO_PROMO'] as const)
+    .filter((p) => geometry.capacity[p] > 0)
+    .map((p) => renderedSize(variant, p, contentWidth).height)
+  const columnHeight = parts.reduce((sum, h) => sum + h, 0) + HERO_GAP * (parts.length - 1)
 
   return {
     width: Math.round(row - sideColumn - HERO_GAP),
@@ -222,11 +338,19 @@ export function renderedSize(
 const widest = (variant: HeroVariant, placement: HeroPlacement): Size =>
   renderedSize(variant, placement, WIDEST_CONTENT_WIDTH)
 
-/** 2x, for a high-DPI display. Derived rather than typed out, so it cannot drift. */
-const forUpload = (variant: HeroVariant, placement: HeroPlacement): Size => {
-  const { width, height } = widest(variant, placement)
-  return { width: width * 2, height: height * 2 }
-}
+/**
+ * What the panel tells a merchant to export for this slot of this layout.
+ *
+ * READ FROM `HERO_GEOMETRY[variant].upload`, not computed. It used to be 2x
+ * `widest()`, which was correct to the pixel and useless to a human: it asked
+ * for 1720x1290, 644x644, 1320x614 and 1002x752, none of which a merchant can
+ * hold in their head or set up in an image editor without reading it twice. A
+ * stated size is a round one, and `hero-slots.test.ts` holds it to the two
+ * things the derivation gave for free — whole numbers, and the slot's real
+ * ratio to within `RATIO_TOLERANCE`.
+ */
+const forUpload = (variant: HeroVariant, placement: HeroPlacement): Size =>
+  HERO_GEOMETRY[variant].upload[placement]
 
 /** How each slot is described, per layout — the count and the position both move. */
 const SLOT_COPY: Record<HeroVariant, Record<HeroPlacement, { label: string; description: string }>> =
@@ -243,20 +367,6 @@ const SLOT_COPY: Record<HeroVariant, Record<HeroPlacement, { label: string; desc
       HERO_PROMO: {
         label: 'Promo tile',
         description: 'The wide tile beneath the side tiles.',
-      },
-    },
-    SPLIT_ONE: {
-      HERO_SLIDER: {
-        label: 'Hero slider',
-        description: 'The large rotating panel on the left of the homepage hero.',
-      },
-      HERO_SIDE: {
-        label: 'Side tile',
-        description: 'The single large square image on the right. This layout has one position.',
-      },
-      HERO_PROMO: {
-        label: 'Promo tile',
-        description: 'Not shown by this layout.',
       },
     },
     FULL_SLIDER: {
@@ -279,6 +389,17 @@ const SLOT_COPY: Record<HeroVariant, Record<HeroPlacement, { label: string; desc
       HERO_PROMO: {
         label: 'Promo tile',
         description: 'The third tile in the row beneath the slider.',
+      },
+    },
+    SPLIT_TALL: {
+      HERO_SLIDER: {
+        label: 'Hero slider',
+        description: 'The wide rotating panel on the left, two thirds of the hero.',
+      },
+      HERO_SIDE: { label: 'Side tile', description: 'Not shown by this layout.' },
+      HERO_PROMO: {
+        label: 'Promo tile',
+        description: 'The tall tile filling the right third. This layout has one position.',
       },
     },
   }

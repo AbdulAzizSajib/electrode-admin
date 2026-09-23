@@ -30,7 +30,9 @@ import {
   type DragHandleProps,
 } from '@/features/ui/components/reorderable-list'
 import {
+  HERO_GEOMETRY,
   HERO_PLACEMENTS,
+  formatRatio,
   formatSize,
   getHeroSlot,
   heroSlots,
@@ -81,7 +83,8 @@ import { cn } from '@/lib/utils/cn'
  * the sizes now live in the editor dialog beside the upload control.
  */
 const PAGE_DESCRIPTION =
-  'The homepage hero, laid out as the storefront renders it in the layout you have chosen.'
+  'The homepage hero, laid out as the storefront renders it in the layout you have chosen. ' +
+  'Each slot shows the pixel size to export its artwork at.'
 
 export default function HomeSliderPage() {
   // One request for all three placements: `GET /banners/admin` returns every
@@ -126,6 +129,19 @@ export default function HomeSliderPage() {
   const [editing, setEditing] = React.useState<{ slot: HeroSlot; banner: Banner | null } | null>(null)
 
   /**
+   * The layout being written, or null.
+   *
+   * NOT `updateSettings.isPending`. `useUpdateStoreSettings` is one shared
+   * mutation across every settings editor, so its pending flag is true while
+   * ANY of them is saving — and it stays true for a mutation this page never
+   * started. Disabling the picker on it makes the whole control dead for
+   * reasons a merchant cannot see and clicking cannot clear, which is
+   * indistinguishable from the picker being broken. This state is owned by this
+   * page and cleared in a `finally`.
+   */
+  const [savingVariant, setSavingVariant] = React.useState<HeroVariant | null>(null)
+
+  /**
    * Writes the chosen layout, and nothing else.
    *
    * REFETCHES FIRST. `homeConfig` is replaced wholesale by a save, and the Home
@@ -135,6 +151,12 @@ export default function HomeSliderPage() {
    * changed in what comes back. See design.md Decision 2.
    */
   const chooseVariant = async (next: HeroVariant) => {
+    // Already the chosen layout — Radix fires `onValueChange` for a click on
+    // the selected card too, and a save that writes the value already stored
+    // would flash a success toast for a no-op.
+    if (next === variant) return
+
+    setSavingVariant(next)
     try {
       const fresh = await refetchSettings()
       const current = fresh.data?.homeConfig ?? settings?.homeConfig ?? DEFAULT_HOME_CONFIG
@@ -155,6 +177,11 @@ export default function HomeSliderPage() {
         description: err instanceof Error ? err.message : undefined,
         variant: 'destructive',
       })
+    } finally {
+      // In a `finally`, so a refused save re-enables the picker. Left set, the
+      // merchant's only way out of a failed layout change would be a page
+      // reload.
+      setSavingVariant(null)
     }
   }
 
@@ -280,7 +307,8 @@ export default function HomeSliderPage() {
    * first way would break this page's one promise — that a merchant can see
    * which box they are editing.
    */
-  const stacked = variant === 'FULL_SLIDER' || variant === 'SLIDER_STACK'
+  const stacked = HERO_GEOMETRY[variant].stacked === true
+  const sideFraction = HERO_GEOMETRY[variant].sideColumnFraction ?? 0
 
   const slides = visible('HERO_SLIDER')
   const sideTiles = visible('HERO_SIDE')
@@ -314,7 +342,7 @@ export default function HomeSliderPage() {
       <VariantPicker
         value={variant}
         onChange={(next) => void chooseVariant(next)}
-        disabled={updateSettings.isPending}
+        saving={savingVariant}
       />
 
       {/*
@@ -361,10 +389,25 @@ export default function HomeSliderPage() {
 
         {(sideSlot || promoSlot) && (
           <div
+            /*
+             * The layout's own share of the row, NOT a fixed width.
+             *
+             * This was `xl:w-96` — a hardcoded 384px. It happened to look
+             * right at one panel width, and at every other one the drawn
+             * column stopped agreeing with the storefront's, so the page
+             * showed an arrangement the storefront does not render — the one
+             * thing it exists not to do.
+             *
+             * Read from `HERO_GEOMETRY.sideColumnFraction` (43% in SPLIT_THREE,
+             * a third in SPLIT_TALL) through a CSS variable, so there is no
+             * per-layout class here to fall out of step with the geometry or
+             * with the storefront's `lg:w-[43%]` / `lg:w-1/3`.
+             */
+            style={stacked ? undefined : { ['--side' as string]: `${sideFraction * 100}%` }}
             className={
               stacked
                 ? 'grid w-full grid-cols-1 gap-4 lg:grid-cols-2'
-                : 'flex w-full flex-col gap-4 xl:w-96 xl:flex-none'
+                : 'flex w-full flex-col gap-4 xl:w-(--side) xl:flex-none'
             }
           >
             {sideSlot && (
@@ -469,19 +512,50 @@ export default function HomeSliderPage() {
 }
 
 /**
- * A titled region for one slot type, carrying its count and add action.
+ * The artwork size for one slot, as a merchant would type it into an editor.
  *
- * No longer prints the size guidance. `SlotEditorDialog` prints the identical
- * three-part string — recommended size, ratio, rendered size — directly above
- * the file input, WITH the content width named, which this could not fit. The
- * spec's requirement is that the size appear beside the control that uploads
- * it, and the dialog is that control; the copy here sat beside a heading
- * instead, restating it before the merchant had decided to add anything.
+ * Deliberately a whole-pixel pair and nothing else. The figures come from
+ * `heroSlots(variant)`, which STATES a round size per slot per layout rather
+ * than deriving one — see hero-slots.ts, "Why stated upload sizes". Before
+ * that, this line would have read "644 px × 644 px", and a badge a merchant
+ * has to re-read is worse than no badge.
  *
- * It was also the densest line on the page — three figures per section, nine
- * across a hero with nothing in it yet — competing with the artwork the page
- * exists to show. `EmptySlot` still carries the size where a merchant is
- * actually about to act.
+ * THE ONLY PLACE THIS PAGE PRINTS A SIZE. `EmptySlot` used to print it as well,
+ * which showed an empty slot the same figure twice — and via `formatSize`, so
+ * the panel spells a size exactly one way wherever it appears.
+ */
+function SlotSizeBadge({ slot }: { slot: HeroSlot }) {
+  return (
+    <span
+      title={`Export at ${formatSize(slot.recommended)} — aspect ratio ${formatRatio(slot.recommended)}`}
+      className="rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[11px] font-normal tabular-nums text-muted-foreground"
+    >
+      {formatSize(slot.recommended)}
+    </span>
+  )
+}
+
+/**
+ * A titled region for one slot type, carrying its count, its artwork size and
+ * its add action.
+ *
+ * THE SIZE IS ON THE HEADING, not only in the upload dialog. It sat in the
+ * dialog alone for a while, on the reasoning that the spec asks for the size
+ * beside the control that uploads it and three figures per section was the
+ * densest line on the page. Both were true and the conclusion was wrong: a
+ * merchant makes hero artwork BEFORE opening this panel, and a size that only
+ * appears once they have already picked a file is a size they learn too late.
+ * They would export at a guess, upload, read the crop warning, and go back to
+ * their editor.
+ *
+ * So the heading carries the one figure that answers "what do I export" — the
+ * pixel size and its ratio, and nothing else. The dialog still prints the full
+ * three-part string with the store's own content width named, which is the
+ * detail that genuinely belongs beside the file input rather than above the
+ * whole section.
+ *
+ * The size shown is THIS LAYOUT'S. Every slot is sized by `heroSlots(variant)`,
+ * so switching layout changes these numbers — which is the point of them.
  */
 function SlotSection({
   slot,
@@ -498,13 +572,18 @@ function SlotSection({
   return (
     <Card className="flex flex-col gap-3 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm font-medium text-foreground">
+        <span className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-sm font-medium text-foreground">
           {slot.label}
           {slot.capacity !== null && (
-            <span className="ml-1.5 text-xs font-normal tabular-nums text-muted-foreground">
+            <span className="text-xs font-normal tabular-nums text-muted-foreground">
               {count} of {slot.capacity}
             </span>
           )}
+          {/* What to export, for THIS layout. `title` carries the ratio rather
+              than a second badge: the ratio matters when a merchant is deciding
+              whether an existing file fits, which is a question they ask about
+              one slot at a time, not while scanning the page. */}
+          <SlotSizeBadge slot={slot} />
         </span>
         {/* At capacity the count above already says so — "2 of 2" beside a
             missing Add button is the same sentence as "The layout has exactly
@@ -520,7 +599,19 @@ function SlotSection({
   )
 }
 
-/** A proportioned placeholder, so an empty slot reads as the shape it will become. */
+/**
+ * A proportioned placeholder, so an empty slot reads as the shape it will become.
+ *
+ * DOES NOT PRINT THE SIZE. `SlotSizeBadge` on the section heading directly
+ * above carries it, and it carries it whether the slot is empty or full — so
+ * printing it here too showed an empty slot the same figure twice, two lines
+ * apart and in two different formats ("1400 × 1400 px" against
+ * "1400 px × 1400 px"). A merchant reading the same number twice stops to work
+ * out which one is the real one.
+ *
+ * The SHAPE is still stated here, by `aspectRatio` — which is the thing a
+ * placeholder can say that a badge cannot.
+ */
 function EmptySlot({ slot, onAdd }: { slot: HeroSlot; onAdd: () => void }) {
   return (
     <button
@@ -531,7 +622,6 @@ function EmptySlot({ slot, onAdd }: { slot: HeroSlot; onAdd: () => void }) {
     >
       <Plus className="size-5" />
       <span className="text-xs font-medium">Add {slot.label.toLowerCase()}</span>
-      <span className="text-[11px]">{formatSize(slot.recommended)}</span>
     </button>
   )
 }

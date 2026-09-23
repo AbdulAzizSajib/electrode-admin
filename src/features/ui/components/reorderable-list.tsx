@@ -22,7 +22,7 @@ import { moveItem } from '@/features/ui/components/settings-editor-utils'
  * not render those itself: it does not own the row's layout, and a caller that
  * forgets them has shipped a list some of its users cannot reorder at all.
  *
- * See openspec/changes/add-homepage-section-toggles, design.md Decision 7.
+ * See server/openspec/changes/add-homepage-section-toggles, design.md Decision 7.
  */
 export interface DragHandleProps {
   draggable: true
