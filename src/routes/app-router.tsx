@@ -71,6 +71,7 @@ const CampaignsListPage = lazy(() => import('@/features/marketing/campaigns/camp
 const CampaignFormPage = lazy(() => import('@/features/marketing/campaigns/campaign-form-page'))
 const CampaignDetailPage = lazy(() => import('@/features/marketing/campaigns/campaign-detail-page'))
 const BannersPage = lazy(() => import('@/features/ui/banners/banners-page'))
+const PromoBannersPage = lazy(() => import('@/features/ui/promo-banners/promo-banners-page'))
 const BannerFormPage = lazy(() => import('@/features/ui/banners/banner-form-page'))
 const PagesListPage = lazy(() => import('@/features/ui/pages/pages-list-page'))
 const PageFormPage = lazy(() => import('@/features/ui/pages/page-form-page'))
@@ -277,6 +278,7 @@ export function AppRouter() {
             <Route path="/ui/banners" element={<BannersPage />} />
             <Route path="/ui/banners/new" element={<BannerFormPage />} />
             <Route path="/ui/banners/:bannerId" element={<BannerFormPage />} />
+            <Route path="/ui/promo-banners" element={<PromoBannersPage />} />
             <Route path="/ui/header-links" element={<HeaderLinksPage />} />
             <Route path="/ui/footer-links" element={<FooterLinksPage />} />
             <Route path="/ui/catalog-settings" element={<CatalogSettingsPage />} />

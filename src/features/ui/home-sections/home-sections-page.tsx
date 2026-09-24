@@ -1,6 +1,11 @@
 import * as React from 'react'
 import { Link } from 'react-router'
 import {
+  PROMO_LAYOUT_LABEL,
+  usePromoBannerGroups,
+  type PromoBannerGroup,
+} from '@/lib/api/promo-banner-groups'
+import {
   ArrowDown,
   ArrowUp,
   ChevronDown,
@@ -35,6 +40,7 @@ import {
   useUpdateStoreSettings,
   DEFAULT_HOME_CONFIG,
   HOME_SECTION_REGISTRY,
+  PROMO_SECTION_KEY,
   SECTION_LINKED_ROUTES,
   type HomeConfig,
   type HomeSection,
@@ -44,6 +50,7 @@ import {
   type Newsletter,
 } from '@/lib/api/store-settings'
 import { CategoryLayoutPicker } from '@/features/ui/home-sections/category-layout-picker'
+import { ProductRowLayoutPicker } from '@/features/ui/home-sections/product-row-layout-picker'
 
 /**
  * Which sections the website's home page is built from, and in what order.
@@ -78,6 +85,16 @@ const DESCRIPTION =
 
 /** Look-up from key to the merchant-facing name and description. */
 const SECTION_INFO = new Map(HOME_SECTION_REGISTRY.map((section) => [section.key, section]))
+
+/**
+ * The rows that render products and offer a grid-or-slider choice.
+ *
+ * Mirrors the three `PRODUCT_ROW_VARIANTS` entries in the backend's
+ * `HOME_SECTION_VARIANTS`. `DEAL_OF_WEEK` renders products too and is
+ * deliberately absent: its cards share a grid with a countdown panel, so it
+ * offers no choice and the backend rejects a layout on it.
+ */
+const PRODUCT_ROW_KEYS: HomeSectionKey[] = ['BEST_SELLING', 'FEATURED_PRODUCTS', 'NEW_ARRIVALS']
 
 /**
  * Which header links each section would hide if it were switched off, by their stored labels.
@@ -135,6 +152,7 @@ function SectionRow({
   onToggle,
   settings,
   hiddenNavLabels,
+  promoGroup,
 }: {
   section: HomeSection
   index: number
@@ -149,11 +167,41 @@ function SectionRow({
    * the merchant has a link pointing at a destination this section fills.
    */
   hiddenNavLabels: string[]
+  /** This row's promo strip, when the row is a promo entry. Names the row. */
+  promoGroup?: PromoBannerGroup
 }) {
   const info = SECTION_INFO.get(section.key)
-  const switchId = `home-section-${section.key}`
-  const panelId = `home-section-${section.key}-settings`
+
+  /*
+   * IDs CARRY THE GROUP, because `MID_BANNERS` appears once per promo strip and
+   * a duplicated `id` makes every `htmlFor` on the page point at the first row's
+   * switch — clicking the third strip's label would toggle the first. The
+   * `?? ''` keeps the id stable for the eleven sections that carry no group.
+   */
+  const rowId = `${section.key}${section.groupId ? `-${section.groupId}` : ''}`
+  const switchId = `home-section-${rowId}`
+  const panelId = `home-section-${rowId}-settings`
   const [open, setOpen] = React.useState(false)
+
+  /*
+   * A promo row is named after its GROUP, not after the section.
+   *
+   * With several strips on a page, three rows all reading "Promo banners" tell
+   * a merchant nothing about which one they are reordering or switching off —
+   * the name they gave the strip is the only thing that distinguishes them.
+   * Falls back to the registry label for a row whose group has not loaded yet.
+   */
+  const rowLabel =
+    section.key === PROMO_SECTION_KEY
+      ? (promoGroup?.name ?? info?.label ?? section.key)
+      : (info?.label ?? section.key)
+
+  const rowDescription =
+    section.key === PROMO_SECTION_KEY
+      ? promoGroup
+        ? `Promo banners · ${PROMO_LAYOUT_LABEL[promoGroup.layout].label.toLowerCase()} · ${promoGroup.bannerCount} image${promoGroup.bannerCount === 1 ? '' : 's'}`
+        : 'A promotional banner strip.'
+      : info?.description
 
   return (
     /*
@@ -176,9 +224,9 @@ function SectionRow({
 
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <Label htmlFor={switchId} className="cursor-pointer">
-          {info?.label ?? section.key}
+          {rowLabel}
         </Label>
-        <span className="text-xs text-muted-foreground">{info?.description}</span>
+        <span className="text-xs text-muted-foreground">{rowDescription}</span>
 
         {/*
           READ-ONLY, and a link rather than a control. The hero's arrangement is
@@ -225,7 +273,7 @@ function SectionRow({
             onClick={() => setOpen((wasOpen) => !wasOpen)}
             aria-expanded={open}
             aria-controls={panelId}
-            aria-label={`${open ? 'Hide' : 'Show'} ${info?.label ?? section.key} settings`}
+            aria-label={`${open ? 'Hide' : 'Show'} ${rowLabel} settings`}
           >
             <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
           </Button>
@@ -236,7 +284,7 @@ function SectionRow({
           variant="ghost"
           disabled={index === 0}
           onClick={() => onMove(index, index - 1)}
-          aria-label={`Move ${info?.label ?? section.key} up`}
+          aria-label={`Move ${rowLabel} up`}
         >
           <ArrowUp className="size-4" />
         </Button>
@@ -246,7 +294,7 @@ function SectionRow({
           variant="ghost"
           disabled={index === count - 1}
           onClick={() => onMove(index, index + 1)}
-          aria-label={`Move ${info?.label ?? section.key} down`}
+          aria-label={`Move ${rowLabel} down`}
         >
           <ArrowDown className="size-4" />
         </Button>
@@ -254,7 +302,7 @@ function SectionRow({
           id={switchId}
           checked={section.enabled}
           onCheckedChange={onToggle}
-          aria-label={`Show ${info?.label ?? section.key}`}
+          aria-label={`Show ${rowLabel}`}
         />
       </div>
     </div>
@@ -368,6 +416,9 @@ function NewsletterFields({
 
 export default function HomeSectionsPage() {
   const { data, isLoading, error } = useStoreSettings()
+  // Names the promo rows below. Its own query rather than part of the settings
+  // read: a strip's name changes far more often than the rest of this payload.
+  const { data: promoGroups } = usePromoBannerGroups()
   const updateMutation = useUpdateStoreSettings()
 
   /*
@@ -404,6 +455,18 @@ export default function HomeSectionsPage() {
   const known = new Set<HomeSectionKey>(HOME_SECTION_REGISTRY.map((s) => s.key))
 
   /*
+   * The promo strips, so each promo row can name itself.
+   *
+   * Read-only here. This page owns `homeConfig` — where a strip sits and whether
+   * it is on — while the strip's NAME, LAYOUT and ARTWORK belong to the Promo
+   * Banners manager. Two screens writing one row is the hazard the hero's layout
+   * picker was moved to Home Slider to avoid, and the same answer applies.
+   */
+  const promoGroupsById = new Map(
+    (promoGroups ?? []).map((group) => [group.id, group] as const),
+  )
+
+  /*
    * What the merchant edits: their stored order with anything unrecognised dropped and anything
    * missing appended, enabled. The appended-at-the-end placement is a deliberate simplification of
    * the backend's rule (which splices at the registry position) — the merchant can see the new row
@@ -421,8 +484,26 @@ export default function HomeSectionsPage() {
    */
   const sections: HomeConfig = [
     ...stored.filter((section) => known.has(section.key)),
+    /*
+     * PROMO_SECTION_KEY IS EXCLUDED FROM THE APPEND, and that exclusion is
+     * load-bearing.
+     *
+     * This append exists to surface a section the store has never saved. It
+     * cannot do that for promo banners: a promo entry must NAME a group, and
+     * "which group" has no answer here — the key alone does not identify the
+     * row. Appending a groupless `{ key: 'MID_BANNERS', enabled: true }` would
+     * be rejected by the server's write schema, so the merchant's next save
+     * from this page would fail outright with an error about a section they
+     * never touched.
+     *
+     * Promo strips reach this list a different way: the server splices an entry
+     * in per group on read, so a newly created strip is already in `stored` by
+     * the time this page loads it.
+     */
     ...HOME_SECTION_REGISTRY.filter(
-      (entry) => !stored.some((section) => section.key === entry.key),
+      (entry) =>
+        entry.key !== PROMO_SECTION_KEY &&
+        !stored.some((section) => section.key === entry.key),
     ).map((entry) => ({ key: entry.key, enabled: true })),
   ]
 
@@ -508,12 +589,23 @@ export default function HomeSectionsPage() {
               section={section}
               index={index}
               count={sections.length}
+              promoGroup={section.groupId ? promoGroupsById.get(section.groupId) : undefined}
               dragHandleProps={dragHandleProps}
               onMove={(from, to) => setSections(moveItem(sections, from, to))}
               onToggle={(enabled) =>
                 setSections(
-                  sections.map((entry) =>
-                    entry.key === section.key ? { ...entry, enabled } : entry,
+                  sections.map((entry, entryIndex) =>
+                    /*
+                     * MATCHED BY POSITION, NOT BY KEY.
+                     *
+                     * `MID_BANNERS` appears once per promo strip, so
+                     * `entry.key === section.key` would switch EVERY promo strip
+                     * on or off together — the merchant toggles one row and
+                     * three change. The index is the only identity that is
+                     * unambiguous for every row in this list, and it is exactly
+                     * what the drag-reorder above already works in.
+                     */
+                    entryIndex === index ? { ...entry, enabled } : entry,
                   ),
                 )
               }
@@ -551,8 +643,47 @@ export default function HomeSectionsPage() {
                     value={section.variant === 'SLIDER' ? 'SLIDER' : 'GRID'}
                     onChange={(variant) =>
                       setSections(
-                        sections.map((entry) =>
-                          entry.key === section.key ? { ...entry, variant } : entry,
+                        sections.map((entry, entryIndex) =>
+                          // By position, matching the enabled switch above — see
+                          // the note there. These two sections are unique keys,
+                          // but one identity rule for the whole list is what
+                          // keeps a future repeatable section from reintroducing
+                          // the bug.
+                          entryIndex === index ? { ...entry, variant } : entry,
+                        ),
+                      )
+                    }
+                  />
+                ) : PRODUCT_ROW_KEYS.includes(section.key) ? (
+                  /*
+                   * The three product rows, chosen here for the same reasons the
+                   * categories' layout is: no artwork guidance moves, the cards
+                   * are the same size in both layouts, and this page already
+                   * owns and writes `homeConfig`.
+                   *
+                   * One picker component for all three, given this row's own
+                   * value and writing back to this row — so a merchant can set
+                   * the rows differently, which is the point of storing the
+                   * layout per section rather than once.
+                   *
+                   * Same display-only default resolution as above: an absent or
+                   * unrecognised stored value shows as GRID and is never written
+                   * back until the merchant chooses.
+                   *
+                   * See server/openspec/changes/add-product-slider-and-card-quantity.
+                   */
+                  <ProductRowLayoutPicker
+                    label={`${SECTION_INFO.get(section.key)?.label ?? 'Section'} layout`}
+                    value={section.variant === 'SLIDER' ? 'SLIDER' : 'GRID'}
+                    onChange={(variant) =>
+                      setSections(
+                        sections.map((entry, entryIndex) =>
+                          // By position, matching the enabled switch above — see
+                          // the note there. These two sections are unique keys,
+                          // but one identity rule for the whole list is what
+                          // keeps a future repeatable section from reintroducing
+                          // the bug.
+                          entryIndex === index ? { ...entry, variant } : entry,
                         ),
                       )
                     }

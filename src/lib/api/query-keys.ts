@@ -53,6 +53,18 @@ export const queryKeys = {
   coupons: { all: ['coupons'] as const, list: (p?: object) => ['coupons', 'list', p] as const, detail: (id: string) => ['coupons', 'detail', id] as const },
   campaigns: { all: ['campaigns'] as const, list: (p?: object) => ['campaigns', 'list', p] as const, detail: (id: string) => ['campaigns', 'detail', id] as const },
   banners: { all: ['banners'] as const, list: (p?: object) => ['banners', 'list', p] as const, detail: (id: string) => ['banners', 'detail', id] as const },
+  /*
+   * The promo strips. Separate from `banners` although the two always move
+   * together on the server, because they are invalidated from opposite
+   * directions: assigning a banner changes a group's contents, and renaming a
+   * group changes none of its banners. A shared key would refetch the whole
+   * banner list every time a merchant fixed a typo in a strip's name.
+   */
+  promoBannerGroups: {
+    all: ['promo-banner-groups'] as const,
+    list: () => ['promo-banner-groups', 'list'] as const,
+    detail: (id: string) => ['promo-banner-groups', 'detail', id] as const,
+  },
   pages: {
     all: ['pages'] as const,
     list: (p?: object) => ['pages', 'list', p] as const,

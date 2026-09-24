@@ -20,9 +20,14 @@ export function Breadcrumbs() {
   /*
    * A direct-link section matches its own subtree, not just its exact path —
    * Orders lives at /sales/orders as a top-level link, so /sales/orders/<id>
-   * must resolve to it and not fall through to the Sales section below, which
-   * would label an order detail page "Sales › Orders" off the wrong node.
+   * must resolve to it and not fall through to a section that merely shares the
+   * /sales prefix, which would label an order detail page off the wrong node.
    * Direct links are tested first for the same reason.
+   *
+   * This still matters now that Returns, Refunds and Courier sit under
+   * Inventory while keeping their /sales/* paths: a section is found by its
+   * items' paths, not by a shared prefix, so those three resolve to Inventory
+   * and /sales/orders/<id> resolves to Orders.
    */
   const section =
     NAV_SECTIONS.find((s) => s.path && (s.path === pathname || pathname.startsWith(s.path + '/'))) ??

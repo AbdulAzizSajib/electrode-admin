@@ -318,6 +318,56 @@ export interface DeliverySettings {
 /** Mirrors the backend's bound, so the form can stop adding before the API refuses. */
 export const MAX_DELIVERY_OPTIONS = 20
 
+/** Which mobile-money service receives the advance. */
+export type MobileBankingProvider = 'BKASH' | 'NAGAD' | 'ROCKET'
+
+/** The providers the form offers, in the order it offers them. */
+export const MOBILE_BANKING_PROVIDERS: MobileBankingProvider[] = ['BKASH', 'NAGAD', 'ROCKET']
+
+/**
+ * One mobile-banking account a shopper sends the advance to.
+ *
+ * `id` is generated once when the account is added and NEVER rewritten — a
+ * placed order's payment row references it, so editing the number or reordering
+ * the list must not reattach historical claims to a different account. This is
+ * stricter than a delivery option's `key`, which is generated positionally and
+ * survives renames but not reordering: fine for a label, wrong for a reference.
+ */
+export interface MobileBankingAccount {
+  id: string
+  provider: MobileBankingProvider
+  number: string
+  /** The merchant's own label — "Personal", "Merchant". Nothing branches on it. */
+  accountType: string
+}
+
+/** One bank account a shopper deposits the advance into. `id` as above. */
+export interface BankAccount {
+  id: string
+  bankName: string
+  accountName: string
+  accountNumber: string
+  /** Both may be blank: a same-bank transfer needs neither. */
+  branch: string
+  routingNumber: string
+}
+
+/**
+ * Whether the store collects money before it ships, and where it goes.
+ *
+ * Mirrors `advancePaymentSchema` in the backend's store-setting.validation.ts
+ * and carries the standing obligation to be kept in step with it. See
+ * server/openspec/changes/add-advance-payment-checkout.
+ */
+export interface AdvancePaymentConfig {
+  enabled: boolean
+  mobileAccounts: MobileBankingAccount[]
+  bankAccounts: BankAccount[]
+}
+
+/** Mirrors the backend's bound, so the form stops adding before the API refuses. */
+export const MAX_PAYMENT_ACCOUNTS = 10
+
 export interface CheckoutConfig {
   fields: Record<CheckoutFieldKey, CheckoutField>
   /** Governs the coupon box on the cart page AND the checkout page together. */
@@ -327,6 +377,7 @@ export interface CheckoutConfig {
   /** Rendered above the storefront's Place Order button. Empty renders nothing. */
   notice: string
   delivery: DeliverySettings
+  advancePayment: AdvancePaymentConfig
 }
 
 /* ------------------------------------------------------------------ *
@@ -346,6 +397,22 @@ export interface CatalogConfig {
   showCompare: boolean
   /** Off, a product with variants opens its own page instead of a preview. */
   showQuickView: boolean
+  /**
+   * Off, adding something leaves the customer where they are instead of opening
+   * the cart panel over the page. Every way of opening the cart deliberately —
+   * the header button, the mobile bar, the floating tab — is unaffected either
+   * way. See server/openspec/changes/add-product-slider-and-card-quantity.
+   */
+  openCartOnAdd: boolean
+  /**
+   * On, a product already in the cart shows a quantity stepper on its card in
+   * the listing instead of the Add to cart button.
+   *
+   * OFF by default, unlike the flags above: they withdraw something that was
+   * always there, this adds something that never was. See
+   * server/openspec/changes/add-product-slider-and-card-quantity.
+   */
+  cardQuantityControl: boolean
 }
 
 /**
@@ -360,6 +427,9 @@ export const DEFAULT_CATALOG_CONFIG: CatalogConfig = {
   showWishlist: true,
   showCompare: true,
   showQuickView: true,
+  openCartOnAdd: true,
+  // False where the rest are true — see the field's note above.
+  cardQuantityControl: false,
 }
 
 /* ------------------------------------------------------------------ *
@@ -426,10 +496,22 @@ export type HeroVariant = 'SPLIT_THREE' | 'FULL_SLIDER' | 'SLIDER_STACK' | 'SPLI
 export type FeaturedCategoriesLayout = 'GRID' | 'SLIDER'
 
 /**
+ * How a homepage row of PRODUCTS is arranged — `BEST_SELLING`,
+ * `FEATURED_PRODUCTS` and `NEW_ARRIVALS`, which all offer the same two.
+ *
+ * Deliberately NOT aliased to `FeaturedCategoriesLayout` although the members
+ * coincide today: they answer for different sections and either could gain a
+ * layout the other never offers. Mirrors `PRODUCT_ROW_VARIANTS` in the
+ * backend's store-setting.constant.ts, first entry the default. See
+ * server/openspec/changes/add-product-slider-and-card-quantity.
+ */
+export type ProductRowLayout = 'GRID' | 'SLIDER'
+
+/**
  * Every layout any section offers. A section entry carries at most one, and
  * which union it belongs to is decided by the entry's `key`.
  */
-export type SectionLayout = HeroVariant | FeaturedCategoriesLayout
+export type SectionLayout = HeroVariant | FeaturedCategoriesLayout | ProductRowLayout
 
 /**
  * The layout picker's options, in registry order, first one the default.
@@ -491,13 +573,41 @@ export const FEATURED_CATEGORIES_LAYOUT_OPTIONS: {
   },
 ]
 
+/**
+ * The product-row layout picker's options, in registry order, first one the
+ * default. One array for all three rows: they offer the same two layouts, and
+ * stating it once is what keeps the three pickers identical. Each row still
+ * stores its own choice, so a merchant may set them differently.
+ *
+ * See server/openspec/changes/add-product-slider-and-card-quantity.
+ */
+export const PRODUCT_ROW_LAYOUT_OPTIONS: {
+  value: ProductRowLayout
+  label: string
+  description: string
+}[] = [
+  {
+    value: 'GRID',
+    label: 'Grid',
+    description: 'Every product at once, in rows that wrap. The standard layout.',
+  },
+  {
+    value: 'SLIDER',
+    label: 'Slider',
+    description:
+      'The same products in one row that customers scroll sideways. Keeps a long row to one line.',
+  },
+]
+
 /** One section's placement and visibility. Position in `HomeConfig` is its order. */
 export interface HomeSection {
   key: HomeSectionKey
   enabled: boolean
   /**
-   * The section's layout, on sections that offer a choice — `HERO` and
-   * `FEATURED_CATEGORIES`. Which values are legal depends on `key`; the type is
+   * The section's layout, on sections that offer a choice — `HERO`,
+   * `FEATURED_CATEGORIES` and the three product rows (`BEST_SELLING`,
+   * `FEATURED_PRODUCTS`, `NEW_ARRIVALS`). Which values are legal depends on
+   * `key`; the type is
    * the union of every section's layouts because one field serves every entry.
    *
    * Optional in the type, always present in practice: the backend resolves it
@@ -508,13 +618,46 @@ export interface HomeSection {
    * only, and never writes the fallback.)
    */
   variant?: SectionLayout
+  /**
+   * Which promo banner group this entry renders — `MID_BANNERS` ONLY.
+   *
+   * ── THIS FIELD MUST SURVIVE EVERY WRITE FROM THIS PANEL ───────────────
+   *
+   * The Home Sections page reads the stored list, filters it against
+   * `HOME_SECTION_REGISTRY`, and sends `homeConfig` back WHOLESALE on save. An
+   * entry that loses its `groupId` on that path names no strip, so the server
+   * drops it on the very next read — every promo strip disappears on the
+   * merchant's first unrelated save, with no error anywhere. That page's filter
+   * keeps whole entries for exactly this reason; the hero's `variant` already
+   * carries the same hazard.
+   *
+   * `MID_BANNERS` is also THE ONE KEY THAT MAY REPEAT, once per strip. Anything
+   * matching entries in this array must match on `key` + `groupId`, or on
+   * position — never on `key` alone, which would treat every promo strip as one.
+   *
+   * MIRRORS the backend's `HomeSectionConfig.groupId`. See
+   * server/openspec/changes/add-promo-banner-groups, design.md Decision 3.
+   */
+  groupId?: string
 }
 
 /**
  * The homepage's sections in render order. ORDER IS THE DATA — this array is
  * never sorted on the way to or from the API.
+ *
+ * Every key appears at most once EXCEPT `MID_BANNERS`, which appears once per
+ * promo banner group.
  */
 export type HomeConfig = HomeSection[]
+
+/**
+ * The one section key that may appear more than once in a `homeConfig`.
+ *
+ * Named rather than written as a literal at each place that branches on it:
+ * every one of those is somewhere that treating promo strips as a single
+ * section silently merges them. Mirrors the backend's `PROMO_SECTION_KEY`.
+ */
+export const PROMO_SECTION_KEY = 'MID_BANNERS' as const satisfies HomeSectionKey
 
 /**
  * What each section is, in the merchant's words.
@@ -564,9 +707,18 @@ export const HOME_SECTION_REGISTRY: {
     description: 'A row of your best sellers, by number of units sold.',
   },
   {
+    /*
+     * The description no longer says "three". A merchant may now have several
+     * promo strips, each showing one, two or three tiles — so naming a count
+     * here would describe ONE possible arrangement as though it were the only
+     * one, the same correction the HERO entry above already carries.
+     *
+     * This label is also only the FALLBACK for a promo row: with groups loaded,
+     * each row is named after the strip the merchant named.
+     */
     key: 'MID_BANNERS',
     label: 'Promo banners',
-    description: 'The three promotional tiles below the products.',
+    description: 'A row of promotional tiles. Manage the strips under Promo Banners.',
   },
   {
     key: 'FEATURED_PRODUCTS',
@@ -630,7 +782,16 @@ export const HOME_SECTION_REGISTRY: {
  * representations of one state that would then have to be kept equivalent
  * forever. See openspec/changes/add-hero-section-variants, design.md Decision 5.
  */
-export const DEFAULT_HOME_CONFIG: HomeConfig = HOME_SECTION_REGISTRY.map(({ key }) => ({
+export const DEFAULT_HOME_CONFIG: HomeConfig = HOME_SECTION_REGISTRY.filter(
+  /*
+   * NO PROMO ENTRY IN THE DEFAULT. A promo entry names the strip it renders,
+   * and this seed knows of no strips — a groupless one would be rejected by the
+   * server's write schema, so seeding it would make the merchant's first save
+   * from a never-configured store fail. The server splices an entry in per
+   * group on read, which is where promo rows actually come from.
+   */
+  ({ key }) => key !== PROMO_SECTION_KEY,
+).map(({ key }) => ({
   key,
   enabled: true,
 }))
@@ -1186,7 +1347,27 @@ export const DEFAULT_CHECKOUT_CONFIG: CheckoutConfig = {
    * is a visible setup step rather than a silently wrong charge.
    */
   delivery: { offersPickup: false, options: [] },
+  /*
+   * Off with no accounts — the state every store is in until a merchant sets
+   * this up, and the one the backend normalises an absent value to. Seeding it
+   * here is what lets the editor tell "never configured" from "configured and
+   * turned off": the admin read returns the row as-is, unlike the public
+   * endpoint which merges defaults, so without this constant the form could
+   * not distinguish the two.
+   */
+  advancePayment: { enabled: false, mobileAccounts: [], bankAccounts: [] },
 }
+
+/**
+ * The advance-payment block a store that has never configured it has.
+ *
+ * Exported separately from `DEFAULT_CHECKOUT_CONFIG` because the accounts
+ * editor seeds from this alone — it writes one key of `checkoutConfig` and must
+ * not carry the rest of the default in, which would clobber the field and
+ * delivery settings the checkout editor owns.
+ */
+export const DEFAULT_ADVANCE_PAYMENT: AdvancePaymentConfig =
+  DEFAULT_CHECKOUT_CONFIG.advancePayment
 
 /**
  * Mirrors the backend's `DEFAULT_THEME` in

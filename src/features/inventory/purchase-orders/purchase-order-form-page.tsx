@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useFieldArray, useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { ArrowLeft, ChevronDown, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
 import { Alert } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +14,14 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -143,32 +151,6 @@ const NEW_LINE = {
 const stagedToPayload = (value: string | undefined): number | undefined =>
   value === undefined || value === '' ? undefined : Number(value)
 
-/** Money is `Decimal(12, 2)`; every figure these helpers produce matches. */
-const round2 = (value: number) => Math.round(value * 100) / 100
-
-/**
- * The two price computations, MIRRORED from the server's
- * `purchase-order.cost.ts` — `markupOnCost` and `adjustByAmount`.
- *
- * THE SERVER IS THE AUTHORITY. It is mirrored here rather than fetched because
- * each is one multiplication or addition plus a round, and a round trip per
- * keystroke to compute `cost × 1.25` would be worse than the duplication.
- * `scripts/verify-cost-basis.ts` pins the server's versions, including the two
- * refusals below. If either ever grows a branch, the honest fix is an endpoint,
- * not a bigger mirror.
- *
- * `markupOnCost` returns null for a non-positive cost: a percentage of nothing
- * is nothing, and proposing 0.00 for an uncosted line would look like a
- * computed answer. `adjustByAmount` clamps at zero, because every reader of
- * these Decimal columns assumes a non-negative price.
- *
- * See openspec/changes/add-purchase-order-pricing, design.md Decision 4.
- */
-const markupOnCost = (unitCost: number, percent: number): number | null =>
-  unitCost <= 0 ? null : round2(unitCost * (1 + percent / 100))
-
-const adjustByAmount = (price: number, delta: number): number => round2(Math.max(0, price + delta))
-
 /**
  * What the form needs from a resolved product: its own prices, and its
  * variants' (each of which may override any of the three).
@@ -179,6 +161,10 @@ interface ResolvedProduct {
   sellingPrice?: number | string | null
   variants?: {
     id?: string
+    /** Shown on the row and in the variant dialog. */
+    name?: string
+    /** Searched and shown beside the name — a packing slip names a variant by SKU. */
+    sku?: string
     purchasePrice?: number | string | null
     offerPrice?: number | string | null
     sellingPrice?: number | string | null
@@ -220,7 +206,7 @@ const resolveItemPrices = (
  *
  * ── Why a second row rather than more columns ────────────────────────
  *
- * The line table already carries seven columns. Five more per line would mean
+ * The line table already carries seven columns. More per line would mean
  * horizontal scrolling to reach the delete button — making the common case
  * (cost a line, save) worse to serve the occasional one (reprice while
  * costing). A row that opens on demand keeps the table as it was, and matches
@@ -234,6 +220,19 @@ const resolveItemPrices = (
  * received. An empty input means "leave that price alone"; that is why they are
  * never pre-filled with the current values (design.md Decision 5).
  *
+ * ── The markup and adjust helpers were removed ─────────────────────────
+ *
+ * design.md Decision 4 offered two computed fills — "cost + 25%" and "±50" —
+ * which wrote into these same inputs. They were removed on the merchant's
+ * request: the prices here are typed from a supplier's invoice, not derived
+ * from cost, so the controls cost a row of width and a reading of the panel
+ * without answering a question anyone was asking.
+ *
+ * Only the UI went. `markupOnCost` and `adjustByAmount` remain on the server in
+ * `purchase-order.cost.ts`, still covered by `verify-cost-basis.ts`, so
+ * restoring the controls is a UI change rather than a re-derivation. Nothing
+ * computes a staged price now: every figure here is one a merchant typed.
+ *
  * See openspec/changes/add-purchase-order-pricing, design.md Decisions 5 and 5a.
  */
 function LinePricing({
@@ -241,46 +240,12 @@ function LinePricing({
   index,
   lineLabel,
   prices,
-  unitCost,
-  onCompute,
 }: {
   control: ReturnType<typeof useForm<Values, unknown, OutputValues>>['control']
   index: number
   lineLabel: string
   prices: ItemPrices
-  unitCost: number
-  onCompute: (field: 'stagedOfferPrice' | 'stagedSellingPrice', value: number) => void
 }) {
-  const [markupPercent, setMarkupPercent] = React.useState('25')
-  const [adjustAmount, setAdjustAmount] = React.useState('')
-  const [hint, setHint] = React.useState<string | null>(null)
-
-  const applyMarkup = () => {
-    const proposed = markupOnCost(unitCost, Number(markupPercent) || 0)
-
-    // Declines rather than proposing 0.00 — see `markupOnCost`.
-    if (proposed === null) {
-      setHint('Enter this line’s unit cost first — a markup needs something to mark up.')
-      return
-    }
-
-    setHint(null)
-    onCompute('stagedOfferPrice', proposed)
-  }
-
-  const applyAdjust = (field: 'stagedOfferPrice' | 'stagedSellingPrice', current: string | undefined) => {
-    const delta = Number(adjustAmount)
-    if (!adjustAmount || !Number.isFinite(delta)) return
-
-    // Adjusts what is in the field, falling back to the price in place — so
-    // "+20" on an untouched line means twenty above what it sells for today.
-    const fallback = field === 'stagedOfferPrice' ? prices.offerPrice : prices.sellingPrice
-    const base = current !== undefined && current !== '' ? Number(current) : (fallback ?? 0)
-
-    setHint(null)
-    onCompute(field, adjustByAmount(base, delta))
-  }
-
   const money = (value: number | null) => (value === null ? '—' : formatCurrency(value))
 
   return (
@@ -341,183 +306,230 @@ function LinePricing({
               )}
             />
           ))}
-
-          <div className="flex items-end gap-3">
-            <div className="flex flex-col gap-1">
-              <label htmlFor={`markup-${index}`} className="text-xs font-normal text-muted-foreground">
-                Markup on cost
-              </label>
-              <div className="flex items-center gap-1">
-                <Input
-                  id={`markup-${index}`}
-                  type="number"
-                  step="1"
-                  min="0"
-                  inputMode="decimal"
-                  className="w-20 tabular-nums"
-                  aria-label={`Markup percentage for ${lineLabel}`}
-                  onWheel={blurOnWheel}
-                  value={markupPercent}
-                  onChange={(event) => setMarkupPercent(event.target.value)}
-                />
-                <span className="text-xs text-muted-foreground">%</span>
-                <Button type="button" variant="outline" size="sm" onClick={applyMarkup}>
-                  Apply
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label htmlFor={`adjust-${index}`} className="text-xs font-normal text-muted-foreground">
-                Adjust by
-              </label>
-              <div className="flex items-center gap-1">
-                <Input
-                  id={`adjust-${index}`}
-                  type="number"
-                  step="0.01"
-                  inputMode="decimal"
-                  placeholder="±0.00"
-                  className="w-24 tabular-nums"
-                  aria-label={`Adjustment amount for ${lineLabel}`}
-                  onWheel={blurOnWheel}
-                  value={adjustAmount}
-                  onChange={(event) => setAdjustAmount(event.target.value)}
-                />
-                <FormField
-                  control={control}
-                  name={`items.${index}.stagedOfferPrice`}
-                  render={({ field }) => (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => applyAdjust('stagedOfferPrice', field.value)}
-                    >
-                      Offer
-                    </Button>
-                  )}
-                />
-                <FormField
-                  control={control}
-                  name={`items.${index}.stagedSellingPrice`}
-                  render={({ field }) => (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => applyAdjust('stagedSellingPrice', field.value)}
-                    >
-                      Regular
-                    </Button>
-                  )}
-                />
-              </div>
-            </div>
-          </div>
         </div>
-
-        {hint && <p className="text-xs text-destructive">{hint}</p>}
       </div>
     </div>
   )
 }
 
 /**
- * The variant picker for one line, and the only place the form learns whether a
- * product even has variants.
+ * Asks which variant of a just-picked product the order is for.
  *
- * It fetches the product's detail rather than reading the row already in the
- * combobox: `GET /products/admin` omits `variants` entirely (see products.ts),
- * so the list the picker is populated from cannot answer this. One query per
- * distinct product, cached and shared by react-query, and only while a row
- * actually holds a product.
+ * ── Why a modal, and why before the line exists ──────────────────────
  *
- * `onResolved` reports back what arrived so the parent can validate the line —
- * a variable product whose line names no variant is the bug this whole field
- * exists to prevent, and the parent cannot see it from `productId` alone.
+ * Stock is held per (warehouse, product, variant), so a variable product's
+ * line is meaningless until it names one — the backend refuses it, and the
+ * older form let it through to a receipt that left every variant reading out
+ * of stock. The row used to carry its own variant picker, which meant a line
+ * could sit on the table in that invalid state until save.
+ *
+ * Asking at the moment of choice means a line never exists in that state: the
+ * merchant names the product, names the variant, and the row that appears is
+ * already complete. That is also what lets the table be plain text.
+ *
+ * Only opens for a product that HAS variants. A simple product has nothing to
+ * choose between and is added directly.
+ *
+ * Dismissing adds nothing. A merchant who opened this by mistake gets their
+ * order back as it was, rather than a line to go and delete.
  */
-function VariantCell({
-  control,
-  index,
-  productId,
-  lineLabel,
-  onResolved,
+function VariantPickerDialog({
+  product,
+  productName,
+  onPick,
+  onCancel,
 }: {
-  control: ReturnType<typeof useForm<Values, unknown, OutputValues>>['control']
-  index: number
-  productId: string
-  lineLabel: string
-  /**
-   * Reports what arrived: the variant ids for validation, and the product row
-   * itself so the parent can resolve the line's prices and seed its unit cost.
-   *
-   * The product is passed up rather than re-fetched in the parent because this
-   * is already the one query per distinct product, cached by react-query — the
-   * form learns everything it knows about a product through here.
-   */
-  onResolved: (productId: string, variantIds: string[], product: ResolvedProduct) => void
+  product: ResolvedProduct | undefined
+  productName: string
+  onPick: (variantId: string) => void
+  onCancel: () => void
 }) {
-  const { data: product, isFetching } = useProduct(productId || undefined)
-  const variants = React.useMemo(() => product?.variants ?? [], [product])
+  const [term, setTerm] = React.useState('')
+  const [highlight, setHighlight] = React.useState(0)
+  const listId = React.useId()
 
-  React.useEffect(() => {
-    if (product) {
-      onResolved(
-        productId,
-        variants.map((v) => v.id).filter((id): id is string => !!id),
-        product as ResolvedProduct,
-      )
-    }
-  }, [product, productId, variants, onResolved])
-
-  const options = React.useMemo<ComboboxOption[]>(
-    () =>
-      variants
-        .filter((v): v is typeof v & { id: string } => !!v.id)
-        // SKU as keywords: the packing slip in the merchant's hand names the
-        // variant by SKU more often than by label.
-        .map((v) => ({ value: v.id, label: v.name, keywords: v.sku })),
-    [variants],
+  const variants = React.useMemo(
+    () => (product?.variants ?? []).filter((v): v is typeof v & { id: string } => !!v.id),
+    [product],
   )
 
-  if (!productId) {
-    return <span className="text-xs text-muted-foreground">Select a product first</span>
+  // Name AND sku, because the packing slip in the merchant's hand names the
+  // variant by SKU at least as often as by label.
+  const visible = React.useMemo(() => {
+    const needle = term.trim().toLowerCase()
+    if (!needle) return variants
+    return variants.filter((v) =>
+      `${v.name ?? ''} ${v.sku ?? ''}`.toLowerCase().includes(needle),
+    )
+  }, [variants, term])
+
+  /*
+   * Keep the highlight inside the narrowed list — typing until one option is
+   * left must not leave it pointing past the end.
+   *
+   * CLAMPED ON READ rather than corrected in an effect. Storing the correction
+   * would mean a second render pass every time the list narrows, and the state
+   * would briefly name an option that is not on screen; deriving it means the
+   * only value anything can observe is already in range.
+   */
+  const active = highlight < visible.length ? highlight : 0
+
+  /*
+   * Arrows, Home/End and Enter, handled on the SEARCH FIELD rather than on the
+   * options.
+   *
+   * The options are not focusable: focus stays in the field so typing keeps
+   * narrowing while the arrows move the selection, and the highlight is
+   * published through `aria-activedescendant`. This is the same contract the
+   * Combobox in this kit implements, and the reason it is a contract at all is
+   * that a list of focusable buttons answers arrow keys by doing nothing —
+   * which is exactly how this dialog first shipped.
+   *
+   * Escape is Radix's, via the Dialog.
+   */
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault()
+        setHighlight(visible.length === 0 ? 0 : (active + 1) % visible.length)
+        break
+      case 'ArrowUp':
+        event.preventDefault()
+        setHighlight(visible.length === 0 ? 0 : (active - 1 + visible.length) % visible.length)
+        break
+      case 'Home':
+        event.preventDefault()
+        setHighlight(0)
+        break
+      case 'End':
+        event.preventDefault()
+        setHighlight(Math.max(0, visible.length - 1))
+        break
+      case 'Enter': {
+        event.preventDefault()
+        const option = visible[active]
+        if (option) onPick(option.id)
+        break
+      }
+    }
   }
 
-  if (isFetching && !product) {
-    return <Skeleton className="h-9 w-full" />
-  }
-
-  // A simple product has nothing to choose between, and the backend wants the
-  // field absent rather than empty for one.
-  if (options.length === 0) {
-    return <span className="text-xs text-muted-foreground">No variants</span>
-  }
+  const optionId = (index: number) => `${listId}-option-${index}`
 
   return (
-    <FormField
-      control={control}
-      name={`items.${index}.variantId`}
-      render={({ field }) => (
-        <FormItem>
-          <FormControl>
-            <Combobox
-              aria-label={`Variant for ${lineLabel}`}
-              placeholder="Select a variant"
-              searchPlaceholder="Search by name or SKU…"
-              options={options}
-              value={field.value || null}
-              noOptionsText="No variants"
-              onValueChange={(value) => field.onChange(value ?? '')}
-              onBlur={field.onBlur}
-            />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )}
-    />
+    <Dialog open onOpenChange={(next) => !next && onCancel()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Which variant?</DialogTitle>
+          <DialogDescription>
+            {productName} comes in {variants.length} variants. Stock is counted per variant, so
+            the order has to name one.
+          </DialogDescription>
+        </DialogHeader>
+
+        {!product ? (
+          // Loading and empty are different answers, and a merchant staring at
+          // a blank dialog cannot tell which they are looking at.
+          <div className="flex flex-col gap-2 py-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : (
+          <>
+            {/* Only worth its space once the list is long enough to scan. */}
+            {variants.length > 6 && (
+              <Input
+                autoFocus
+                aria-label={`Search variants of ${productName}`}
+                aria-controls={listId}
+                aria-activedescendant={visible.length ? optionId(active) : undefined}
+                placeholder="Search by name or SKU…"
+                value={term}
+                onChange={(event) => {
+                  setTerm(event.target.value)
+                  setHighlight(0)
+                }}
+                onKeyDown={onKeyDown}
+              />
+            )}
+
+            <div
+              id={listId}
+              role="listbox"
+              aria-label={`Variants of ${productName}`}
+              className="flex max-h-80 flex-col gap-1 overflow-y-auto py-1 focus-visible:outline-none"
+              // Focusable as a whole when there is no search field, so the
+              // arrows work in the short-list case too.
+              tabIndex={variants.length > 6 ? -1 : 0}
+              autoFocus={variants.length <= 6}
+              aria-activedescendant={visible.length ? optionId(active) : undefined}
+              onKeyDown={onKeyDown}
+            >
+              {visible.length === 0 ? (
+                <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  No variant matches “{term}”.
+                </p>
+              ) : (
+                visible.map((variant, index) => (
+                  <div
+                    key={variant.id}
+                    id={optionId(index)}
+                    role="option"
+                    aria-selected={index === active}
+                    className={`flex cursor-pointer items-center justify-between gap-3 rounded-md px-3 py-2 text-sm ${
+                      index === active ? 'bg-muted text-foreground' : 'text-foreground'
+                    }`}
+                    // Hover moves the highlight, so the pointer and the
+                    // keyboard cannot disagree about what Enter will pick.
+                    onMouseEnter={() => setHighlight(index)}
+                    onClick={() => onPick(variant.id)}
+                  >
+                    <span className="font-medium">{variant.name}</span>
+                    {variant.sku && (
+                      <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                        {variant.sku}
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
+}
+
+/**
+ * Resolves a product the search bar just named, so the page can decide whether
+ * to ask for a variant.
+ *
+ * Renders nothing. It exists because `useProduct` is a hook and the decision
+ * needs the product's `variants`, which `GET /products/admin` omits — the same
+ * reason the row used to fetch it. One query per distinct product, cached and
+ * shared with every other caller by react-query.
+ */
+function PendingProductResolver({
+  productId,
+  onResolved,
+}: {
+  productId: string
+  onResolved: (productId: string, product: ResolvedProduct) => void
+}) {
+  const { data: product } = useProduct(productId || undefined)
+
+  React.useEffect(() => {
+    if (product) onResolved(productId, product as ResolvedProduct)
+  }, [product, productId, onResolved])
+
+  return null
 }
 
 /**
@@ -633,19 +645,8 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
    * same variant-picker fetch that fills `variantIdsByProduct` — no extra query.
    */
   const [productById, setProductById] = React.useState<Record<string, ResolvedProduct>>({})
-  const rememberVariants = React.useCallback(
-    (productId: string, variantIds: string[], product: ResolvedProduct) => {
-      setVariantIdsByProduct((prev) =>
-        prev[productId]?.length === variantIds.length && prev[productId]?.every((id, i) => id === variantIds[i])
-          ? prev
-          : { ...prev, [productId]: variantIds },
-      )
-      setProductById((prev) => (prev[productId] === product ? prev : { ...prev, [productId]: product }))
-    },
-    [],
-  )
-  // Index of a row appended by "Add item", so the keyboard lands in it instead
-  // of leaving the merchant to reach for the mouse on every line.
+  // Index of the row the search bar just added or incremented, so the keyboard
+  // lands in it instead of leaving the merchant to reach for the mouse.
   const [focusRow, setFocusRow] = React.useState<number | null>(null)
   /*
    * Which lines have their pricing panel open, by row index.
@@ -719,70 +720,133 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
     setPickedProducts((prev) => (prev.some((p) => p.value === option.value) ? prev : [...prev, option]))
   }
 
+  /**
+   * The prices of the item `productId`/`variantId` names, from a product row
+   * given explicitly rather than read from state.
+   *
+   * Taking the product as an argument is what lets the seed run from the
+   * choice: at that moment `productById` may not hold the row yet, and
+   * `rememberVariants` has it in hand before React has re-rendered with it.
+   */
+  const pricesOf = React.useCallback(
+    (product: ResolvedProduct | undefined, variantId: string | undefined): ItemPrices => {
+      const variant = variantId ? product?.variants?.find((v) => v.id === variantId) : undefined
+
+      return resolveItemPrices(
+        product && {
+          purchasePrice: product.purchasePrice == null ? null : Number(product.purchasePrice),
+          offerPrice: product.offerPrice == null ? null : Number(product.offerPrice),
+          sellingPrice: product.sellingPrice == null ? null : Number(product.sellingPrice),
+        },
+        variant && {
+          purchasePrice: variant.purchasePrice == null ? null : Number(variant.purchasePrice),
+          offerPrice: variant.offerPrice == null ? null : Number(variant.offerPrice),
+          sellingPrice: variant.sellingPrice == null ? null : Number(variant.sellingPrice),
+        },
+      )
+    },
+    [],
+  )
+
   /** The item a line names: its variant when it has one, else the product. */
   const linePrices = (index: number): ItemPrices => {
     const item = watchedItems?.[index]
-    const product = item?.productId ? productById[item.productId] : undefined
-    const variant = item?.variantId ? product?.variants?.find((v) => v.id === item.variantId) : undefined
-
-    return resolveItemPrices(
-      product && {
-        purchasePrice: product.purchasePrice == null ? null : Number(product.purchasePrice),
-        offerPrice: product.offerPrice == null ? null : Number(product.offerPrice),
-        sellingPrice: product.sellingPrice == null ? null : Number(product.sellingPrice),
-      },
-      variant && {
-        purchasePrice: variant.purchasePrice == null ? null : Number(variant.purchasePrice),
-        offerPrice: variant.offerPrice == null ? null : Number(variant.offerPrice),
-        sellingPrice: variant.sellingPrice == null ? null : Number(variant.sellingPrice),
-      },
-    )
+    return pricesOf(item?.productId ? productById[item.productId] : undefined, item?.variantId)
   }
 
   /*
-   * Seeds a line's Unit cost from the item's CURRENT COST BASIS when its
-   * product or variant changes.
+   * Seeds a line's Unit cost from the item's CURRENT COST BASIS when the line
+   * is created, or when it is incremented by a fresh pick of the same item.
    *
    * The figure a merchant needs is the one the product already records —
    * `purchasePrice` means "what the stock on hand cost" since
    * add-weighted-average-cost-basis — and it was one field away while the form
    * opened every line at 0.
    *
-   * SEEDED ONCE PER PRODUCT/VARIANT CHOICE, never re-applied. The key is what
-   * the line names, so typing a cost does not re-trigger it and an unrelated
-   * re-render cannot overwrite what the merchant typed. Changing the product or
-   * the variant is a different item and does re-seed.
+   * ── Why this is called, not watched ──────────────────────────────────
    *
-   * An item with NO cost basis seeds nothing rather than writing 0 — a null
-   * cost is unknown, and 0 would look like a supplier who charged nothing.
+   * This was a `useEffect` over `[watchedItems, productById]`, and it dropped
+   * the third selection in the sequence pick A → pick B → pick A again: the
+   * line kept B's cost. `form.watch` mutates and returns the same array, and
+   * re-picking a product already resolved changes neither dependency by
+   * identity, so the effect never ran and the row kept the cost of the product
+   * it no longer named. Seeding from the choice itself — the only event that
+   * may seed at all — removes the dependency question entirely.
    *
    * See openspec/changes/add-purchase-order-pricing, design.md Decision 5.
    */
-  const seededRef = React.useRef<Record<number, string>>({})
+  const seededRef = React.useRef<Record<string, string>>({})
+  /*
+   * Every product resolved this session, as a REF beside the `productById`
+   * state.
+   *
+   * The state drives rendering; this mirror is what the seed reads. `addItem`
+   * runs in the same tick as the resolve that triggered it, before React has
+   * re-rendered with the new state, so reading `productById` there would miss
+   * the very product being added and skip its seed.
+   */
+  const productRef = React.useRef<Record<string, ResolvedProduct>>({})
 
-  React.useEffect(() => {
-    watchedItems?.forEach((item, index) => {
-      if (!item?.productId) return
+  /**
+   * Writes the item's cost basis into a row's Unit cost, once per choice.
+   *
+   * `rowId` is the field array's stable id, never the index: removing a line
+   * shifts every later row down one, so an index-keyed record would carry the
+   * previous occupant's item and suppress the new one's seed.
+   *
+   * An item with NO cost basis seeds nothing rather than writing 0 — a null
+   * cost is unknown, and 0 would look like a supplier who charged nothing.
+   */
+  const seedFromChoice = (rowId: string, index: number, productId: string, variantId?: string) => {
+    if (!productId) return
 
-      const key = `${item.productId}::${item.variantId ?? ''}`
-      if (seededRef.current[index] === key) return
+    const key = `${productId}::${variantId ?? ''}`
+    if (seededRef.current[rowId] === key) return
 
-      const { purchasePrice } = linePrices(index)
-      // Recorded even when there is nothing to seed, so a null-cost item is not
-      // re-examined on every render.
-      seededRef.current[index] = key
+    const { purchasePrice } = pricesOf(productRef.current[productId], variantId)
+    seededRef.current[rowId] = key
 
-      if (purchasePrice !== null) {
-        form.setValue(`items.${index}.unitCost`, purchasePrice, { shouldDirty: true })
-      }
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchedItems, productById])
+    if (purchasePrice !== null) {
+      form.setValue(`items.${index}.unitCost`, purchasePrice, { shouldDirty: true })
+    }
+  }
 
   const lineAmount = (index: number) => {
     const item = watchedItems?.[index]
     return (Number(item?.quantity) || 0) * (Number(item?.unitCost) || 0)
   }
+  /**
+   * The product name to PRINT on a row.
+   *
+   * Prefers the saved order's own copy over the search list: an existing line's
+   * product may not be in the current page of search results, and falling back
+   * to the list alone would blank the name as soon as the merchant searched for
+   * something else.
+   */
+  const lineProductName = (index: number): string => {
+    const productId = watchedItems?.[index]?.productId
+    if (!productId) return '—'
+
+    return (
+      po?.items.find((i) => i.productId === productId)?.product?.name ??
+      productOptions.find((o) => o.value === productId)?.label ??
+      pickedProducts.find((o) => o.value === productId)?.label ??
+      '—'
+    )
+  }
+
+  /** The variant name to print, or null when the line names no variant. */
+  const lineVariantName = (index: number): string | null => {
+    const item = watchedItems?.[index]
+    if (!item?.variantId) return null
+
+    const resolved = productById[item.productId]?.variants?.find((v) => v.id === item.variantId)
+    if (resolved?.name) return resolved.name
+
+    // An existing order whose product detail has not been fetched this session.
+    return po?.items.find((i) => i.variantId === item.variantId)?.variant?.name ?? null
+  }
+
   /** Names a row's controls by its product once one is chosen, by position until then. */
   const lineName = (index: number) =>
     productOptions.find((o) => o.value === watchedItems?.[index]?.productId)?.label ?? `line ${index + 1}`
@@ -792,10 +856,140 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
   const tax = Number(watchedTax) || 0
   const total = subtotal + shipping + tax
 
-  const addItem = () => {
-    setFocusRow(fields.length)
-    append({ ...NEW_LINE })
+  /**
+   * Puts an item on the order, or bumps the line that already holds it.
+   *
+   * ── The duplicate rule ────────────────────────────────────────────────
+   *
+   * Same product AND same variant is the same item, so picking it again means
+   * "one more of those" and increments that line rather than opening a second
+   * one the merchant would have to reconcile. A different variant of the same
+   * product is a DIFFERENT item — stock is held per (warehouse, product,
+   * variant) — so it gets its own line.
+   *
+   * Returns the index of the affected row so the caller can draw attention to it.
+   */
+  const addItem = (productId: string, variantId?: string): number => {
+    const existing = form
+      .getValues('items')
+      .findIndex(
+        (item) => item?.productId === productId && (item?.variantId || undefined) === variantId,
+      )
+
+    if (existing !== -1) {
+      const current = Number(form.getValues(`items.${existing}.quantity`)) || 0
+      form.setValue(`items.${existing}.quantity`, current + 1, {
+        shouldDirty: true,
+        shouldValidate: true,
+      })
+      return existing
+    }
+
+    /*
+     * The blank first row a new order opens with is FILLED rather than followed
+     * by a second one — otherwise the first item added would leave an empty
+     * line above it, failing validation on a form the merchant never touched.
+     */
+    const items = form.getValues('items')
+    const fillsBlank = items.length === 1 && !items[0]?.productId
+    const index = fillsBlank ? 0 : items.length
+
+    if (fillsBlank) {
+      form.setValue('items.0.productId', productId, { shouldDirty: true, shouldValidate: true })
+      form.setValue('items.0.variantId', variantId, { shouldDirty: true })
+      const rowId = fields[0]?.id
+      if (rowId) seedFromChoice(rowId, 0, productId, variantId)
+    } else {
+      append({ ...NEW_LINE, productId, variantId })
+      // `fields` has not re-rendered with the appended row yet, so its stable
+      // id does not exist to key the seed by. The effect below finishes it.
+      pendingAppendSeedRef.current.push({ index, productId, variantId })
+    }
+
+    return index
   }
+
+  /*
+   * Rows appended above, waiting for `fields` to include them so their seed can
+   * be keyed by a stable row id. Drained by the effect below.
+   */
+  const pendingAppendSeedRef = React.useRef<
+    { index: number; productId: string; variantId?: string }[]
+  >([])
+
+  React.useEffect(() => {
+    if (pendingAppendSeedRef.current.length === 0) return
+
+    const pending = pendingAppendSeedRef.current
+    pendingAppendSeedRef.current = []
+    pending.forEach(({ index, productId, variantId }) => {
+      const row = fields[index]
+      if (row) seedFromChoice(row.id, index, productId, variantId)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fields.length])
+
+  /*
+   * The product the search bar named while the page works out whether it has
+   * variants, and the dialog that asks which one when it does.
+   *
+   * Held as one piece of state rather than two booleans so there is a single
+   * answer to "what is being added right now" — the resolver, the dialog and
+   * the cancel path all read it.
+   */
+  const [pendingProduct, setPendingProduct] = React.useState<{ id: string; name: string } | null>(
+    null,
+  )
+
+  /**
+   * Records a resolved product without adding anything — used by the resolvers
+   * that back an existing order's saved lines.
+   */
+  const rememberResolvedProduct = React.useCallback((productId: string, product: ResolvedProduct) => {
+    productRef.current[productId] = product
+    setProductById((prev) => (prev[productId] === product ? prev : { ...prev, [productId]: product }))
+  }, [])
+
+  /** Every distinct product the form's lines currently name, for the resolvers above. */
+  const linesProductIds = React.useMemo(
+    () => [...new Set((watchedItems ?? []).map((i) => i?.productId).filter((id): id is string => !!id))],
+    [watchedItems],
+  )
+
+  /**
+   * Called once the search bar's product has resolved.
+   *
+   * A simple product is added straight away. A variable one leaves
+   * `pendingProduct` set, which keeps the dialog open for the merchant to name
+   * a variant — a line is never created in the invalid in-between state.
+   */
+  const onPendingResolved = React.useCallback(
+    (productId: string, product: ResolvedProduct) => {
+      // The ref first, and synchronously: `addItem` below seeds from it in this
+      // same tick, before the state has re-rendered.
+      productRef.current[productId] = product
+      setProductById((prev) => (prev[productId] === product ? prev : { ...prev, [productId]: product }))
+
+      const variantIds = (product.variants ?? [])
+        .map((v) => v.id)
+        .filter((id): id is string => !!id)
+      setVariantIdsByProduct((prev) =>
+        prev[productId]?.length === variantIds.length ? prev : { ...prev, [productId]: variantIds },
+      )
+
+      if (variantIds.length > 0) return
+
+      setPendingProduct((current) => {
+        if (current?.id !== productId) return current
+        // Deferred: `addItem` writes to the form, which must not happen while
+        // React is rendering this state update.
+        queueMicrotask(() => setFocusRow(addItem(productId)))
+        return null
+      })
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
 
   const onSubmit = async (values: OutputValues) => {
     setSaveError(null)
@@ -936,6 +1130,43 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
          * narrow for a supplier name below that; under it the two cards stack in reading order.
          */}
         <form onSubmit={form.handleSubmit(onSubmit)} className="grid grid-cols-1 items-start gap-4 xl:grid-cols-12">
+          {/*
+            Resolves whatever the search bar last named. Renders nothing; it is
+            here only because `useProduct` is a hook and the answer decides
+            between adding a line and asking for a variant.
+          */}
+          {pendingProduct && (
+            <PendingProductResolver productId={pendingProduct.id} onResolved={onPendingResolved} />
+          )}
+
+          {/*
+            The same resolver for the products an EXISTING order already names.
+            Without it a saved line has no resolved product, so its pricing
+            panel would read "—" for all three prices and its variant would show
+            only the name the order happened to store. One per distinct product,
+            deduped, and react-query shares the fetch with everything else.
+          */}
+          {linesProductIds.map((id) => (
+            <PendingProductResolver key={id} productId={id} onResolved={rememberResolvedProduct} />
+          ))}
+
+          {/*
+            Only for a product that HAS variants — a simple one is added by the
+            resolver without ever opening this.
+          */}
+          {pendingProduct && (variantIdsByProduct[pendingProduct.id]?.length ?? 0) > 0 && (
+            <VariantPickerDialog
+              product={productById[pendingProduct.id]}
+              productName={pendingProduct.name}
+              onPick={(variantId) => {
+                const id = pendingProduct.id
+                setPendingProduct(null)
+                setFocusRow(addItem(id, variantId))
+              }}
+              onCancel={() => setPendingProduct(null)}
+            />
+          )}
+
           {saveError && (
             <Alert
               variant="destructive"
@@ -948,14 +1179,57 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
           )}
 
           <Card className="xl:col-span-8">
-            <CardHeader className={isEdit && !canAmendItems ? undefined : 'flex-row items-center justify-between space-y-0'}>
+            <CardHeader>
               <CardTitle>Line items</CardTitle>
               {isEdit && !canAmendItems ? (
                 <CardDescription>A cancelled purchase order's line items can't be changed.</CardDescription>
               ) : (
-                <Button type="button" size="lg" variant="outline" onClick={addItem}>
-                  <Plus /> Add item
-                </Button>
+                <>
+                  <CardDescription>
+                    Search for a product to put it on the order. Picking one already listed adds
+                    another of it.
+                  </CardDescription>
+                  {/*
+                    The only way to add a line. It REPLACED an "Add item" button
+                    that appended a blank row for the merchant to then find the
+                    product in — two steps, and the row sat failing validation
+                    in between. Searching names the product first, which is the
+                    order the merchant is already thinking in.
+
+                    `value` is always null: this is an action, not a selection.
+                    The Combobox clears its term and closes on commit, so the
+                    bar is ready for the next product without anything to reset.
+                  */}
+                  <div className="pt-1">
+                    <Combobox
+                      aria-label="Search products to add to this order"
+                      placeholder="Search products to add…"
+                      searchPlaceholder="Search by name or SKU…"
+                      options={productOptions}
+                      value={null}
+                      loading={fetchingProducts}
+                      noOptionsText="No products yet"
+                      // The server has already narrowed the list.
+                      filter={false}
+                      onSearchChange={setProductTerm}
+                      onValueChange={(value) => {
+                        if (!value) return
+                        rememberProduct(value)
+                        /*
+                         * Not added yet. The product's variants decide whether
+                         * a line can be created at all, and the list this bar
+                         * is built from does not carry them — so the pick sets
+                         * an intent and `PendingProductResolver` below settles
+                         * it, adding the line or opening the variant dialog.
+                         */
+                        setPendingProduct({
+                          id: value,
+                          name: productOptions.find((o) => o.value === value)?.label ?? 'This product',
+                        })
+                      }}
+                    />
+                  </div>
+                </>
               )}
             </CardHeader>
 
@@ -995,60 +1269,48 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
                          */
                         <React.Fragment key={field.id}>
                         <TableRow className="hover:bg-transparent">
-                          <TableCell>
+                          {/*
+                            Product and Variant are TEXT, not pickers. The
+                            search bar names the product and the variant dialog
+                            names the variant, both before the line exists — so
+                            by the time a row is on screen there is nothing left
+                            to choose, and a control here would only offer a way
+                            to put the line back into a state the two of them
+                            exist to prevent. Changing an item is removing the
+                            line and adding the right one.
+
+                            The ids are still registered below, hidden: they are
+                            what the form actually submits, and an unregistered
+                            field is one `useFieldArray` would drop on reorder.
+                          */}
+                          <TableCell className="font-medium text-foreground">
                             <FormField
                               control={form.control}
                               name={`items.${index}.productId`}
                               render={({ field }) => (
-                                <FormItem>
+                                <FormItem className="space-y-0">
+                                  {lineProductName(index)}
                                   <FormControl>
-                                    <Combobox
-                                      // The header names the column once; each control
-                                      // still needs its own name out of context.
-                                      aria-label={`Product for ${lineName(index)}`}
-                                      placeholder="Select a product"
-                                      searchPlaceholder="Search by name or SKU…"
-                                      options={productOptions}
-                                      value={field.value || null}
-                                      loading={fetchingProducts}
-                                      noOptionsText="No products yet"
-                                      // The server has already narrowed the list.
-                                      filter={false}
-                                      onSearchChange={setProductTerm}
-                                      onValueChange={(value) => {
-                                        field.onChange(value ?? '')
-                                        rememberProduct(value)
-                                        // The old choice belongs to the product
-                                        // being replaced; left in place it would
-                                        // submit a variant of a different product,
-                                        // which the backend rejects outright.
-                                        form.setValue(`items.${index}.variantId`, undefined)
-                                        form.clearErrors(`items.${index}.variantId`)
-                                      }}
-                                      onBlur={field.onBlur}
-                                      // Focus lands here on the row "Add item" just made,
-                                      // then the marker is cleared so later renders
-                                      // don't steal focus back.
-                                      ref={(node) => {
-                                        if (node && focusRow === index) {
-                                          node.focus()
-                                          setFocusRow(null)
-                                        }
-                                      }}
-                                    />
+                                    <input type="hidden" {...field} value={field.value ?? ''} />
                                   </FormControl>
                                   <FormMessage />
                                 </FormItem>
                               )}
                             />
                           </TableCell>
-                          <TableCell>
-                            <VariantCell
+                          <TableCell className="text-muted-foreground">
+                            <FormField
                               control={form.control}
-                              index={index}
-                              productId={watchedItems?.[index]?.productId ?? ''}
-                              lineLabel={lineName(index)}
-                              onResolved={rememberVariants}
+                              name={`items.${index}.variantId`}
+                              render={({ field }) => (
+                                <FormItem className="space-y-0">
+                                  {lineVariantName(index) ?? 'No variants'}
+                                  <FormControl>
+                                    <input type="hidden" {...field} value={field.value ?? ''} />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
                             />
                           </TableCell>
                           <TableCell>
@@ -1070,6 +1332,22 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
                                       onWheel={blurOnWheel}
                                       {...field}
                                       value={field.value === undefined ? '' : String(field.value)}
+                                      /*
+                                       * Focus lands on the quantity of the row the
+                                       * search bar just added or incremented — the
+                                       * product is already named, so this is the
+                                       * next thing to say. Selected rather than
+                                       * merely focused, so typing replaces the 1
+                                       * instead of appending to it.
+                                       */
+                                      ref={(node) => {
+                                        field.ref(node)
+                                        if (node && focusRow === index) {
+                                          node.focus()
+                                          node.select()
+                                          setFocusRow(null)
+                                        }
+                                      }}
                                     />
                                   </FormControl>
                                   <FormMessage />
@@ -1160,13 +1438,6 @@ function PurchaseOrderForm({ po }: { po?: PurchaseOrder }) {
                                 index={index}
                                 lineLabel={lineName(index)}
                                 prices={linePrices(index)}
-                                unitCost={Number(watchedItems?.[index]?.unitCost) || 0}
-                                onCompute={(name, value) =>
-                                  form.setValue(`items.${index}.${name}`, String(value), {
-                                    shouldDirty: true,
-                                    shouldValidate: true,
-                                  })
-                                }
                               />
                             </TableCell>
                           </TableRow>

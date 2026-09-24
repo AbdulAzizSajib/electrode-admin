@@ -42,6 +42,7 @@ import {
   Rocket,
   FileText,
   GalleryHorizontal,
+  LayoutGrid,
   LayoutList,
   PanelTop,
   PanelBottom,
@@ -88,11 +89,12 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     /*
      * Orders is a direct link directly under Dashboard rather than a leaf under
-     * Sales, because it is the screen a merchant opens most and opens first —
-     * often the reason they logged in at all. Reaching it used to cost expanding
-     * Sales past four other pages; the returns, refunds and courier screens it
-     * sat with are all follow-ups to an order, read far less often, and stay
-     * under Sales. The route itself is unchanged (/sales/orders), so links,
+     * a section, because it is the screen a merchant opens most and opens first
+     * — often the reason they logged in at all. Reaching it used to cost
+     * expanding a "Sales" section past four other pages; the returns, refunds
+     * and courier screens it sat with are all follow-ups to an order, read far
+     * less often, and now sit under Inventory — that section was dissolved once
+     * Orders left it. The route itself is unchanged (/sales/orders), so links,
      * bookmarks and the router's nesting are untouched.
      */
     label: 'Orders',
@@ -141,6 +143,26 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    /*
+     * Everything about goods that physically exist: what is on hand, what is
+     * moving, who it came from, and what is going back.
+     *
+     * Returns, Refunds and Courier were a "Sales" section of their own, which
+     * was dissolved into this one — Orders had already been pulled out to the
+     * top level, leaving a parent whose three remaining children were all
+     * post-order follow-ups rather than selling. They read better here: a
+     * return is stock coming back, a courier consignment is stock leaving, and
+     * both settle against the same warehouse this section is about.
+     *
+     * Refunds follows Returns rather than sitting with the money reports
+     * because a refund is almost always the second half of a return, and the
+     * two are read one after the other.
+     *
+     * Ordered on-hand first, then inbound, then outbound. Routes are UNCHANGED
+     * (/sales/returns, /sales/refunds, /sales/courier) — this is a grouping
+     * move in the sidebar only, so bookmarks and the router's nesting are
+     * untouched, exactly as with the Orders and Products moves above.
+     */
     label: 'Inventory',
     icon: Warehouse,
     items: [
@@ -149,25 +171,22 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Stock Movements', path: '/inventory/stock-movements', icon: ArrowLeftRight },
       { label: 'Suppliers', path: '/inventory/suppliers', icon: Factory },
       { label: 'Purchase Orders', path: '/inventory/purchase-orders', icon: ClipboardList },
-    ],
-  },
-  {
-    /*
-     * Orders is deliberately NOT listed here — it is a top-level link above
-     * Catalog. What stays is everything that happens *after* an order exists.
-     */
-    label: 'Sales',
-    icon: ShoppingCart,
-    items: [
       { label: 'Returns', path: '/sales/returns', icon: Undo2 },
       { label: 'Refunds', path: '/sales/refunds', icon: Banknote },
+      /*
+       * Reports the configured courier's account state; dispatching itself
+       * happens on the Orders list, where the parcels are. Which courier is
+       * chosen, and its credentials, live on UI → Integrations — that page is
+       * OWNER/ADMIN, while this one stays visible to STAFF, who are the ones
+       * handing parcels over.
+       */
       { label: 'Courier', path: '/sales/courier', icon: Truck },
     ],
   },
   {
     /*
-     * Placed after Sales because a report is what you read once the selling,
-     * buying and stock movement it describes have happened — the same
+     * Placed after Inventory because a report is what you read once the
+     * selling, buying and stock movement it describes have happened — the same
      * build-order logic Catalog's ordering follows.
      *
      * Stock report leads: it is the only one that answers a question about
@@ -226,6 +245,13 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Home Sections', path: '/ui/home-sections', icon: LayoutList },
       { label: 'Home Slider', path: '/ui/home-slider', icon: GalleryHorizontal },
       { label: 'Banners', path: '/ui/banners', icon: ImageIcon },
+      /*
+       * Directly below Banners, because it is the narrower of the two: that
+       * page holds every banner the shop has, this one arranges the promo ones
+       * into strips. A merchant who adds a promo banner and then wonders where
+       * it went is looking for this.
+       */
+      { label: 'Promo Banners', path: '/ui/promo-banners', icon: LayoutGrid },
       { label: 'Header Links', path: '/ui/header-links', icon: PanelTop },
       { label: 'Footer Links', path: '/ui/footer-links', icon: PanelBottom },
       { label: 'Catalog Setting', path: '/ui/catalog-settings', icon: Boxes },
@@ -233,8 +259,8 @@ export const NAV_SECTIONS: NavSection[] = [
       /*
        * Everything this shop connects to: courier accounts and marketing
        * integrations. Sits with the other settings editors rather than under
-       * Sales beside the Courier page — that one reports account state, this one
-       * decides what is connected and holds the credentials.
+       * Inventory beside the Courier page — that one reports account state,
+       * this one decides what is connected and holds the credentials.
        *
        * Gated to OWNER/ADMIN by this section, matching the RoleGuard in
        * app-router.tsx — the two must be kept in step by hand. STAFF is excluded

@@ -75,9 +75,18 @@ export default function CatalogSettingsPage() {
    * show what the website is actually doing rather than reading as off. `data &&` matters: until the
    * record arrives the draft has no loaded value, and `useSettingsDraft` treats it as not-yet-dirty
    * rather than as a merchant's choice.
+   *
+   * SPREAD PER KEY, not `??` on the whole block. The admin read returns the row AS STORED — unlike
+   * the public endpoint, it merges no defaults — so a row written before a flag existed carries
+   * every older key and none of the new one. A whole-block fallback only fires when the column is
+   * null, so that row would seed the new flag as `undefined`: the switch would read as off, and the
+   * save would send `undefined` into a schema that requires every flag. Spreading the default
+   * underneath fills in exactly the keys the stored row predates.
+   *
+   * See server/openspec/changes/add-product-slider-and-card-quantity, task 9.1.
    */
   const draft = useSettingsDraft<CatalogConfig>(
-    data && (data.catalogConfig ?? DEFAULT_CATALOG_CONFIG),
+    data && { ...DEFAULT_CATALOG_CONFIG, ...(data.catalogConfig ?? {}) },
     DEFAULT_CATALOG_CONFIG,
   )
   const blocker = useUnsavedChangesGuard(draft.isDirty)
@@ -158,6 +167,28 @@ export default function CatalogSettingsPage() {
           {config.showQuickView
             ? 'A product with options opens a preview over the list, where the customer picks their option and adds to the cart without leaving the page.'
             : 'A product with options goes straight to its full product page instead of opening a preview. Products without options still add to the cart from the list.'}
+        </FeatureSwitch>
+
+        <FeatureSwitch
+          id="open-cart-on-add"
+          label="Open the cart after adding"
+          checked={config.openCartOnAdd}
+          onChange={(checked) => setConfig({ openCartOnAdd: checked })}
+        >
+          {config.openCartOnAdd
+            ? 'The cart panel slides open each time a customer adds something, showing what is now in it.'
+            : 'Adding leaves the customer where they are — the button confirms it and the cart count goes up. They open the cart themselves from the header, the mobile bar or the floating tab, all of which still work.'}
+        </FeatureSwitch>
+
+        <FeatureSwitch
+          id="card-quantity-control"
+          label="Change quantity from the product card"
+          checked={config.cardQuantityControl}
+          onChange={(checked) => setConfig({ cardQuantityControl: checked })}
+        >
+          {config.cardQuantityControl
+            ? 'Once a product is in the cart, its card in the list shows a − 1 + stepper in place of the Add to cart button, so customers can change how many without opening the cart.'
+            : 'Product cards always show Add to cart. Customers change quantities in the cart panel, on the cart page or at checkout.'}
         </FeatureSwitch>
       </Card>
 

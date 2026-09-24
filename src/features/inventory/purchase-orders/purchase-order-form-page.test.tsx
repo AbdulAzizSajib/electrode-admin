@@ -105,6 +105,21 @@ vi.mock('@/components/ui/use-toast', () => ({ toast: vi.fn() }))
 import PurchaseOrderFormPage from '@/features/inventory/purchase-orders/purchase-order-form-page'
 import { formatCurrency } from '@/lib/utils/format'
 
+/**
+ * Adds a product through the search bar — the only way to put a line on an
+ * order now. A variable product leaves the variant dialog open for the caller.
+ */
+const addViaSearch = async (user: ReturnType<typeof userEvent.setup>, label: string) => {
+  await user.click(screen.getByRole('combobox', { name: 'Search products to add to this order' }))
+  await waitFor(() => expect(screen.getByRole('listbox')).not.toBeNull())
+  await user.click(screen.getByRole('option', { name: label }))
+}
+
+const chooseSupplier = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(screen.getByRole('combobox', { name: 'Supplier' }))
+  await user.click(await screen.findByRole('option', { name: /Anker BD/ }))
+}
+
 const purchaseOrder = (status: string) => ({
   id: 'po-1',
   purchaseNumber: 'PO-0001',
@@ -236,23 +251,18 @@ describe('PurchaseOrderFormPage — a record that will not load', () => {
  * reporting a problem.
  */
 describe('PurchaseOrderFormPage — which variant the stock is for', () => {
-  /** Picks `label` in the combobox named `name`. */
-  const choose = async (user: ReturnType<typeof userEvent.setup>, name: string, label: string) => {
-    await user.click(screen.getByRole('combobox', { name }))
-    await waitFor(() => expect(screen.getByRole('listbox')).not.toBeNull())
-    await user.click(screen.getByRole('option', { name: label }))
-  }
-
   it('sends the chosen variant, so the stock lands where orders look for it', async () => {
     const user = userEvent.setup()
     render(<PurchaseOrderFormPage />)
 
-    await choose(user, 'Supplier', 'Anker BD')
-    await choose(user, 'Product for line 1', 'Q86 Retro')
-    await choose(user, 'Variant for Q86 Retro', 'White')
+    await chooseSupplier(user)
+    // A variable product opens the dialog instead of adding a line outright.
+    await addViaSearch(user, 'Q86 Retro')
+    await user.click(await screen.findByRole('option', { name: /White/ }))
 
-    await user.clear(screen.getByLabelText('Quantity for Q86 Retro'))
-    await user.type(screen.getByLabelText('Quantity for Q86 Retro'), '50')
+    const qty = await screen.findByLabelText('Quantity for Q86 Retro')
+    await user.clear(qty)
+    await user.type(qty, '50')
 
     await user.click(screen.getByRole('button', { name: 'Create purchase order' }))
 
@@ -264,30 +274,83 @@ describe('PurchaseOrderFormPage — which variant the stock is for', () => {
     })
   })
 
-  it('refuses to save a variable product line that names no variant', async () => {
+  /*
+   * The old form let a variable product's line sit on the table naming no
+   * variant, and caught it at save. The dialog makes that state unreachable:
+   * dismissing it adds nothing at all, so there is no invalid line to refuse.
+   * Asserted as "no line was created" rather than "the save was refused",
+   * because the guard moved earlier rather than away.
+   */
+  it('adds no line at all when the variant dialog is dismissed', async () => {
     const user = userEvent.setup()
     render(<PurchaseOrderFormPage />)
 
-    await choose(user, 'Supplier', 'Anker BD')
-    await choose(user, 'Product for line 1', 'Q86 Retro')
-    // Variant deliberately left unchosen.
+    await chooseSupplier(user)
+    await addViaSearch(user, 'Q86 Retro')
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    // The blank opening row is still blank — nothing was put on the order.
+    expect(screen.getByLabelText('Quantity for line 1')).toBeTruthy()
 
     await user.click(screen.getByRole('button', { name: 'Create purchase order' }))
-
-    await waitFor(() => expect(screen.getByText('Choose which variant this line is for')).toBeTruthy())
-    // The point of the guard: nothing was sent.
     expect(createMutate).not.toHaveBeenCalled()
   })
 
-  it('leaves a simple product alone — no picker, and no variantId sent', async () => {
+  /*
+   * REGRESSION. The dialog first shipped as a list of <button>s, which answer
+   * arrow keys by doing nothing — the merchant's report was "modal ase thik ee
+   * but keyboard diye up/down arrow diye select korte pari na".
+   *
+   * The fix is the contract the Combobox in this kit already implements: a
+   * listbox whose highlight is state, published through `aria-activedescendant`,
+   * with the options NOT focusable. Pinned here because it is invisible to a
+   * mouse-only test — every click-driven assertion above passed while the
+   * keyboard did nothing at all.
+   */
+  it('moves through variants with the arrow keys and picks with Enter', async () => {
     const user = userEvent.setup()
     render(<PurchaseOrderFormPage />)
 
-    await choose(user, 'Supplier', 'Anker BD')
-    await choose(user, 'Product for line 1', 'Fast Charger')
+    await chooseSupplier(user)
+    await addViaSearch(user, 'Q86 Retro')
 
+    const list = await screen.findByRole('listbox', { name: /Variants of Q86 Retro/i })
+    // Opens on the first variant, so Enter alone is never a surprise.
+    expect(within(list).getByRole('option', { name: /Red/ }).getAttribute('aria-selected')).toBe('true')
+
+    await user.keyboard('{ArrowDown}')
+    expect(within(list).getByRole('option', { name: /White/ }).getAttribute('aria-selected')).toBe('true')
+
+    // Wraps, rather than stopping dead at the end of a two-item list.
+    await user.keyboard('{ArrowDown}')
+    expect(within(list).getByRole('option', { name: /Red/ }).getAttribute('aria-selected')).toBe('true')
+
+    await user.keyboard('{ArrowUp}')
+    expect(within(list).getByRole('option', { name: /White/ }).getAttribute('aria-selected')).toBe('true')
+
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
+    await user.click(screen.getByRole('button', { name: 'Create purchase order' }))
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalled())
+    expect(createMutate.mock.calls[0][0].items[0]).toMatchObject({
+      productId: 'p-2',
+      variantId: 'v-white',
+    })
+  })
+
+  it('leaves a simple product alone — no dialog, and no variantId sent', async () => {
+    const user = userEvent.setup()
+    render(<PurchaseOrderFormPage />)
+
+    await chooseSupplier(user)
+    await addViaSearch(user, 'Fast Charger')
+
+    // Added straight away: there is nothing to choose between.
     await waitFor(() => expect(screen.getByText('No variants')).toBeTruthy())
-    expect(screen.queryByRole('combobox', { name: 'Variant for Fast Charger' })).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
 
     await user.click(screen.getByRole('button', { name: 'Create purchase order' }))
 
@@ -296,25 +359,48 @@ describe('PurchaseOrderFormPage — which variant the stock is for', () => {
     expect(createMutate.mock.calls[0][0].items[0].variantId).toBeUndefined()
   })
 
-  it('drops a variant already chosen when the row switches product', async () => {
+  /*
+   * Two variants of one product are two items — stock is held per (warehouse,
+   * product, variant) — so each gets its own line. Merging them would order the
+   * right total of the wrong thing.
+   */
+  it('gives a second variant of the same product its own line', async () => {
     const user = userEvent.setup()
     render(<PurchaseOrderFormPage />)
 
-    await choose(user, 'Supplier', 'Anker BD')
-    await choose(user, 'Product for line 1', 'Q86 Retro')
-    await choose(user, 'Variant for Q86 Retro', 'Red')
+    await chooseSupplier(user)
+    await addViaSearch(user, 'Q86 Retro')
+    await user.click(await screen.findByRole('option', { name: /Red/ }))
 
-    // Carried over, "v-red" would be submitted against a product that does not
-    // own it — which the backend rejects outright.
-    await choose(user, 'Product for Q86 Retro', 'Fast Charger')
-
-    await waitFor(() => expect(screen.getByText('No variants')).toBeTruthy())
+    await addViaSearch(user, 'Q86 Retro')
+    await user.click(await screen.findByRole('option', { name: /White/ }))
 
     await user.click(screen.getByRole('button', { name: 'Create purchase order' }))
 
     await waitFor(() => expect(createMutate).toHaveBeenCalled())
-    expect(createMutate.mock.calls[0][0].items[0]).toMatchObject({ productId: 'p-1' })
-    expect(createMutate.mock.calls[0][0].items[0].variantId).toBeUndefined()
+    const { items } = createMutate.mock.calls[0][0]
+    expect(items).toHaveLength(2)
+    expect(items.map((i: { variantId?: string }) => i.variantId)).toEqual(['v-red', 'v-white'])
+  })
+
+  /*
+   * The same item picked twice is "one more of those". A second line would
+   * leave the merchant to reconcile two rows naming one thing.
+   */
+  it('increments the line when the same item is added again', async () => {
+    const user = userEvent.setup()
+    render(<PurchaseOrderFormPage />)
+
+    await chooseSupplier(user)
+    await addViaSearch(user, 'Fast Charger')
+    await addViaSearch(user, 'Fast Charger')
+
+    await user.click(screen.getByRole('button', { name: 'Create purchase order' }))
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalled())
+    const { items } = createMutate.mock.calls[0][0]
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ productId: 'p-1', quantity: 2 })
   })
 })
 
@@ -352,10 +438,9 @@ describe('PurchaseOrderFormPage — what the money adds up to', () => {
  * See openspec/changes/add-purchase-order-pricing.
  */
 describe('PurchaseOrderFormPage — the line pricing panel', () => {
-  /** Picks a product into row 0 and opens its pricing panel. */
+  /** Adds a simple product and opens its pricing panel. */
   const openPricingFor = async (user: ReturnType<typeof userEvent.setup>, label: string) => {
-    await user.click(screen.getByLabelText('Product for line 1'))
-    await user.click(await screen.findByRole('option', { name: label }))
+    await addViaSearch(user, label)
     await user.click(await screen.findByRole('button', { name: new RegExp(`Show prices for ${label}`, 'i') }))
   }
 
@@ -363,10 +448,9 @@ describe('PurchaseOrderFormPage — the line pricing panel', () => {
     const user = userEvent.setup()
     render(<PurchaseOrderFormPage />)
 
-    await user.click(screen.getByLabelText('Product for line 1'))
-    await user.click(await screen.findByRole('option', { name: 'Fast Charger' }))
+    await addViaSearch(user, 'Fast Charger')
 
-    const cost = screen.getByLabelText('Unit cost for Fast Charger') as HTMLInputElement
+    const cost = (await screen.findByLabelText('Unit cost for Fast Charger')) as HTMLInputElement
     await waitFor(() => expect(cost.value).toBe('90'))
 
     // The merchant overwrites it with what the supplier actually charged; a
@@ -378,6 +462,44 @@ describe('PurchaseOrderFormPage — the line pricing panel', () => {
     await waitFor(() => expect((screen.getByLabelText('Unit cost for Fast Charger') as HTMLInputElement).value).toBe('95'))
   })
 
+  /*
+   * REGRESSION. Each line must seed from the item IT names, including a product
+   * the form has already resolved once.
+   *
+   * The seed was a `useEffect` over `[watchedItems, productById]` and this
+   * sequence defeated it: `form.watch` returns the same mutated array, and a
+   * product already resolved leaves `productById` identical, so neither
+   * dependency changed and the effect never ran. The third line silently kept
+   * the second line's cost — the merchant's own report was "I select a product,
+   * then another, then the first again and the unit cost does not change".
+   */
+  it('seeds each line from its own product, including one already resolved', async () => {
+    const user = userEvent.setup()
+    render(<PurchaseOrderFormPage />)
+
+    await addViaSearch(user, 'Fast Charger')
+    await waitFor(() =>
+      expect((screen.getByLabelText('Unit cost for Fast Charger') as HTMLInputElement).value).toBe('90'),
+    )
+
+    await addViaSearch(user, 'No Cost Item')
+    const second = (await screen.findByLabelText('Unit cost for No Cost Item')) as HTMLInputElement
+    await user.clear(second)
+    await user.type(second, '77')
+
+    /*
+     * Back to the first product — already resolved, so the old effect saw no
+     * change and skipped it. It increments line 1, whose cost must still be its
+     * own 90 and not the 77 typed on line 2.
+     */
+    await addViaSearch(user, 'Fast Charger')
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('Unit cost for Fast Charger') as HTMLInputElement).value).toBe('90'),
+    )
+    expect((screen.getByLabelText('Unit cost for No Cost Item') as HTMLInputElement).value).toBe('77')
+  })
+
   it('leaves unit cost alone for an item with no cost basis', async () => {
     const user = userEvent.setup()
     render(<PurchaseOrderFormPage />)
@@ -386,8 +508,7 @@ describe('PurchaseOrderFormPage — the line pricing panel', () => {
     await user.clear(cost)
     await user.type(cost, '42')
 
-    await user.click(screen.getByLabelText('Product for line 1'))
-    await user.click(await screen.findByRole('option', { name: 'No Cost Item' }))
+    await addViaSearch(user, 'No Cost Item')
 
     // A null cost basis is unknown, not zero — writing 0 here would read as a
     // supplier who charged nothing.
@@ -400,25 +521,31 @@ describe('PurchaseOrderFormPage — the line pricing panel', () => {
     const user = userEvent.setup()
     render(<PurchaseOrderFormPage />)
 
-    await openPricingFor(user, 'Q86 Retro')
-    await user.click(screen.getByLabelText('Variant for Q86 Retro'))
-    await user.click(await screen.findByRole('option', { name: 'Red' }))
+    await addViaSearch(user, 'Q86 Retro')
+    await user.click(await screen.findByRole('option', { name: /Red/ }))
+    await user.click(await screen.findByRole('button', { name: /Show prices for Q86 Retro/i }))
 
-    // Red sets its own cost and offer price and inherits the parent's regular
-    // price — the per-field precedence, not whole-row.
-    await waitFor(() => expect(screen.getByText(formatCurrency(120))).toBeTruthy())
-    expect(screen.getByText(formatCurrency(200))).toBeTruthy()
-    expect(screen.getByText(formatCurrency(175))).toBeTruthy()
+    /*
+     * Red sets its own cost and offer price and inherits the parent's regular
+     * price — the per-field precedence, not whole-row.
+     *
+     * Scoped to the panel: the variant's cost also seeds Unit cost, so the same
+     * figure legitimately appears in the row's Amount cell as well.
+     */
+    const panel = await screen.findByText('Currently in the catalogue')
+    const catalogue = panel.parentElement as HTMLElement
+
+    await waitFor(() => expect(within(catalogue).getByText(formatCurrency(120))).toBeTruthy())
+    expect(within(catalogue).getByText(formatCurrency(200))).toBeTruthy()
+    expect(within(catalogue).getByText(formatCurrency(175))).toBeTruthy()
   })
 
   it('sends no staged prices for a line the merchant left alone', async () => {
     const user = userEvent.setup()
     render(<PurchaseOrderFormPage />)
 
-    await user.click(screen.getByLabelText('Supplier'))
-    await user.click(await screen.findByRole('option', { name: /Anker BD/ }))
-    await user.click(screen.getByLabelText('Product for line 1'))
-    await user.click(await screen.findByRole('option', { name: 'Fast Charger' }))
+    await chooseSupplier(user)
+    await addViaSearch(user, 'Fast Charger')
     await user.click(screen.getByRole('button', { name: /create purchase order/i }))
 
     await waitFor(() => expect(createMutate).toHaveBeenCalled())
@@ -432,8 +559,7 @@ describe('PurchaseOrderFormPage — the line pricing panel', () => {
     const user = userEvent.setup()
     render(<PurchaseOrderFormPage />)
 
-    await user.click(screen.getByLabelText('Supplier'))
-    await user.click(await screen.findByRole('option', { name: /Anker BD/ }))
+    await chooseSupplier(user)
     await openPricingFor(user, 'Fast Charger')
 
     await user.type(screen.getByLabelText('New offer price for Fast Charger'), '170')
@@ -446,86 +572,12 @@ describe('PurchaseOrderFormPage — the line pricing panel', () => {
     expect(item.stagedSellingPrice).toBeUndefined()
   })
 
-  it('computes a markup on the line’s unit cost', async () => {
-    const user = userEvent.setup()
-    render(<PurchaseOrderFormPage />)
-
-    await openPricingFor(user, 'Fast Charger')
-
-    const cost = screen.getByLabelText('Unit cost for Fast Charger') as HTMLInputElement
-    await waitFor(() => expect(cost.value).toBe('90'))
-    await user.clear(cost)
-    await user.type(cost, '120')
-
-    await user.click(screen.getByRole('button', { name: 'Apply' }))
-
-    const staged = screen.getByLabelText('New offer price for Fast Charger') as HTMLInputElement
-    await waitFor(() => expect(staged.value).toBe('150'))
-  })
-
-  it('declines a markup on a line with no cost, rather than proposing zero', async () => {
-    const user = userEvent.setup()
-    render(<PurchaseOrderFormPage />)
-
-    await openPricingFor(user, 'Fast Charger')
-
-    const cost = screen.getByLabelText('Unit cost for Fast Charger') as HTMLInputElement
-    await waitFor(() => expect(cost.value).toBe('90'))
-    await user.clear(cost)
-    await user.type(cost, '0')
-
-    await user.click(screen.getByRole('button', { name: 'Apply' }))
-
-    expect(await screen.findByText(/unit cost first/i)).toBeTruthy()
-    expect((screen.getByLabelText('New offer price for Fast Charger') as HTMLInputElement).value).toBe('')
-  })
-
-  it('adjusts a staged price by a fixed amount, up and down, never below zero', async () => {
-    const user = userEvent.setup()
-    render(<PurchaseOrderFormPage />)
-
-    await openPricingFor(user, 'Fast Charger')
-
-    const staged = screen.getByLabelText('New offer price for Fast Charger') as HTMLInputElement
-    const delta = screen.getByLabelText('Adjustment amount for Fast Charger')
-
-    await user.type(staged, '150')
-    await user.type(delta, '20')
-    await user.click(screen.getByRole('button', { name: 'Offer' }))
-    await waitFor(() => expect(staged.value).toBe('170'))
-
-    await user.clear(delta)
-    await user.type(delta, '-50')
-    await user.click(screen.getByRole('button', { name: 'Offer' }))
-    await waitFor(() => expect(staged.value).toBe('120'))
-
-    // A decrease larger than the price clamps rather than going negative.
-    await user.clear(delta)
-    await user.type(delta, '-500')
-    await user.click(screen.getByRole('button', { name: 'Offer' }))
-    await waitFor(() => expect(staged.value).toBe('0'))
-  })
-
-  it('does not re-evaluate a computed price when the cost later changes', async () => {
-    const user = userEvent.setup()
-    render(<PurchaseOrderFormPage />)
-
-    await openPricingFor(user, 'Fast Charger')
-
-    const cost = screen.getByLabelText('Unit cost for Fast Charger') as HTMLInputElement
-    await waitFor(() => expect(cost.value).toBe('90'))
-    await user.clear(cost)
-    await user.type(cost, '120')
-    await user.click(screen.getByRole('button', { name: 'Apply' }))
-
-    const staged = screen.getByLabelText('New offer price for Fast Charger') as HTMLInputElement
-    await waitFor(() => expect(staged.value).toBe('150'))
-
-    // A helper fills a field; it does not install a rule. Were the markup
-    // stored instead, a receipt could apply a price the line never showed.
-    await user.clear(cost)
-    await user.type(cost, '200')
-    await waitFor(() => expect((screen.getByLabelText('Unit cost for Fast Charger') as HTMLInputElement).value).toBe('200'))
-    expect((screen.getByLabelText('New offer price for Fast Charger') as HTMLInputElement).value).toBe('150')
-  })
+  /*
+   * The markup and fixed-adjust helpers had four tests here, removed with the
+   * controls themselves (design.md Decision 4, reversed on request — see the
+   * note on `LinePricing`). The arithmetic they covered still exists on the
+   * server and is still pinned by `scripts/verify-cost-basis.ts`; what is gone
+   * is the admin's mirror of it, so there is nothing left in this file to
+   * assert about it. The two staged inputs remain covered above and below.
+   */
 })

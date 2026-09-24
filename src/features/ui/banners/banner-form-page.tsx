@@ -7,6 +7,15 @@ import { ResourceFormPage } from '@/components/crud/resource-form-page'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
+import { PROMO_LAYOUT_LABEL, usePromoBannerGroups } from '@/lib/api/promo-banner-groups'
+
+/*
+ * Radix's Select cannot hold an empty-string value — it reserves `''` for "no
+ * selection" and throws on an item carrying it. So "no strip" travels through
+ * the control under a sentinel and is translated back to `''` on change, which
+ * `toBannerPayload` then sends as an explicit null.
+ */
+const NO_PROMO_GROUP = '__none__'
 import { SingleImageField } from '@/components/forms/single-image-field'
 import { BANNERS_PATH } from '@/features/ui/banners/banners-page'
 import { PLACEMENT_LABEL } from '@/features/ui/banners/banner-labels'
@@ -51,6 +60,14 @@ const schema = z
     placement: z.enum(BANNER_PLACEMENTS),
     status: z.enum(BANNER_STATUSES),
     sortOrder: z.coerce.number().int('Must be a whole number'),
+    /*
+     * The promo strip this banner is a tile of. `''` is "no strip" — the form
+     * works in strings and a Select cannot hold null, so the empty value is
+     * translated to an explicit `null` in `toBannerPayload`. That distinction
+     * matters: null REMOVES the banner from its strip, while omitting the key
+     * would leave it where it was.
+     */
+    promoBannerGroupId: z.string(),
     image: optionalText,
     mobileImage: optionalText,
     title: z.string().trim(),
@@ -84,6 +101,7 @@ const EMPTY_VALUES: Values = {
   // banner defaulting into one would be saved somewhere this form's list can no
   // longer show it.
   placement: 'MID',
+  promoBannerGroupId: '',
   status: 'DRAFT',
   sortOrder: 0,
   image: '',
@@ -109,6 +127,7 @@ function toFormValues(b: Banner): Values {
     placement: b.placement,
     status: b.status,
     sortOrder: b.sortOrder,
+    promoBannerGroupId: b.promoBannerGroupId ?? '',
     image: b.image ?? '',
     mobileImage: b.mobileImage ?? '',
     title: b.title ?? '',
@@ -140,6 +159,23 @@ function toBannerPayload(v: OutputValues): BannerInput {
     placement: v.placement,
     status: v.status,
     sortOrder: v.sortOrder,
+  }
+
+  /*
+   * ALWAYS SENT FOR A MID BANNER, including as `null`.
+   *
+   * `null` is how a merchant takes a tile out of a strip without deleting the
+   * artwork, and omitting the key means "leave it where it is" — so a blank
+   * selection has to travel as an explicit null or clearing the field would
+   * silently do nothing.
+   *
+   * NEVER SENT FOR ANY OTHER PLACEMENT. The backend refuses a group on a
+   * non-MID banner, so sending even a null on a hero banner would be noise at
+   * best; and a banner moved off MID has its membership cleared by the server
+   * against the merged placement.
+   */
+  if (v.placement === 'MID') {
+    input.promoBannerGroupId = v.promoBannerGroupId || null
   }
 
   if (v.image) input.image = v.image
@@ -191,6 +227,11 @@ export default function BannerFormPage() {
 
   const bannerType = form.watch('type') as BannerType
   const linkMode = form.watch('linkMode')
+  // Watched, not read once: the strip picker appears and disappears as the
+  // merchant changes the placement, without a save in between.
+  const placement = form.watch('placement')
+
+  const { data: promoGroups } = usePromoBannerGroups()
   const isDynamic = bannerType === 'DYNAMIC'
 
   const save = async (values: OutputValues) => {
@@ -271,6 +312,48 @@ export default function BannerFormPage() {
           </FormItem>
         )} />
       </div>
+
+      {/*
+        THE PROMO STRIP PICKER — only for a MID banner.
+
+        Hidden rather than disabled for every other placement, because the
+        backend refuses a group on a non-MID banner: showing a control that can
+        only produce an error is worse than not showing it. The hero placements
+        in particular are arranged by the Home Slider manager, which has its own
+        capacity rules per layout.
+
+        "No strip" is an explicit option, not the absence of a choice. A MID
+        banner with no strip is a real, reachable state — it is what every tile
+        of a deleted strip becomes — so a merchant needs to be able to both see
+        it and set it.
+      */}
+      {placement === 'MID' && (
+        <FormField control={form.control} name="promoBannerGroupId" render={({ field }) => (
+          <FormItem>
+            <FormLabel>Promo strip</FormLabel>
+            <Select
+              value={field.value || NO_PROMO_GROUP}
+              onValueChange={(v) => field.onChange(v === NO_PROMO_GROUP ? '' : v)}
+            >
+              <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+              <SelectContent>
+                <SelectItem value={NO_PROMO_GROUP}>No strip</SelectItem>
+                {(promoGroups ?? []).map((group) => (
+                  <SelectItem key={group.id} value={group.id}>
+                    {group.name} · {PROMO_LAYOUT_LABEL[group.layout].label.toLowerCase()}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FormDescription>
+              {promoGroups && promoGroups.length === 0
+                ? 'You have no promo strips yet. Create one under Promo Banners, then choose it here.'
+                : 'Which promotional row on your home page this image appears in. A banner with no strip is kept but not shown.'}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )} />
+      )}
 
       <div className="grid gap-3.5 md:grid-cols-2">
         {/*

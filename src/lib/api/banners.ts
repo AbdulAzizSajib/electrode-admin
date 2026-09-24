@@ -60,6 +60,8 @@ export interface Banner {
   textColor: string | null
   link: string | null
   productId: string | null
+  /** The promo strip this banner is a tile of. `MID` banners only; null for none. */
+  promoBannerGroupId: string | null
   status: BannerStatus
   sortOrder: number
   /** Null on either side means that end of the schedule is open — not "now". */
@@ -84,6 +86,13 @@ export interface BannerInput {
   textColor?: string
   link?: string
   productId?: string
+  /**
+   * The promo strip this banner joins. `null` REMOVES it from its strip —
+   * distinct from omitting the key, which leaves the membership unchanged.
+   * Only accepted on a `MID` banner; the backend refuses it on any other
+   * placement rather than ignoring it.
+   */
+  promoBannerGroupId?: string | null
   status?: BannerStatus
   sortOrder?: number
   startsAt?: string
