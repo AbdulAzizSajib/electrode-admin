@@ -15,10 +15,12 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { toast } from '@/components/ui/use-toast'
+import { AccountIconField } from '@/features/ui/checkout-settings/account-icon-field'
 import {
   EditorActions,
   EditorRow,
   EditorSection,
+  EditorSubsection,
   UnsavedChangesDialog,
 } from '@/features/ui/components/settings-editor'
 import {
@@ -32,14 +34,21 @@ import {
   useUpdateStoreSettings,
   CHECKOUT_FIELD_KEYS,
   CHECKOUT_FIELD_LABELS,
+  DEFAULT_ADVANCE_PAYMENT,
   DEFAULT_CHECKOUT_CONFIG,
   LOCKED_CHECKOUT_FIELDS,
   MAX_DELIVERY_OPTIONS,
+  MAX_PAYMENT_ACCOUNTS,
+  MOBILE_BANKING_PROVIDERS,
   SETTINGS_LIMITS,
+  type AdvancePaymentConfig,
+  type BankAccount,
   type CheckoutConfig,
   type CheckoutFieldKey,
   type DeliveryKind,
   type DeliveryOption,
+  type MobileBankingAccount,
+  type MobileBankingProvider,
 } from '@/lib/api/store-settings'
 
 /**
@@ -58,7 +67,7 @@ import {
 
 const TITLE = 'Checkout settings'
 const DESCRIPTION =
-  "Controls what the website's checkout page asks customers for, the delivery options they pick from, and what an order has to be worth to earn free delivery."
+  "Controls what the website's checkout page asks customers for, the delivery options they pick from, what an order has to be worth to earn free delivery, and whether money is collected before an order ships."
 
 /** Explains each locked row, shown beside its padlock. */
 const LOCK_REASON: Partial<Record<CheckoutFieldKey, string>> = {
@@ -91,6 +100,138 @@ const newOptionKey = (taken: DeliveryOption[]): string => {
   let n = existing.size + 1
   while (existing.has(`option-${n}`)) n++
   return `option-${n}`
+}
+
+/** The label a merchant reads for each mobile-money service. */
+const PROVIDER_LABELS: Record<MobileBankingProvider, string> = {
+  BKASH: 'bKash',
+  NAGAD: 'Nagad',
+  ROCKET: 'Rocket',
+}
+
+/**
+ * The id for a NEWLY ADDED payment account — generated once and NEVER rewritten.
+ *
+ * Stricter than `newOptionKey` above, and the difference is the whole point. A
+ * delivery key only has to survive a rename; this id is referenced by every
+ * placed order's payment row, so it must survive reordering and deletion too.
+ * Drawn from a counter across BOTH lists because the backend refuses a duplicate
+ * id whichever list it sits in — a mobile account and a bank account cannot
+ * share one.
+ */
+const newAccountId = (advance: AdvancePaymentConfig): string => {
+  const taken = new Set([
+    ...advance.mobileAccounts.map((account) => account.id),
+    ...advance.bankAccounts.map((account) => account.id),
+  ])
+  let n = taken.size + 1
+  while (taken.has(`account-${n}`)) n++
+  return `account-${n}`
+}
+
+/**
+ * Bangladeshi mobile numbers, as `normalizePhone` in the backend's
+ * `src/app/utils/phone.ts` accepts them: any of the ways one gets typed, with
+ * separators, reducing to `+8801[3-9]XXXXXXXX`.
+ *
+ * Duplicated here rather than deferred to the server because of what this page
+ * promises — see the file comment: a merchant must not compose a payload, press
+ * Save, and have to decode a 400. That is the opposite call from
+ * `order-create-page.tsx`, which is looser on purpose: there an operator is
+ * reading a number off a live call, and a refusal costs the sale. Here the
+ * merchant is typing their own account number from memory, and a wrong one is
+ * money sent to nobody.
+ */
+const isValidMobileNumber = (input: string): boolean => {
+  const cleaned = input.trim().replace(/[\s\-().]/g, '')
+  if (!/^\+?\d+$/.test(cleaned)) return false
+  const digits = cleaned.replace(/^\+/, '')
+  // Longest prefix first, matching the backend: "00880" also starts with "0".
+  const national = digits.startsWith('00880')
+    ? digits.slice(5)
+    : digits.startsWith('880')
+      ? digits.slice(3)
+      : digits.startsWith('0')
+        ? digits.slice(1)
+        : digits
+  return /^1[3-9]\d{8}$/.test(national)
+}
+
+/**
+ * The per-row advance-payment errors, on the same terms as `validateDelivery`:
+ * the message lands beside the offending account rather than arriving as a 400
+ * naming a path the merchant has to count rows to find.
+ *
+ * Two maps rather than one because the two lists are rendered separately and a
+ * row index means nothing without knowing which list it indexes.
+ */
+interface AdvancePaymentErrors {
+  mobile: Record<number, string>
+  bank: Record<number, string>
+}
+
+const validateAdvancePayment = (advance: AdvancePaymentConfig): AdvancePaymentErrors => {
+  const mobile: Record<number, string> = {}
+  const bank: Record<number, string> = {}
+
+  /*
+   * A DUPLICATE IS THE SAME NUMBER ON THE SAME SERVICE — not the same number.
+   *
+   * One phone number ordinarily carries a bKash account and a Nagad account at
+   * the same time; that is how mobile money works here, and most merchants
+   * register both on the number they already give out. Keying this on the
+   * number alone refused the second one, so a shop that takes bKash and Nagad
+   * on one line could not say so.
+   *
+   * The same number twice on ONE service is still a mistake: it offers the
+   * shopper a choice that is not a choice, and makes "which account was this
+   * claim sent to" unanswerable by eye.
+   *
+   * Not a backend rule in either direction — the server dedupes account ids and
+   * nothing else — so this is the only place the rule is stated.
+   */
+  const seenAccounts = new Map<string, number>()
+
+  advance.mobileAccounts.forEach((account, index) => {
+    const number = account.number.trim()
+
+    if (number === '') {
+      mobile[index] = 'Give this account a number — a shopper has nowhere to send money without one.'
+      return
+    }
+    if (!isValidMobileNumber(number)) {
+      mobile[index] = 'That is not a Bangladeshi mobile number. Enter it as 01XXXXXXXXX.'
+      return
+    }
+
+    const firstSeen = seenAccounts.get(`${account.provider}:${number}`)
+    if (firstSeen !== undefined) {
+      // Naming the service is what makes the message true: the merchant is
+      // being told this pair repeats, not that the number is spoken for.
+      mobile[index] = `Already entered as account ${firstSeen + 1} — the same ${PROVIDER_LABELS[account.provider]} number twice is one account, not two.`
+      return
+    }
+    seenAccounts.set(`${account.provider}:${number}`, index)
+  })
+
+  advance.bankAccounts.forEach((account, index) => {
+    if (account.bankName.trim() === '') {
+      bank[index] = 'Name the bank — a shopper needs it to make the transfer.'
+      return
+    }
+    if (account.accountName.trim() === '') {
+      // The one error nothing on the merchant's side can undo: a deposit slip
+      // made out to the wrong name. The backend refuses a blank for the same
+      // reason; this says so before the save.
+      bank[index] = 'Give the account name exactly as the bank holds it — a slip made out to the wrong name cannot be recovered.'
+      return
+    }
+    if (account.accountNumber.trim() === '') {
+      bank[index] = 'Give the account number.'
+    }
+  })
+
+  return { mobile, bank }
 }
 
 /**
@@ -281,6 +422,92 @@ export default function CheckoutSettingsPage() {
     })
   }
 
+  /* ---------------------------------------------------------------- *
+   * Advance payment accounts
+   * ---------------------------------------------------------------- */
+
+  // An absent `advancePayment` and an explicitly disabled one mean the same
+  // thing by design, so the form reads both as this. Same reason the delivery
+  // block above falls back: the form must render without depending on the
+  // backend having normalised the value first.
+  const advance = config.advancePayment ?? DEFAULT_ADVANCE_PAYMENT
+  const mobileAccounts = advance.mobileAccounts
+  const bankAccounts = advance.bankAccounts
+  const hasAnyAccount = mobileAccounts.length > 0 || bankAccounts.length > 0
+  const advanceErrors = validateAdvancePayment(advance)
+  const hasAdvanceErrors =
+    Object.keys(advanceErrors.mobile).length > 0 || Object.keys(advanceErrors.bank).length > 0
+
+  const setAdvance = (patch: Partial<AdvancePaymentConfig>) =>
+    setConfig({ advancePayment: { ...advance, ...patch } })
+
+  /**
+   * Every write to either list goes through here so the "enabled with no
+   * accounts" state is unreachable rather than merely discouraged. Removing the
+   * last account turns the feature off with it — the same move `removeOption`
+   * makes for the last pickup point, and for the same reason: leaving a
+   * saved-but-unsavable state is worse than acting on the merchant's behalf.
+   */
+  const setAccounts = (next: Partial<Pick<AdvancePaymentConfig, 'mobileAccounts' | 'bankAccounts'>>) => {
+    const mobile = next.mobileAccounts ?? mobileAccounts
+    const bank = next.bankAccounts ?? bankAccounts
+    setAdvance({
+      mobileAccounts: mobile,
+      bankAccounts: bank,
+      enabled: advance.enabled && (mobile.length > 0 || bank.length > 0),
+    })
+  }
+
+  const addMobileAccount = () =>
+    setAccounts({
+      mobileAccounts: [
+        ...mobileAccounts,
+        // bKash first because it is the one a Bangladeshi shop sets up first,
+        // not because anything branches on it. The number is blank: there is no
+        // guessable default, and an account nobody typed is money sent nowhere.
+        { id: newAccountId(advance), provider: 'BKASH', number: '', accountType: '' },
+      ],
+    })
+
+  const patchMobileAccount = (index: number, patch: Partial<MobileBankingAccount>) =>
+    setAccounts({
+      // Patches the fields ONLY. `id` is generated when the row is added and
+      // never rewritten — see `newAccountId`. Changing a number here leaves
+      // every claim already sent to the old one still readable, because the
+      // payment row snapshotted the details it displayed at placement.
+      mobileAccounts: mobileAccounts.map((account, i) =>
+        i === index ? { ...account, ...patch } : account,
+      ),
+    })
+
+  const removeMobileAccount = (index: number) =>
+    setAccounts({ mobileAccounts: mobileAccounts.filter((_, i) => i !== index) })
+
+  const addBankAccount = () =>
+    setAccounts({
+      bankAccounts: [
+        ...bankAccounts,
+        {
+          id: newAccountId(advance),
+          bankName: '',
+          accountName: '',
+          accountNumber: '',
+          branch: '',
+          routingNumber: '',
+        },
+      ],
+    })
+
+  const patchBankAccount = (index: number, patch: Partial<BankAccount>) =>
+    setAccounts({
+      bankAccounts: bankAccounts.map((account, i) =>
+        i === index ? { ...account, ...patch } : account,
+      ),
+    })
+
+  const removeBankAccount = (index: number) =>
+    setAccounts({ bankAccounts: bankAccounts.filter((_, i) => i !== index) })
+
   const save = async () => {
     // The form says no before the API does. Without this the merchant would get
     // a 400 whose message they would have to map back onto a row by hand — the
@@ -292,6 +519,19 @@ export default function CheckoutSettingsPage() {
           deliveryErrors.emptyList ??
           deliveryErrors.pickup ??
           'One of the delivery options needs fixing before this can be saved.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    // Same contract for the payment accounts: the per-row messages are already
+    // pointing at the offending account, so the toast names the section and
+    // leaves the detail where the merchant can act on it.
+    if (hasAdvanceErrors) {
+      toast({
+        title: 'Check the payment accounts',
+        description:
+          'One of the accounts a shopper would send money to needs fixing before this can be saved.',
         variant: 'destructive',
       })
       return
@@ -610,6 +850,268 @@ export default function CheckoutSettingsPage() {
           Collection in person is never free — that price is what the pickup location charges for it.
         </span>
       </Card>
+
+      <EditorSection
+        title="Advance payment"
+        description="Takes money before the order ships. A shopper sends it to one of the accounts below by bKash, Nagad, Rocket or bank transfer, types the reference, and an order waits until someone here checks the statement and verifies it."
+      >
+        <div className="flex items-start gap-3">
+          <Switch
+            id="advance-payment-enabled"
+            checked={advance.enabled}
+            /*
+             * Cannot be turned ON with nowhere to send money — the backend
+             * refuses that save outright, and a checkout asking for a
+             * transaction id against no account is the reason it does. Said
+             * here so the merchant reads it before composing the payload rather
+             * than as a 400 afterwards.
+             */
+            disabled={!advance.enabled && !hasAnyAccount}
+            onCheckedChange={(checked) => setAdvance({ enabled: checked })}
+          />
+          <div className="flex flex-col gap-0.5">
+            <Label htmlFor="advance-payment-enabled">Ask for payment before shipping</Label>
+            <span className="max-w-xl text-xs text-muted-foreground">
+              {advance.enabled
+                ? 'Checkout offers two choices: send the delivery charge now and pay the rest at the door, or send the whole total now. Either way the order is held until the payment is verified.'
+                : 'Checkout is cash on delivery only. Nothing is collected up front and no payment choice is shown.'}
+            </span>
+            {!advance.enabled && !hasAnyAccount && (
+              <span className="max-w-xl pt-1 text-xs text-muted-foreground">
+                Add an account below to enable this.
+              </span>
+            )}
+            {advance.enabled && (
+              <span className="flex max-w-xl items-start gap-1.5 pt-1 text-xs text-amber-600">
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+                Nothing checks that the money arrived. An order stays put until someone here reads
+                the statement and verifies the claim, so orders pile up if nobody does.
+              </span>
+            )}
+          </div>
+        </div>
+
+        <EditorSubsection
+          title="Mobile banking accounts"
+          description="Shown to the shopper with the number to send to. The account type is your own label — Personal, Merchant, Agent. An icon is optional: leave it empty and checkout shows the service's own mark."
+          onAdd={addMobileAccount}
+          addLabel="Add mobile account"
+          atCapacity={mobileAccounts.length >= MAX_PAYMENT_ACCOUNTS}
+          capacityNote={`${MAX_PAYMENT_ACCOUNTS} accounts at most.`}
+        >
+          {mobileAccounts.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              None yet. Add the bKash, Nagad or Rocket number a shopper should send to.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {mobileAccounts.map((account, index) => (
+                <EditorRow
+                  key={account.id}
+                  index={index}
+                  count={mobileAccounts.length}
+                  onMove={(from, to) =>
+                    setAccounts({ mobileAccounts: moveItem(mobileAccounts, from, to) })
+                  }
+                  onRemove={() => removeMobileAccount(index)}
+                  error={advanceErrors.mobile[index]}
+                  removeLabel={`Remove ${PROVIDER_LABELS[account.provider]} ${account.number.trim() || 'account'}`}
+                >
+                  {(errorId) => (
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                      {/*
+                        First in the row because it is what the shopper sees
+                        first on the card this configures — and because it is the
+                        one control here with a fixed width, so it cannot be the
+                        thing that gets squeezed.
+                      */}
+                      <AccountIconField
+                        inputId={`mobile-icon-${account.id}`}
+                        value={account.iconUrl ?? ''}
+                        onChange={(iconUrl) => patchMobileAccount(index, { iconUrl })}
+                        accountLabel={`${PROVIDER_LABELS[account.provider]} ${account.number.trim() || 'account'}`}
+                      />
+
+                      <div className="flex w-full flex-col gap-1 sm:w-36">
+                        <Label htmlFor={`mobile-provider-${account.id}`} className="text-xs">
+                          Service
+                        </Label>
+                        <select
+                          id={`mobile-provider-${account.id}`}
+                          className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                          value={account.provider}
+                          onChange={(e) =>
+                            patchMobileAccount(index, {
+                              provider: e.target.value as MobileBankingProvider,
+                            })
+                          }
+                        >
+                          {MOBILE_BANKING_PROVIDERS.map((provider) => (
+                            <option key={provider} value={provider}>
+                              {PROVIDER_LABELS[provider]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex min-w-0 flex-1 flex-col gap-1">
+                        <Label htmlFor={`mobile-number-${account.id}`} className="text-xs">
+                          Number
+                        </Label>
+                        <Input
+                          id={`mobile-number-${account.id}`}
+                          value={account.number}
+                          maxLength={20}
+                          inputMode="tel"
+                          placeholder="01XXXXXXXXX"
+                          aria-invalid={errorId !== undefined}
+                          aria-describedby={errorId}
+                          onChange={(e) => patchMobileAccount(index, { number: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="flex w-full flex-col gap-1 sm:w-40">
+                        <Label htmlFor={`mobile-type-${account.id}`} className="text-xs">
+                          Account type
+                        </Label>
+                        <Input
+                          id={`mobile-type-${account.id}`}
+                          value={account.accountType}
+                          maxLength={40}
+                          placeholder="e.g. Personal"
+                          onChange={(e) =>
+                            patchMobileAccount(index, { accountType: e.target.value })
+                          }
+                        />
+                      </div>
+                    </div>
+                  )}
+                </EditorRow>
+              ))}
+            </div>
+          )}
+        </EditorSubsection>
+
+        <EditorSubsection
+          title="Bank accounts"
+          description="Branch and routing number can be left blank — a shopper transferring inside the same bank needs neither. An icon is optional: without one the card shows a generic bank mark."
+          onAdd={addBankAccount}
+          addLabel="Add bank account"
+          atCapacity={bankAccounts.length >= MAX_PAYMENT_ACCOUNTS}
+          capacityNote={`${MAX_PAYMENT_ACCOUNTS} accounts at most.`}
+        >
+          {bankAccounts.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              None yet. Add one if you want to take bank transfers as well.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {bankAccounts.map((account, index) => (
+                <EditorRow
+                  key={account.id}
+                  index={index}
+                  count={bankAccounts.length}
+                  onMove={(from, to) =>
+                    setAccounts({ bankAccounts: moveItem(bankAccounts, from, to) })
+                  }
+                  onRemove={() => removeBankAccount(index)}
+                  error={advanceErrors.bank[index]}
+                  removeLabel={`Remove ${account.bankName.trim() || 'this bank account'}`}
+                >
+                  {(errorId) => (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                        {/* First in the row, as on a mobile account: same control,
+                            same place, so the two lists stay one pattern. */}
+                        <AccountIconField
+                          inputId={`bank-icon-${account.id}`}
+                          value={account.iconUrl ?? ''}
+                          onChange={(iconUrl) => patchBankAccount(index, { iconUrl })}
+                          accountLabel={account.bankName.trim() || 'this bank account'}
+                        />
+
+                        <div className="flex min-w-0 flex-1 flex-col gap-1">
+                          <Label htmlFor={`bank-name-${account.id}`} className="text-xs">
+                            Bank
+                          </Label>
+                          <Input
+                            id={`bank-name-${account.id}`}
+                            value={account.bankName}
+                            maxLength={120}
+                            placeholder="e.g. Dutch-Bangla Bank"
+                            aria-invalid={errorId !== undefined}
+                            aria-describedby={errorId}
+                            onChange={(e) => patchBankAccount(index, { bankName: e.target.value })}
+                          />
+                        </div>
+
+                        <div className="flex min-w-0 flex-1 flex-col gap-1">
+                          <Label htmlFor={`bank-account-name-${account.id}`} className="text-xs">
+                            Account name
+                          </Label>
+                          <Input
+                            id={`bank-account-name-${account.id}`}
+                            value={account.accountName}
+                            maxLength={120}
+                            placeholder="As the bank holds it"
+                            onChange={(e) =>
+                              patchBankAccount(index, { accountName: e.target.value })
+                            }
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                        <div className="flex min-w-0 flex-1 flex-col gap-1">
+                          <Label htmlFor={`bank-account-number-${account.id}`} className="text-xs">
+                            Account number
+                          </Label>
+                          <Input
+                            id={`bank-account-number-${account.id}`}
+                            value={account.accountNumber}
+                            maxLength={60}
+                            onChange={(e) =>
+                              patchBankAccount(index, { accountNumber: e.target.value })
+                            }
+                          />
+                        </div>
+
+                        <div className="flex w-full flex-col gap-1 sm:w-44">
+                          <Label htmlFor={`bank-branch-${account.id}`} className="text-xs">
+                            Branch
+                          </Label>
+                          <Input
+                            id={`bank-branch-${account.id}`}
+                            value={account.branch}
+                            maxLength={120}
+                            placeholder="Optional"
+                            onChange={(e) => patchBankAccount(index, { branch: e.target.value })}
+                          />
+                        </div>
+
+                        <div className="flex w-full flex-col gap-1 sm:w-40">
+                          <Label htmlFor={`bank-routing-${account.id}`} className="text-xs">
+                            Routing number
+                          </Label>
+                          <Input
+                            id={`bank-routing-${account.id}`}
+                            value={account.routingNumber}
+                            maxLength={40}
+                            placeholder="Optional"
+                            onChange={(e) =>
+                              patchBankAccount(index, { routingNumber: e.target.value })
+                            }
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </EditorRow>
+              ))}
+            </div>
+          )}
+        </EditorSubsection>
+      </EditorSection>
 
       <Card className="flex flex-col gap-2 p-4">
         <Label htmlFor="checkout-notice">Notice shown above the Place Order button</Label>

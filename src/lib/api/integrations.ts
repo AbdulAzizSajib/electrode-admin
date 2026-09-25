@@ -23,7 +23,7 @@ import { requestData } from '@/lib/api/request'
 import { queryKeys } from '@/lib/api/query-keys'
 
 /** Where a card belongs on the page. */
-export type IntegrationCategory = 'COURIER' | 'MARKETING'
+export type IntegrationCategory = 'COURIER' | 'MARKETING' | 'NOTIFICATION'
 
 /** One credential's declaration and state, as the server reports it. */
 export interface IntegrationCredentialState {
@@ -106,6 +106,24 @@ const setIntegrationEnabled = (provider: string, enabled: boolean) =>
     body: JSON.stringify({ enabled }),
   })
 
+/**
+ * Sends a test message through an integration and reports whether it worked.
+ *
+ * The ONE call in this module whose failure the merchant is meant to read. Every
+ * other integration failure happens on the server, out of sight, because an
+ * alert must never fail the order it announces — which is exactly why this
+ * exists: without it, a mistyped Telegram chat ID is indistinguishable from a
+ * quiet day, until an order is missed.
+ *
+ * No body. `requestData` throws `ApiError` carrying the backend's own message,
+ * which here is Telegram's own wording — "chat not found" tells a merchant what
+ * to fix in a way that "the test failed" never will.
+ */
+const testIntegration = (provider: string) =>
+  requestData<{ message: string }>(`/integrations/${provider}/test`, {
+    method: 'POST',
+  })
+
 export function useIntegrations() {
   return useQuery({
     queryKey: queryKeys.integrations.list,
@@ -175,10 +193,24 @@ export function useSetIntegrationEnabled() {
   })
 }
 
+/**
+ * A test send.
+ *
+ * Deliberately does NOT invalidate anything on success: nothing about the
+ * integration's stored state changed, and a refetch would only make a
+ * successful test look like a save.
+ */
+export function useTestIntegration() {
+  return useMutation({
+    mutationFn: (provider: string) => testIntegration(provider),
+  })
+}
+
 /** Integration ids this panel refers to by name. Mirrors the server's registry. */
 export const INTEGRATION_IDS = {
   STEADFAST: 'STEADFAST',
   MANUAL: 'MANUAL',
   FACEBOOK_PIXEL: 'FACEBOOK_PIXEL',
   FACEBOOK_CAPI: 'FACEBOOK_CAPI',
+  TELEGRAM: 'TELEGRAM',
 } as const

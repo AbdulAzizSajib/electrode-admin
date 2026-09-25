@@ -339,6 +339,15 @@ export interface MobileBankingAccount {
   number: string
   /** The merchant's own label — "Personal", "Merchant". Nothing branches on it. */
   accountType: string
+  /**
+   * The service's logo, uploaded here and shown beside the account on checkout.
+   *
+   * Optional, and absent rather than empty on an account saved before the field
+   * existed — the storefront falls back to the mark it ships with. Cleared by
+   * writing "", which is what the backend accepts beside a URL: this block is
+   * replaced wholesale on save, so an omitted key is not "leave unchanged".
+   */
+  iconUrl?: string
 }
 
 /** One bank account a shopper deposits the advance into. `id` as above. */
@@ -347,6 +356,8 @@ export interface BankAccount {
   bankName: string
   accountName: string
   accountNumber: string
+  /** The bank's logo. Optional and cleared with "", exactly as on a mobile account. */
+  iconUrl?: string
   /** Both may be blank: a same-bank transfer needs neither. */
   branch: string
   routingNumber: string

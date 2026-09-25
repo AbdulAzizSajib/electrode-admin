@@ -41,6 +41,7 @@ const TONES: Record<string, string> = {
   MANUAL: 'bg-slate-500',
   FACEBOOK_PIXEL: 'bg-blue-600',
   FACEBOOK_CAPI: 'bg-indigo-600',
+  TELEGRAM: 'bg-sky-500',
 }
 
 export function IntegrationCard({

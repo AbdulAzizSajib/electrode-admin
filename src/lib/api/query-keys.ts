@@ -24,7 +24,12 @@ export const queryKeys = {
   supplierPayments: { all: ['supplier-payments'] as const, byPurchaseOrder: (purchaseOrderId: string) => ['supplier-payments', 'by-purchase-order', purchaseOrderId] as const },
 
   orders: { all: ['orders'] as const, list: (p?: object) => ['orders', 'list', p] as const, detail: (id: string) => ['orders', 'detail', id] as const },
-  payments: { byOrder: (orderId: string) => ['payments', 'by-order', orderId] as const },
+  payments: {
+    all: ['payments'] as const,
+    byOrder: (orderId: string) => ['payments', 'by-order', orderId] as const,
+    /** Advance-payment claims awaiting a staff decision, across every order. */
+    pendingVerification: ['payments', 'pending-verification'] as const,
+  },
   shipments: { byOrder: (orderId: string) => ['shipments', 'by-order', orderId] as const },
   // Only `balance` is cached. Dispatch and its preview are mutations — both take
   // a body, both are asked for on demand, and caching eligibility would be wrong

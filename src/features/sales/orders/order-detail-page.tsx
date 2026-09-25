@@ -20,7 +20,18 @@ import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
 import { CHANNEL_LABEL, ORDER_STATUSES, useOrder, useUpdateOrderStatus, type OrderStatus } from '@/lib/api/orders'
 import { useStaffUser } from '@/lib/api/staff-users'
 import { Thumbnail } from '@/components/ui/thumbnail'
-import { usePaymentsByOrder, useRecordPayment, type PaymentMethod, type PaymentStatus } from '@/lib/api/payments'
+import {
+  hasClaimDetails,
+  isUndecidedClaim,
+  usePaymentsByOrder,
+  useRecordPayment,
+  useRejectPayment,
+  useVerifyPayment,
+  type PaidToAccountSnapshot,
+  type Payment,
+  type PaymentMethod,
+  type PaymentStatus,
+} from '@/lib/api/payments'
 import { useShipmentByOrder } from '@/lib/api/shipments'
 import {
   useConfiguredCourier,
@@ -69,6 +80,66 @@ const STATUS_DOT: Record<OrderStatus, string> = {
 }
 
 const PAYMENT_METHOD_OPTIONS: PaymentMethod[] = ['COD', 'CARD', 'BKASH', 'NAGAD', 'ROCKET', 'STRIPE', 'PAYPAL', 'BANK_TRANSFER', 'OTHER']
+
+/**
+ * Payment methods in the panel's voice, for the same reason
+ * `PAYMENT_STATUS_LABEL` exists: `BANK_TRANSFER` in a sentence beside a
+ * human date reads as a database dump.
+ *
+ * Only the advance methods and COD are spelled out — the claim panel and the
+ * payment list are the two places a method is read in prose, and the gateway
+ * methods appear in neither on a shop with no gateway integrated. Anything not
+ * listed falls back to its own value with the underscore taken out.
+ */
+const PAYMENT_METHOD_LABEL: Partial<Record<PaymentMethod, string>> = {
+  COD: 'Cash on delivery',
+  BKASH: 'bKash',
+  NAGAD: 'Nagad',
+  ROCKET: 'Rocket',
+  BANK_TRANSFER: 'Bank transfer',
+}
+
+const paymentMethodLabel = (method: PaymentMethod) =>
+  PAYMENT_METHOD_LABEL[method] ?? method.replace(/_/g, ' ')
+
+/**
+ * The merchant account a claim names, as one line the operator can match
+ * against a statement.
+ *
+ * Read from the SNAPSHOT taken at placement, never from current settings. The
+ * merchant may have edited or deleted the account since, and a claim that cannot
+ * say which number the shopper actually sent to is unreviewable — which is why
+ * the snapshot is stored at all (design.md Decision 2).
+ *
+ * Falls back to the account id when there is no snapshot, which is the honest
+ * answer rather than a blank: the id is still what the claim references.
+ */
+const describeAccount = (
+  snapshot: PaidToAccountSnapshot | null,
+  accountId: string | null,
+): string => {
+  if (!snapshot) return accountId ?? '—'
+
+  if (snapshot.number) {
+    const provider = snapshot.provider
+      ? (PAYMENT_METHOD_LABEL[snapshot.provider as PaymentMethod] ?? snapshot.provider)
+      : ''
+    const type = snapshot.accountType ? ` (${snapshot.accountType})` : ''
+    return `${provider} ${snapshot.number}${type}`.trim()
+  }
+
+  if (snapshot.accountNumber) {
+    const parts = [snapshot.bankName, snapshot.accountNumber, snapshot.accountName].filter(Boolean)
+    const branch = snapshot.branch ? ` · ${snapshot.branch}` : ''
+    return `${parts.join(' · ')}${branch}`
+  }
+
+  return accountId ?? '—'
+}
+
+/** The staff member who decided a claim, however much of them the API returned. */
+const describeVerifier = (payment: Payment): string =>
+  payment.verifiedBy?.name ?? payment.verifiedBy?.email ?? 'a staff member'
 const PAYMENT_STATUS_OPTIONS: PaymentStatus[] = ['PENDING', 'PROCESSING', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED', 'PARTIALLY_REFUNDED']
 
 /**
@@ -167,6 +238,8 @@ export default function OrderDetailPage() {
   const { data: shipment } = useShipmentByOrder(orderId)
   const updateStatus = useUpdateOrderStatus()
   const recordPayment = useRecordPayment()
+  const verifyPayment = useVerifyPayment()
+  const rejectPayment = useRejectPayment()
   const dispatchOne = useDispatchSingleOrder()
   const createReturn = useCreateCourierReturn()
 
@@ -184,6 +257,9 @@ export default function OrderDetailPage() {
   const [paymentOpen, setPaymentOpen] = React.useState(false)
   const [returnOpen, setReturnOpen] = React.useState(false)
   const [returnReason, setReturnReason] = React.useState('')
+  const [rejectOpen, setRejectOpen] = React.useState(false)
+  const [rejectReason, setRejectReason] = React.useState('')
+  const confirmVerify = useConfirmDialog()
 
   useBreadcrumbLabel(order?.orderNumber)
 
@@ -205,6 +281,21 @@ export default function OrderDetailPage() {
 
   const paidTotal = (payments ?? []).filter((p) => p.status === 'PAID').reduce((s, p) => s + Number(p.amount), 0)
   const balanceDue = Math.max(0, Number(order.totalAmount) - paidTotal)
+
+  /*
+   * The advance-payment claim on this order, if it has one.
+   *
+   * At most one exists — checkout creates a single payment row for the advance
+   * and the remainder is the balance, not a second row (design.md Decision 3) —
+   * but this takes the first match rather than asserting that, because a claim
+   * silently not rendering would hide the control that releases the order.
+   *
+   * A claim that has been decided still has to be shown, so this is not the
+   * undecided predicate: `hasClaimDetails` asks whether there is a claim to
+   * READ, `isUndecidedClaim` asks whether one is owed a decision.
+   */
+  const claim = (payments ?? []).find(hasClaimDetails) ?? null
+  const claimUndecided = claim !== null && isUndecidedClaim(claim)
 
   /*
    * What the backend will accept from here: every status except the one the
@@ -245,6 +336,60 @@ export default function OrderDetailPage() {
       paymentForm.reset({ amount: 0, method: 'CARD', status: 'PAID' })
     } catch (err) {
       toast({ title: 'Could not record payment', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
+    }
+  }
+
+  /**
+   * Confirms that the money a shopper claimed to have sent actually arrived.
+   *
+   * THE OPERATOR IS THE VERIFICATION. Nothing here or on the server checks a
+   * bank statement — this records that a person said they read one. Hence the
+   * confirm step: a mis-clicked Verify releases an order against money that may
+   * never have been sent, and the audit log will name whoever clicked it.
+   *
+   * On success the order becomes confirmable straight away, without a reload:
+   * `useVerifyPayment` invalidates the order detail alongside the payment list,
+   * so the status control's `allowedTransitions` are refetched with it.
+   */
+  const submitVerify = async () => {
+    if (!orderId || !claim) return
+    try {
+      await verifyPayment.mutateAsync({ orderId, paymentId: claim.id })
+      toast({ title: 'Payment verified — the order can now be confirmed' })
+    } catch (err) {
+      toast({
+        title: 'Could not verify the payment',
+        description: err instanceof Error ? err.message : undefined,
+        variant: 'destructive',
+      })
+    }
+  }
+
+  /**
+   * Records that the claimed money did not arrive, with the grounds.
+   *
+   * The reason is required by the server and required here, because a rejection
+   * nobody can be told the grounds for is not actionable by the shopper who is
+   * out of pocket or by the next operator who opens the order. The button is
+   * disabled rather than the save being attempted and refused.
+   *
+   * Rejecting does NOT free the transaction reference. The shopper cannot
+   * resubmit the same id on a new order and hope for a different operator —
+   * said in the dialog, because it is the one consequence that is not obvious.
+   */
+  const submitReject = async () => {
+    if (!orderId || !claim) return
+    try {
+      await rejectPayment.mutateAsync({ orderId, paymentId: claim.id, reason: rejectReason.trim() })
+      toast({ title: 'Payment rejected — the order stays blocked' })
+      setRejectOpen(false)
+      setRejectReason('')
+    } catch (err) {
+      toast({
+        title: 'Could not reject the payment',
+        description: err instanceof Error ? err.message : undefined,
+        variant: 'destructive',
+      })
     }
   }
 
@@ -633,6 +778,108 @@ export default function OrderDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/*
+           * What the shopper says they sent, and what was decided about it.
+           *
+           * Its own card rather than a block inside Payments, because the two
+           * answer different questions: that card is the ledger of money on this
+           * order, this one is a review the operator has to act on. The balance
+           * due stays over there and needs no change — an advance of ৳130 against
+           * a ৳920 order already derives to ৳790 owed.
+           *
+           * Absent entirely on an order with no claim, which is every order on a
+           * shop with advance payment off.
+           *
+           * The controls are NOT wrapped in `RequireRole`, matching the Record an
+           * order button on the orders list and for the same reason: the backend
+           * gates verify and reject on ADMIN_PANEL_ROLES, which is OWNER/ADMIN/
+           * STAFF — every role that can sign into this panel. A `RequireRole`
+           * naming all three would read as a restriction while hiding the buttons
+           * from nobody. The server re-checks the role on both routes regardless.
+           */}
+          {claim && (
+            <Card>
+              <CardHeader className="flex-row items-center justify-between space-y-0">
+                <CardTitle>Advance payment</CardTitle>
+                {claimUndecided && (
+                  <div className="flex gap-2">
+                    <Button
+                      size="lg"
+                      loading={verifyPayment.isPending}
+                      onClick={() => confirmVerify.confirm(submitVerify)}
+                    >
+                      {!verifyPayment.isPending && <CheckCircle2 />}
+                      {verifyPayment.isPending ? 'Verifying…' : 'Verify'}
+                    </Button>
+                    <Button size="lg" variant="outline" onClick={() => setRejectOpen(true)}>
+                      Reject
+                    </Button>
+                  </div>
+                )}
+              </CardHeader>
+              <CardContent className="flex flex-col gap-1 text-sm">
+                {/* The amount claimed leads, because it is what the operator
+                    matches against the statement line they are looking at. */}
+                <Row label="Amount claimed" value={formatCurrency(Number(claim.amount))} bold />
+                <Row label="Method" value={paymentMethodLabel(claim.method)} />
+                <Row
+                  label="Sent to"
+                  value={describeAccount(claim.paidToAccountSnapshot, claim.paidToAccountId)}
+                />
+                <Row label="Sender" value={claim.senderIdentifier ?? '—'} mono />
+                {/* Monospaced like the courier identifiers above: this is the
+                    value an operator compares character by character against a
+                    statement, and a proportional font hides a transposed pair. */}
+                <Row label="Reference" value={claim.transactionId ?? '—'} mono />
+
+                <div className="mt-1 border-t border-border pt-2">
+                  {claimUndecided ? (
+                    <p className="flex items-start gap-1.5 text-warning">
+                      <Ban className="mt-0.5 size-3.5 shrink-0" />
+                      <span>
+                        Not verified yet. Check this reference against your{' '}
+                        {paymentMethodLabel(claim.method)} statement — the order cannot be confirmed
+                        or dispatched until you do. Cancelling it is still allowed.
+                      </span>
+                    </p>
+                  ) : claim.status === 'PAID' ? (
+                    <p className="flex items-start gap-1.5 text-success">
+                      <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
+                      <span>
+                        Verified by {describeVerifier(claim)}
+                        {claim.verifiedAt ? ` on ${formatDateTime(claim.verifiedAt)}` : ''}.
+                      </span>
+                    </p>
+                  ) : claim.status === 'FAILED' ? (
+                    <div className="flex flex-col gap-1">
+                      <p className="flex items-start gap-1.5 text-destructive">
+                        <Ban className="mt-0.5 size-3.5 shrink-0" />
+                        <span>
+                          Rejected by {describeVerifier(claim)}
+                          {claim.verifiedAt ? ` on ${formatDateTime(claim.verifiedAt)}` : ''}. The
+                          order stays blocked.
+                        </span>
+                      </p>
+                      {claim.rejectionReason && (
+                        <p className="pl-5 text-muted-foreground">
+                          Reason: {claim.rejectionReason}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    /* Any other status is a claim something else moved — a
+                       refund, a cancellation. Stated rather than left blank, so
+                       the panel never implies a decision nobody made. */
+                    <p className="text-muted-foreground">
+                      This claim is {PAYMENT_STATUS_LABEL[claim.status] ?? claim.status} and is no
+                      longer awaiting a decision.
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/*
            * The courier's own record of this parcel — the only delivery surface
@@ -1027,6 +1274,67 @@ export default function OrderDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Rejecting a claim. The reason is required — the server refuses a blank
+          one — so the button is disabled until there is one rather than the
+          request being sent to be turned down. */}
+      <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject this payment?</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3.5">
+            <p className="text-sm text-muted-foreground">
+              The order stays blocked from being confirmed or dispatched. The transaction reference
+              stays used up, so the same one cannot be submitted again on a new order.
+            </p>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="reject-claim-reason" className="text-sm font-medium">
+                Reason
+              </label>
+              <Input
+                id="reject-claim-reason"
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="No payment found on the statement for this reference"
+                maxLength={500}
+              />
+              <span className="text-xs text-muted-foreground">
+                Recorded against the order and in the audit log. Say what you checked — the next
+                person reading this order has only these words to go on.
+              </span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRejectOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={rejectReason.trim() === ''}
+              loading={rejectPayment.isPending}
+              onClick={() => void submitReject()}
+            >
+              Reject payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={confirmVerify.open}
+        onOpenChange={confirmVerify.setOpen}
+        title="Verify this payment?"
+        /* Names what verifying actually asserts, and that it is attributable.
+           Nothing in the system checks the money arrived — this records that a
+           person said it did, and the audit log names who. */
+        description="This records that the money arrived and releases the order to be confirmed and dispatched. Check the reference against your statement first — the decision is logged against your account."
+        confirmLabel="Verify payment"
+        variant="default"
+        loading={confirmVerify.pending}
+        onConfirm={confirmVerify.handleConfirm}
+      />
 
       <ConfirmDialog
         open={confirmCancel.open}

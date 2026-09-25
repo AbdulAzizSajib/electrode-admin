@@ -52,6 +52,9 @@ const OrderDocumentPage = lazy(
 const BulkDocumentPage = lazy(
   () => import('@/features/sales/orders/documents/bulk-document-page'),
 )
+const PaymentVerificationsPage = lazy(
+  () => import('@/features/sales/payments/payment-verifications-page'),
+)
 const ReturnsPage = lazy(() => import('@/features/sales/returns/returns-page'))
 const ReturnDetailPage = lazy(() => import('@/features/sales/returns/return-detail-page'))
 const RefundsPage = lazy(() => import('@/features/sales/refunds/refunds-page'))
@@ -220,6 +223,12 @@ export function AppRouter() {
               restriction while restricting nothing. */}
           <Route path="/sales/orders/new" element={<OrderCreatePage />} />
           <Route path="/sales/orders/:orderId" element={<OrderDetailPage />} />
+          {/* Below `/sales/orders/*` and on its own segment, so neither route can
+              capture the other. No RoleGuard, for the same reason as
+              `/sales/orders/new` above: the backend gates
+              GET /payments/pending-verification on ADMIN_PANEL_ROLES, which is
+              every value `AdminRole` can take. */}
+          <Route path="/sales/payment-verifications" element={<PaymentVerificationsPage />} />
           <Route path="/sales/returns" element={<ReturnsPage />} />
           <Route path="/sales/returns/:returnId" element={<ReturnDetailPage />} />
           <Route path="/sales/refunds" element={<RefundsPage />} />

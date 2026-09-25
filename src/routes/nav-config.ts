@@ -103,6 +103,26 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     /*
+     * Directly under Orders, and a direct link like it, because it is a queue
+     * rather than a screen: every row is an order a shopper has already paid for
+     * that cannot ship until someone here checks a statement. Buried under a
+     * section it would be opened when somebody remembered to, which on this
+     * feature means a shopper out of pocket waiting on an order nobody looked at.
+     * See server/openspec/changes/add-advance-payment-checkout, design.md — Risks.
+     *
+     * The cost is real and accepted: on a shop with advance payment off this is a
+     * permanently empty page in the primary nav. The sidebar cannot read store
+     * settings — `NavSection` gates on role only — and the alternatives were worse
+     * than an empty list that says so: under Inventory it would sit among stock
+     * screens it has nothing to do with, and under Reports it would read as
+     * something to look at rather than something to clear.
+     */
+    label: 'Payment Verification',
+    icon: BadgeCheck,
+    path: '/sales/payment-verifications',
+  },
+  {
+    /*
      * Top-level for the same reason as Orders: of everything under Catalog it
      * is by far the most opened, and unlike the rest of that section it is
      * reached on its own rather than while setting the catalogue up.

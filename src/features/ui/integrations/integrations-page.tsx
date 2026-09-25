@@ -30,6 +30,7 @@ import { CourierSelectionCard } from './courier-selection-card'
 import { CredentialForm } from './credential-form'
 import { FacebookCapiCard, FacebookPixelCard } from './facebook-cards'
 import { IntegrationCard } from './integration-card'
+import { TelegramCard } from './telegram-card'
 import { WebhookForm } from './webhook-form'
 
 const TITLE = 'Integrations'
@@ -84,6 +85,7 @@ export default function IntegrationsPage() {
   const steadfast = byId.get(INTEGRATION_IDS.STEADFAST)
   const pixel = byId.get(INTEGRATION_IDS.FACEBOOK_PIXEL)
   const capi = byId.get(INTEGRATION_IDS.FACEBOOK_CAPI)
+  const telegram = byId.get(INTEGRATION_IDS.TELEGRAM)
 
   return (
     <div className="flex flex-col gap-4">
@@ -120,6 +122,21 @@ export default function IntegrationsPage() {
           <FacebookPixelCard integration={pixel} onDirtyChange={markDirty('facebook-pixel')} />
         )}
         {capi && <FacebookCapiCard integration={capi} onDirtyChange={markDirty('facebook-capi')} />}
+      </section>
+
+      {/*
+        * Its own section rather than a third card under Marketing. These
+        * categories are how a merchant finds a thing again, and someone looking
+        * for "where do I turn off the order alerts" would not look beside the
+        * Facebook pixel. The heading matches the server's `NOTIFICATION`
+        * category so the two cannot drift.
+        */}
+      <section className="flex flex-col gap-4">
+        <h2 className="text-sm font-medium text-muted-foreground">Notifications</h2>
+
+        {telegram && (
+          <TelegramCard integration={telegram} onDirtyChange={markDirty('telegram')} />
+        )}
       </section>
 
       <UnsavedChangesDialog blocker={blocker} />
