@@ -97,6 +97,41 @@ export interface Newsletter {
   buttonLabel?: string
 }
 
+/**
+ * One column of the home page's perks band.
+ *
+ * Every field required, unlike the optional `icon` on a middle-bar link: the
+ * band is a row of aligned columns, so a perk missing any of the three renders
+ * as a hole in it. The backend's `perksSchema` enforces the same.
+ */
+export interface Perk {
+  /** An Iconify name, e.g. `lucide:truck`. Resolved by the STOREFRONT only. */
+  icon: string
+  title: string
+  description: string
+}
+
+/**
+ * The four columns a store that has never edited its perks band is showing.
+ *
+ * Mirrors the backend's `DEFAULT_PERKS` and exists for the same reason
+ * `DEFAULT_MIDDLE_BAR_LINKS` above does: the admin read returns the row AS
+ * STORED rather than merged over defaults, so without this the editor could not
+ * tell "never configured" from "configured to exactly this", and would show a
+ * merchant four empty rows for a band their site is visibly rendering.
+ *
+ * Deliberately NOT improved copy. These are the words the storefront hardcoded,
+ * so seeding them reproduces what the site already says; changing one here
+ * would edit every unconfigured store's home page from the admin's side of the
+ * wire, where nothing records that a merchant chose it.
+ */
+export const DEFAULT_PERKS: Perk[] = [
+  { icon: 'lucide:truck', title: 'Free Shipping', description: 'For orders over ৳130.' },
+  { icon: 'lucide:rotate-ccw', title: 'Money Return', description: '30 days for an exchange' },
+  { icon: 'lucide:gift', title: 'Member Discount', description: 'Shop smart and save bigger' },
+  { icon: 'lucide:headset', title: 'Special Gifts', description: 'Contact us anytime' },
+]
+
 /* ------------------------------------------------------------------ *
  * Currency presentation
  * ------------------------------------------------------------------ */
@@ -241,7 +276,19 @@ export const SETTINGS_LIMITS = {
   labelLength: 100,
   /** `navChildSchema.href` — every nav, footer, and announcement target. */
   hrefLength: 500,
-  /** The announcement link's Iconify name. */
+  /**
+   * How many columns the perks band holds. A LAYOUT limit mirroring the
+   * backend's `MAX_PERKS`, not a storage one: the band is a single row of equal
+   * columns — four across on a laptop, two on a tablet — so a fifth either
+   * wraps into a ragged second row or squeezes every supporting line until it
+   * breaks mid-word.
+   */
+  perks: 4,
+  /** `perksSchema.title`. */
+  perkTitleLength: 100,
+  /** `perksSchema.description`. */
+  perkDescriptionLength: 200,
+  /** The announcement link's Iconify name, and a perk's. */
   iconLength: 100,
   /** `announcementBarSchema.text`. */
   announcementTextLength: 300,
@@ -739,7 +786,10 @@ export const HOME_SECTION_REGISTRY: {
   {
     key: 'PERKS_BAR',
     label: 'Perks strip',
-    description: 'The coloured band listing delivery, returns, gifts and support.',
+    // Says it is editable, because it now is: its four columns were fixed in
+    // the storefront's source until add-perks-strip-content, and a description
+    // that only names what it happens to say today would read as a fixed block.
+    description: 'The coloured band of promises — delivery, returns, support. Edit its columns here.',
   },
   {
     key: 'DEAL_OF_WEEK',
@@ -1150,6 +1200,12 @@ export interface StoreSettings {
   middleBarLinks: MiddleBarLink[] | null
   newsletter: Newsletter | null
   /**
+   * The perks band's columns. Null until a merchant saves Home sections — the
+   * same "not configured" distinction as `middleBarLinks` above, which is why
+   * the editor seeds from `DEFAULT_PERKS` rather than from an empty list.
+   */
+  perks: Perk[] | null
+  /**
    * Null until a merchant saves the page. The two editors seed their forms from
    * the backend's own defaults in that case, so "never configured" and
    * "configured to the defaults" stay distinguishable in the stored row.
@@ -1274,6 +1330,12 @@ export interface StoreSettingsInput {
   announcementBar?: AnnouncementBar
   middleBarLinks?: MiddleBarLink[]
   newsletter?: Newsletter
+  /**
+   * The WHOLE ordered list, never a slice of one — a present value replaces the
+   * stored column outright, exactly like `homeConfig` below. `[]` clears the
+   * band; omitting the key leaves it untouched.
+   */
+  perks?: Perk[]
 
   checkoutConfig?: CheckoutConfig
   catalogConfig?: CatalogConfig

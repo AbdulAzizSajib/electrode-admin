@@ -11,6 +11,7 @@ import {
   ChevronDown,
   EyeOff,
   GripVertical,
+  Plus,
   TriangleAlert,
 } from 'lucide-react'
 import { PageHeader } from '@/components/ui/page-header'
@@ -24,6 +25,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/use-toast'
 import {
   EditorActions,
+  EditorRow,
   UnsavedChangesDialog,
 } from '@/features/ui/components/settings-editor'
 import {
@@ -48,6 +50,9 @@ import {
   HERO_VARIANT_OPTIONS,
   type NavItem,
   type Newsletter,
+  DEFAULT_PERKS,
+  SETTINGS_LIMITS,
+  type Perk,
 } from '@/lib/api/store-settings'
 import { CategoryLayoutPicker } from '@/features/ui/home-sections/category-layout-picker'
 import { ProductRowLayoutPicker } from '@/features/ui/home-sections/product-row-layout-picker'
@@ -55,20 +60,21 @@ import { ProductRowLayoutPicker } from '@/features/ui/home-sections/product-row-
 /**
  * Which sections the website's home page is built from, and in what order.
  *
- * Writes `homeConfig` AND `newsletter`, and nothing else. `PATCH /settings` is a partial upsert, so
- * this page and the other settings editors are saved independently without any of them clobbering
- * another — the same disjoint-field-set arrangement Catalog Setting, Checkout Setting, Header Links
- * and Footer Links already rely on.
+ * Writes `homeConfig`, `newsletter` AND `perks`, and nothing else. `PATCH /settings` is a partial
+ * upsert, so this page and the other settings editors are saved independently without any of them
+ * clobbering another — the same disjoint-field-set arrangement Catalog Setting, Checkout Setting,
+ * Header Links and Footer Links already rely on.
  *
- * Two keys rather than one because they are one decision for a merchant even though they are two
- * columns: whether the newsletter block exists, and what it says. The wording used to live on
- * Footer Links, back when the block was welded into the storefront footer and the only way to
- * remove it was to empty its heading. It is a home page section now, so its copy is here, beside
- * the switch that governs it.
+ * Three keys rather than one because they are one decision for a merchant even though they are
+ * three columns: whether a block exists, where it sits, and what it says. The newsletter's wording
+ * used to live on Footer Links, back when the block was welded into the storefront footer and the
+ * only way to remove it was to empty its heading; the perks band's wording was not editable at all
+ * and lived in the storefront's source. Both are home page sections now, so their copy is here,
+ * beside the switches that govern them.
  *
- * DISJOINTNESS STILL HOLDS — this was a move, not an addition. Footer Links no longer sends
- * `newsletter`, so exactly one editor writes it, which is the property the arrangement needs. If
- * you are adding a third key here, check nobody else writes it first.
+ * DISJOINTNESS STILL HOLDS — neither was an addition to a second writer. Footer Links no longer
+ * sends `newsletter`, and nothing else has ever written `perks`, so exactly one editor writes each.
+ * If you are adding a fourth key here, check nobody else writes it first.
  *
  * Every switch here is reversible at no cost, which is why none of them asks for confirmation:
  * turning a section off removes it from the home page and nothing else. The products, banners,
@@ -131,9 +137,19 @@ function navLabelsBySection(mainNav: NavItem[]): Map<HomeSectionKey, string[]> {
 interface HomeSectionsDraft {
   sections: HomeConfig
   newsletter: Newsletter
+  perks: Perk[]
 }
 
 const EMPTY_NEWSLETTER: Newsletter = { heading: '', subtext: '', placeholder: '', buttonLabel: '' }
+
+/**
+ * A fresh, blank column for the perks band.
+ *
+ * Blank rather than pre-filled with an example: the backend requires all three
+ * fields, so a seeded row would either be saved verbatim onto the merchant's
+ * live home page or have to be cleared before it could be filled in.
+ */
+const BLANK_PERK: Perk = { icon: '', title: '', description: '' }
 
 /**
  * One section: what it is, where it sits, and whether it is shown.
@@ -151,6 +167,9 @@ function SectionRow({
   onMove,
   onToggle,
   settings,
+  settingsError,
+  open: controlledOpen,
+  onOpenChange,
   hiddenNavLabels,
   promoGroup,
 }: {
@@ -162,6 +181,23 @@ function SectionRow({
   onToggle: (enabled: boolean) => void
   /** This section's own fields, revealed by a disclosure control. Omit for a section with none. */
   settings?: React.ReactNode
+  /**
+   * Why the last save was refused because of THIS section's fields, if it was.
+   * Rendered outside the panel, since the panel may be shut.
+   */
+  settingsError?: string
+  /**
+   * The disclosure's state, for a section whose panel the PAGE needs to be able
+   * to open — a save refused over a field in there has to be able to show the
+   * merchant the field. Omit to let the row own it, which is what every other
+   * section does.
+   *
+   * Controlled rather than a "force open" flag or an effect watching one: the
+   * page opens the panel from the same event handler that refuses the save, so
+   * nothing has to synchronise two copies of one piece of state afterwards.
+   */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
   /**
    * Header links this section is currently hiding, by label. Empty unless the section is off and
    * the merchant has a link pointing at a destination this section fills.
@@ -181,7 +217,14 @@ function SectionRow({
   const rowId = `${section.key}${section.groupId ? `-${section.groupId}` : ''}`
   const switchId = `home-section-${rowId}`
   const panelId = `home-section-${rowId}-settings`
-  const [open, setOpen] = React.useState(false)
+  /*
+   * Uncontrolled by default. `controlledOpen` wins when the page passed one,
+   * which it does for the section whose panel a refused save must be able to
+   * open; the local state is then simply never read.
+   */
+  const [selfOpen, setSelfOpen] = React.useState(false)
+  const open = controlledOpen ?? selfOpen
+  const setOpen = onOpenChange ?? setSelfOpen
 
   /*
    * A promo row is named after its GROUP, not after the section.
@@ -260,17 +303,17 @@ function SectionRow({
 
       <div className="flex shrink-0 items-center gap-1">
         {/*
-          Only the sections that have something to configure get this, and only the newsletter
-          does today. Deliberately NOT gated on `section.enabled`: a merchant may well write the
-          copy before switching the block on, and hiding the fields behind the switch would make
-          that impossible. The dimmed row is signal enough that it is off.
+          Only the sections that have something to configure get this. Deliberately NOT gated on
+          `section.enabled`: a merchant may well write the copy before switching the block on, and
+          hiding the fields behind the switch would make that impossible. The dimmed row is signal
+          enough that it is off.
         */}
         {settings ? (
           <Button
             type="button"
             size="icon"
             variant="ghost"
-            onClick={() => setOpen((wasOpen) => !wasOpen)}
+            onClick={() => setOpen(!open)}
             aria-expanded={open}
             aria-controls={panelId}
             aria-label={`${open ? 'Hide' : 'Show'} ${rowLabel} settings`}
@@ -314,6 +357,14 @@ function SectionRow({
       >
         {settings}
       </div>
+    ) : null}
+
+    {/*
+      Why the last save was refused, outside the panel so it survives the panel being shut —
+      the same reason the nav notice below is outside the draggable row.
+    */}
+    {settingsError ? (
+      <p className="px-3 pb-1 text-xs text-destructive">{settingsError}</p>
     ) : null}
 
     {/*
@@ -414,6 +465,125 @@ function NewsletterFields({
   )
 }
 
+/**
+ * The perks band's columns — the coloured strip reading "Free Shipping / Money
+ * Return / …" that used to be four objects in the storefront's own source.
+ *
+ * Here rather than on a screen of its own for the same reason the newsletter's
+ * wording is: the band is a home page section, and what it says belongs beside
+ * the switch that decides whether it appears and the handle that decides where
+ * it sits. A separate screen would also have meant a second writer of the row
+ * this page already saves.
+ *
+ * ALL THREE FIELDS ARE REQUIRED, which is why this panel validates rather than
+ * letting the save fail: the band is a row of aligned columns, so a perk with
+ * no icon is a hole in it and one with no title is a mark floating over a
+ * sentence. The backend refuses both; this says so before the round trip.
+ *
+ * NO ICON PREVIEW, and deliberately. The storefront resolves Iconify names and
+ * this panel has no Iconify dependency, so anything drawn here would be a
+ * second guess at what the site renders — the same call the header links editor
+ * already made. The field takes the name; the site draws the mark.
+ */
+function PerksFields({
+  value,
+  errors,
+  onChange,
+}: {
+  value: Perk[]
+  /** Keyed `<index>-<field>`, as the page's `perkErrors` builds them. */
+  errors: Record<string, string>
+  onChange: (next: Perk[]) => void
+}) {
+  const atCapacity = value.length >= SETTINGS_LIMITS.perks
+
+  /** This row's first complaint, so the row border and its message agree. */
+  const rowError = (index: number) =>
+    errors[`${index}-icon`] ?? errors[`${index}-title`] ?? errors[`${index}-description`]
+
+  const setPerk = (index: number, key: keyof Perk, next: string) =>
+    onChange(value.map((perk, i) => (i === index ? { ...perk, [key]: next } : perk)))
+
+  return (
+    <>
+      {value.length === 0 ? (
+        <p className="py-2 text-center text-sm text-muted-foreground">
+          No perks yet. The band stays off the page until you add one, even with the section
+          switched on.
+        </p>
+      ) : null}
+
+      {value.map((perk, index) => (
+        <EditorRow
+          /*
+           * BY INDEX, like every other repeatable list in these editors. A perk
+           * carries no id — it is three strings the merchant types — so there is
+           * nothing else stable to key on, and the rows are only ever added,
+           * removed or moved as a whole.
+           */
+          key={index}
+          index={index}
+          count={value.length}
+          error={rowError(index)}
+          removeLabel="Remove perk"
+          onMove={(from, to) => onChange(moveItem(value, from, to))}
+          onRemove={() => onChange(value.filter((_, i) => i !== index))}
+        >
+          {(errorId) => (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr]">
+              <Input
+                value={perk.icon}
+                onChange={(e) => setPerk(index, 'icon', e.target.value)}
+                placeholder="Icon (e.g. lucide:truck)"
+                aria-label={`Perk ${index + 1} icon name`}
+                maxLength={SETTINGS_LIMITS.iconLength}
+                aria-invalid={Boolean(errors[`${index}-icon`])}
+                aria-describedby={errors[`${index}-icon`] ? errorId : undefined}
+              />
+              <Input
+                value={perk.title}
+                onChange={(e) => setPerk(index, 'title', e.target.value)}
+                placeholder="Free Shipping"
+                aria-label={`Perk ${index + 1} title`}
+                maxLength={SETTINGS_LIMITS.perkTitleLength}
+                aria-invalid={Boolean(errors[`${index}-title`])}
+                aria-describedby={errors[`${index}-title`] ? errorId : undefined}
+              />
+              <Input
+                value={perk.description}
+                onChange={(e) => setPerk(index, 'description', e.target.value)}
+                placeholder="For orders over ৳130."
+                aria-label={`Perk ${index + 1} supporting line`}
+                maxLength={SETTINGS_LIMITS.perkDescriptionLength}
+                aria-invalid={Boolean(errors[`${index}-description`])}
+                aria-describedby={errors[`${index}-description`] ? errorId : undefined}
+              />
+            </div>
+          )}
+        </EditorRow>
+      ))}
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          {atCapacity
+            ? `${SETTINGS_LIMITS.perks} is the most the band holds — it is one row of equal columns.`
+            : `Up to ${SETTINGS_LIMITS.perks} columns. Icon names come from iconify.design.`}
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={atCapacity}
+          onClick={() => onChange([...value, BLANK_PERK])}
+        >
+          <Plus className="size-4" />
+          Add perk
+        </Button>
+      </div>
+    </>
+  )
+}
+
 export default function HomeSectionsPage() {
   const { data, isLoading, error } = useStoreSettings()
   // Names the promo rows below. Its own query rather than part of the settings
@@ -436,8 +606,17 @@ export default function HomeSectionsPage() {
     data && {
       sections: data.homeConfig ?? DEFAULT_HOME_CONFIG,
       newsletter: data.newsletter ?? EMPTY_NEWSLETTER,
+      /*
+       * DEFAULT_PERKS, not an empty list — the same reason the sections seed
+       * from `DEFAULT_HOME_CONFIG` one line up. The admin read returns the row
+       * AS STORED, so a store that has never touched this panel has null here
+       * while its home page is visibly rendering four columns; seeding blank
+       * would show the merchant an empty editor for a band they can see on
+       * their own site, and their first save would then delete it.
+       */
+      perks: data.perks ?? DEFAULT_PERKS,
     },
-    { sections: DEFAULT_HOME_CONFIG, newsletter: EMPTY_NEWSLETTER },
+    { sections: DEFAULT_HOME_CONFIG, newsletter: EMPTY_NEWSLETTER, perks: DEFAULT_PERKS },
   )
   const blocker = useUnsavedChangesGuard(draft.isDirty)
 
@@ -447,10 +626,38 @@ export default function HomeSectionsPage() {
    * value is what it gets.
    */
   const stored = draft.value.sections
-  const { newsletter } = draft.value
+  const { newsletter, perks } = draft.value
   const setSections = (next: HomeConfig) => draft.set({ ...draft.value, sections: next })
   const setNewsletter = (patch: Partial<Newsletter>) =>
     draft.set({ ...draft.value, newsletter: { ...newsletter, ...patch } })
+  const setPerks = (next: Perk[]) => {
+    draft.set({ ...draft.value, perks: next })
+    // A row the merchant has just edited must stop complaining at once rather
+    // than staying red until the next save proves it fixed.
+    setPerkErrors((current) => (Object.keys(current).length > 0 ? {} : current))
+  }
+
+  /*
+   * Which perk fields are blank, keyed `<index>-<field>`.
+   *
+   * Computed on SAVE rather than as you type, like Header Links: a row is
+   * incomplete the whole time it is being filled in, and marking it red from
+   * the first keystroke would tell the merchant they had made a mistake while
+   * they were still typing. Cleared whenever the list changes so a fixed row
+   * stops complaining immediately.
+   */
+  const [perkErrors, setPerkErrors] = React.useState<Record<string, string>>({})
+
+  /*
+   * The perks panel's disclosure, held here rather than in its row.
+   *
+   * A save refused over a blank perk must be able to OPEN that panel: it is
+   * shut by default, so the offending inputs are not even in the DOM, and the
+   * toast would be pointing at fields nobody can see or focus. Owning the flag
+   * here lets the refusal open it from the same handler, with no effect
+   * watching a signal and no second copy of the state to keep in step.
+   */
+  const [perksPanelOpen, setPerksPanelOpen] = React.useState(false)
 
   const known = new Set<HomeSectionKey>(HOME_SECTION_REGISTRY.map((s) => s.key))
 
@@ -520,11 +727,59 @@ export default function HomeSectionsPage() {
    */
   const navLabels = navLabelsBySection(data?.mainNav ?? [])
 
+  /**
+   * The perks band's rows, checked before the round trip.
+   *
+   * The backend requires all three fields on every perk and would refuse the
+   * whole save — including the reorder the merchant may have come here to make
+   * — over one blank input inside a collapsed panel. Naming the failing FIELD
+   * rather than the row is what lets each input mark itself `aria-invalid` and
+   * point at the message, instead of the row turning red and leaving the
+   * merchant to guess which of its three inputs is meant. Every blank field in
+   * a row is reported at once, so nobody learns about the second one on the
+   * next attempt.
+   *
+   * Only emptiness is checked here. Length is capped by `maxLength` on the
+   * inputs, and whether an icon name actually resolves is a question only the
+   * storefront can answer.
+   */
+  const validatePerks = (): boolean => {
+    const errors: Record<string, string> = {}
+
+    perks.forEach((perk, index) => {
+      if (!perk.icon.trim()) errors[`${index}-icon`] = 'Every perk needs an icon name'
+      if (!perk.title.trim()) errors[`${index}-title`] = 'Every perk needs a title'
+      if (!perk.description.trim())
+        errors[`${index}-description`] = 'Every perk needs a short supporting line'
+    })
+
+    setPerkErrors(errors)
+    // Open the panel the merchant now has to act in — see `perksPanelOpen`.
+    if (Object.keys(errors).length > 0) setPerksPanelOpen(true)
+    return Object.keys(errors).length === 0
+  }
+
   const handleSave = async () => {
+    if (!validatePerks()) {
+      toast({ title: 'Fill in the highlighted perks first', variant: 'destructive' })
+      /*
+       * The toast says "highlighted", which only a sighted merchant can act on
+       * — and here the fields may be inside a COLLAPSED panel, where nobody can
+       * act on it. Focusing the first invalid input is the same instruction for
+       * everyone; the panel it sits in is open whenever a field of it exists in
+       * the DOM, because the panel is what renders them.
+       */
+      window.requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+      })
+      return
+    }
+
     try {
-      // Two keys and only two — see the note at the top of this file.
-      await updateMutation.mutateAsync({ homeConfig: sections, newsletter })
-      draft.markSaved({ sections, newsletter })
+      // Three keys and only three — see the note at the top of this file.
+      await updateMutation.mutateAsync({ homeConfig: sections, newsletter, perks })
+      draft.markSaved({ sections, newsletter, perks })
+      setPerkErrors({})
       toast({ title: 'Home sections saved' })
     } catch (err) {
       // The draft is deliberately left as it was: a merchant whose save failed
@@ -609,9 +864,29 @@ export default function HomeSectionsPage() {
                   ),
                 )
               }
+              settingsError={
+                section.key === 'PERKS_BAR' && Object.keys(perkErrors).length > 0
+                  ? 'This save was refused: every perk needs an icon, a title and a short line.'
+                  : undefined
+              }
+              open={section.key === 'PERKS_BAR' ? perksPanelOpen : undefined}
+              onOpenChange={section.key === 'PERKS_BAR' ? setPerksPanelOpen : undefined}
               settings={
                 section.key === 'NEWSLETTER' ? (
                   <NewsletterFields value={newsletter} onChange={setNewsletter} />
+                ) : section.key === 'PERKS_BAR' ? (
+                  /*
+                   * The band's WORDING, edited from the row that already owns
+                   * whether it appears and where it sits — the same call the
+                   * newsletter's copy above makes, and for the same reason: a
+                   * screen of its own would be a second writer of the settings
+                   * row this page already saves wholesale.
+                   *
+                   * Not keyed by position like the layout pickers below, because
+                   * `PERKS_BAR` appears exactly once. The positional identity
+                   * those need exists for `MID_BANNERS`, which repeats.
+                   */
+                  <PerksFields value={perks} errors={perkErrors} onChange={setPerks} />
                 ) : section.key === 'FEATURED_CATEGORIES' ? (
                   /*
                    * THIS SECTION'S LAYOUT IS CHOSEN HERE; THE HERO'S IS NOT.

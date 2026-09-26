@@ -365,7 +365,9 @@ describe('the featured categories layout is chosen on its row', () => {
     expect(savedConfig()).toEqual(expected)
 
     const payload = updateMutate.mock.calls.at(-1)?.[0] as Record<string, unknown>
-    expect(Object.keys(payload).sort()).toEqual(['homeConfig', 'newsletter'])
+    // The three keys this page owns and no fourth — the disjointness the other
+    // settings editors depend on to not clobber each other.
+    expect(Object.keys(payload).sort()).toEqual(['homeConfig', 'newsletter', 'perks'])
   })
 
   it('is offered while the section is switched off, and the choice is kept', async () => {

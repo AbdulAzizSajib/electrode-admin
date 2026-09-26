@@ -126,7 +126,7 @@ export default function VouchersPage() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Vouchers"
-        description="Discount codes customers can apply at checkout."
+        description="Coupon codes customers can apply at checkout."
         actions={
           <Button size="lg" onClick={() => navigate(`${VOUCHERS_PATH}/new`)}>
             <Plus /> New voucher
