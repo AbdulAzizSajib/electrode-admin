@@ -1078,10 +1078,22 @@ export default function OrderDetailPage() {
                     to={`/ui/landing-pages/${order.landingPage.id}`}
                     className="text-primary underline-offset-4 hover:underline"
                   >
-                    /lp/{order.landingPage.slug}
+                    /offer/{order.landingPage.slug}
                   </Link>
                 ) : (
                   <span className="text-muted-foreground">This landing page has been deleted.</span>
+                )}
+                {/*
+                  The package, when the campaign offered any. The captured
+                  LABEL and PRICE, not a lookup — a merchant who has since
+                  removed that tier still needs to read what this order sold.
+                */}
+                {order.landingPackageLabel && (
+                  <span className="text-muted-foreground">
+                    Package: {order.landingPackageLabel}
+                    {order.landingPackagePrice !== null &&
+                      ` (${formatCurrency(order.landingPackagePrice)})`}
+                  </span>
                 )}
                 {order.shippingAddress?.state && (
                   <span className="text-muted-foreground">

@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useNavigate } from 'react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Copy, ExternalLink, Radio, Rocket } from 'lucide-react'
+import { Copy, Eye, ExternalLink, Radio, Rocket } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -15,6 +15,7 @@ import {
   type LandingPage,
   type LandingPageStatus,
 } from '@/lib/api/landing-pages'
+import { storefrontUrl } from '@/lib/api/client'
 import { useStoreSettings } from '@/lib/api/store-settings'
 import { formatCurrency } from '@/lib/utils/format'
 import { SiteModeBanner } from './site-mode-banner'
@@ -59,7 +60,7 @@ export default function LandingPagesListPage() {
               </Badge>
             )}
           </span>
-          <span className="text-xs text-muted-foreground">/lp/{row.original.slug}</span>
+          <span className="text-xs text-muted-foreground">/offer/{row.original.slug}</span>
         </div>
       ),
     },
@@ -136,19 +137,37 @@ export default function LandingPagesListPage() {
               Duplicate
             </DropdownMenuItem>
             {/*
-              Published pages only. A draft 404s on the storefront, so this link
-              would take a merchant to a not-found page and leave them thinking
-              the feature is broken — the preview link on the form is what
-              covers a draft.
+              TWO LINKS, NOT ONE, because they answer different questions.
+
+              "View page" is the LIVE address — what an ad points at and what a
+              shopper sees. It is offered for published pages only: the public
+              route returns the same 404 for a draft as for a slug that never
+              existed, so offering it on a draft would take a merchant to a
+              not-found page and leave them thinking the feature is broken.
+
+              "Preview" is the merchant's own view, at any status, through the
+              session-forwarding route. It is what covers a draft — and it is
+              also worth having beside a published page, because it renders the
+              very latest save rather than whatever the storefront has cached.
             */}
             {row.status === 'PUBLISHED' && (
               <DropdownMenuItem asChild>
-                <a href={`/lp/${row.slug}`} target="_blank" rel="noreferrer">
+                <a href={storefrontUrl(`/offer/${row.slug}`)} target="_blank" rel="noreferrer">
                   <ExternalLink className="size-4" aria-hidden />
                   View page
                 </a>
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem asChild>
+              <a
+                href={storefrontUrl(`/offer/${row.slug}/preview`)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Eye className="size-4" aria-hidden />
+                Preview
+              </a>
+            </DropdownMenuItem>
           </>
         )}
         toolbar={

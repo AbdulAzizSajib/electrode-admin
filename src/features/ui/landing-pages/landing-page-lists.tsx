@@ -12,7 +12,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  FormArrayMessage,
   FormControl,
   FormDescription,
   FormField,
@@ -22,7 +21,6 @@ import {
 } from '@/components/ui/form'
 import { ImageUrlField } from './image-url-field'
 import type { LandingPageForm } from './landing-page-schema'
-import { MAX_DELIVERY_ZONES } from '@/lib/api/landing-pages'
 
 /**
  * The repeatable rows a landing page is made of.
@@ -436,6 +434,21 @@ export function QuotesListField({ form }: { form: LandingPageForm }) {
                 </FormItem>
               )}
             />
+            <FormField
+              control={form.control}
+              name={`quotes.${index}.imageUrl`}
+              render={({ field }) => (
+                <FormItem className="mb-2">
+                  <FormLabel>Review screenshot</FormLabel>
+                  <ImageUrlField value={field.value ?? ''} onChange={field.onChange} />
+                  <FormDescription>
+                    A picture of the message they sent. With one, the quote text is
+                    optional — post the screenshot instead of retyping it.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
           <RowActions
             index={index}
@@ -505,93 +518,3 @@ export function TrustBadgesListField({ form }: { form: LandingPageForm }) {
   )
 }
 
-/**
- * The delivery zones — the inside/outside Dhaka pair, or whatever the merchant
- * makes of it.
- *
- * The price here is what the shopper is CHARGED. It bypasses the product's
- * shipping rule entirely, and neither the shop's free-shipping threshold nor a
- * coupon waiver applies to it: the page states a delivery charge and that is
- * what is collected.
- *
- * The last row cannot be removed. A page with no zone can charge no delivery
- * and its product would be undeliverable — the server refuses such a save
- * anyway, and letting the merchant reach that state only to be told no is worse
- * than not offering it.
- */
-export function DeliveryZonesField({ form }: { form: LandingPageForm }) {
-  const { fields, append, remove, move } = useFieldArray({
-    control: form.control,
-    name: 'deliveryZones',
-  })
-
-  return (
-    <div className="flex flex-col gap-3">
-      {fields.map((row, index) => (
-        <div key={row.id} className={`${ROW} flex gap-3`}>
-          <div className="grid flex-1 gap-x-3 sm:grid-cols-3">
-            <FormField
-              control={form.control}
-              name={`deliveryZones.${index}.label`}
-              render={({ field }) => (
-                <FormItem className="mb-2">
-                  <FormLabel>Area</FormLabel>
-                  <FormControl>
-                    <Input placeholder="ঢাকার ভিতরে" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name={`deliveryZones.${index}.price`}
-              render={({ field }) => (
-                <FormItem className="mb-2">
-                  <FormLabel>Delivery charge</FormLabel>
-                  <FormControl>
-                    <NumberInput min={0} className="w-full" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name={`deliveryZones.${index}.key`}
-              render={({ field }) => (
-                <FormItem className="mb-2">
-                  <FormLabel>Key</FormLabel>
-                  <FormControl>
-                    <Input placeholder="inside-dhaka" {...field} />
-                  </FormControl>
-                  <FormDescription>Internal. Changing it on a live page is safe.</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-          <RowActions
-            index={index}
-            total={fields.length}
-            onMove={move}
-            onRemove={() => remove(index)}
-            // At least one zone, always. See the note above.
-            canRemove={fields.length > 1}
-          />
-        </div>
-      ))}
-
-      {/* "Each area needs its own distinct key" belongs to the list, not to
-          either of the two rows that collide. */}
-      <FormArrayMessage name="deliveryZones" />
-
-      <AddRowButton
-        disabled={fields.length >= MAX_DELIVERY_ZONES}
-        onClick={() => append({ key: '', label: '', price: 0 })}
-      >
-        Add a delivery area
-      </AddRowButton>
-    </div>
-  )
-}

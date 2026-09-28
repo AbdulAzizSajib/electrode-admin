@@ -8,6 +8,7 @@ import {
   useUpdateStoreSettings,
   type SiteMode,
 } from '@/lib/api/store-settings'
+import { storefrontUrl } from '@/lib/api/client'
 import { usePublishedLandingPages } from '@/lib/api/landing-pages'
 
 /**
@@ -83,7 +84,7 @@ export function SiteModeBanner() {
                   before.
                 </>
               ) : (
-                'Your home page shows the normal storefront. Every published landing page is still reachable at its own /lp/ address.'
+                'Your home page shows the normal storefront. Every published landing page is still reachable at its own /offer/ address.'
               )}
             </p>
           </div>
@@ -144,12 +145,12 @@ export function SiteModeBanner() {
 
         {activePage && (
           <a
-            href={`/lp/${activePage.slug}`}
+            href={storefrontUrl(`/offer/${activePage.slug}`)}
             target="_blank"
             rel="noreferrer"
             className="text-sm font-medium text-primary underline-offset-4 hover:underline"
           >
-            /lp/{activePage.slug}
+            /offer/{activePage.slug}
           </a>
         )}
       </div>

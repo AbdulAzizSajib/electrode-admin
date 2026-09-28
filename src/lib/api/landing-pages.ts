@@ -1,15 +1,14 @@
-/** Real backend landing page calls — same envelope/error pattern as `pages.ts` and `testimonials.ts`. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { type ListParams, type PaginatedResponse } from '@/lib/api/client'
-import { request } from '@/lib/api/request'
-import { queryKeys } from '@/lib/api/query-keys'
+import { request } from './request'
+import type { ListParams, PaginatedResponse } from './client'
+import { queryKeys } from './query-keys'
 
-export const LANDING_PAGE_STATUSES = ['DRAFT', 'PUBLISHED'] as const
-export type LandingPageStatus = (typeof LANDING_PAGE_STATUSES)[number]
+export type LandingPageStatus = 'DRAFT' | 'PUBLISHED'
 
-/** Mirrors the backend's `MAX_DELIVERY_ZONES`. */
-export const MAX_DELIVERY_ZONES = 5
+/** The statuses the form offers, in the order it offers them. */
+export const LANDING_PAGE_STATUSES: LandingPageStatus[] = ['DRAFT', 'PUBLISHED']
 
+/** One gallery entry. A landing page sells with pictures and a video, in order. */
 export interface LandingPageMedia {
   type: 'IMAGE' | 'VIDEO'
   url: string
@@ -18,8 +17,8 @@ export interface LandingPageMedia {
   alt?: string
 }
 
+/** A "কেন কিনবেন" bullet. `icon` is an Iconify name. */
 export interface LandingPageHighlight {
-  /** An Iconify name, e.g. `mdi:truck-fast`. */
   icon?: string
   title: string
   text?: string
@@ -32,9 +31,17 @@ export interface LandingPageFaq {
 
 export interface LandingPageQuote {
   name: string
-  text: string
+  /**
+   * Optional, because a review may be a SCREENSHOT instead. The backend rejects
+   * a quote carrying neither text nor an image, so the form must require one of
+   * the two rather than requiring this.
+   */
+  text?: string
   rating?: number
+  /** The reviewer's own avatar. */
   photoUrl?: string
+  /** The review itself as an image — a screenshot of the message they sent. */
+  imageUrl?: string
 }
 
 export interface LandingPageTrustBadge {
@@ -43,17 +50,70 @@ export interface LandingPageTrustBadge {
 }
 
 /**
- * One delivery option the page offers — `ঢাকার ভিতরে ৳60` / `ঢাকার বাইরে ৳120`.
+ * One tier the campaign offers.
  *
- * `price` is what the shopper is CHARGED, not a display figure: the server
- * looks the zone up by `key` and charges its stored price, bypassing the
- * product's shipping rule entirely.
+ * `key` is generated ONCE when the package is added and never rewritten: a
+ * placed order records it, so reordering or renaming a package must not
+ * reattach historical orders to a different tier.
+ *
+ * `price` is authored — the one price a landing page may write. The backend
+ * charges exactly this, through a single resolver the page render, the quote
+ * and the order all read.
  */
-export interface DeliveryZone {
+export interface LandingPagePackage {
   key: string
   label: string
+  productId: string
   price: number
+  /** Struck through beside the price. Must be ABOVE it, enforced server-side. */
+  compareAtPrice?: number
+  freeGiftText?: string
+  badge?: string
+  preselected?: boolean
 }
+
+export interface LandingPageWhyUs {
+  title: string
+  text?: string
+}
+
+export interface LandingPageUsageIdea {
+  label: string
+  /** An Iconify name, e.g. `lucide:gift`. */
+  icon?: string
+}
+
+/**
+ * The campaign's own look — every colour the page draws, as named tokens.
+ *
+ * Every value is a hex; anything else is refused server-side, because these
+ * reach the page as CSS custom properties in an inline style attribute. Each is
+ * optional and blank means "the default", never "transparent".
+ */
+export interface LandingPageTheme {
+  /** The campaign's colour: buttons, badges, active states. */
+  accent?: string
+  /** A wash of it — band backgrounds and selected-card fills. */
+  accentSoft?: string
+  /** What is legible ON the accent, usually white. */
+  accentContrast?: string
+  /** The primary content background. */
+  surface?: string
+  /** The alternating band background. */
+  surfaceAlt?: string
+  /** Body and heading colour. */
+  text?: string
+  /** Secondary copy. One muted weight; a second is opacity on this. */
+  textMuted?: string
+  /** Every rule and card edge. */
+  border?: string
+  displayFont?: { family: string; url: string }
+}
+
+/** Mirrors the backend's bounds, so the form stops adding before the API refuses. */
+export const MAX_PACKAGES = 6
+export const MAX_WHY_US = 12
+export const MAX_USAGE_IDEAS = 16
 
 export interface LandingPageFormField {
   label: string
@@ -102,8 +162,42 @@ export interface LandingPage {
   quotes: LandingPageQuote[] | null
   trustBadges: LandingPageTrustBadge[] | null
 
-  deliveryZones: DeliveryZone[]
+  /**
+   * THE SHOP'S delivery options, served with the page — not the campaign's own.
+   *
+   * A campaign no longer authors delivery prices. The charge is derived from
+   * the shopper's district against this list, so the same address costs the
+   * same through the shop and through a campaign, and changing a price in
+   * Checkout Setting changes it everywhere.
+   */
+  deliveryOptions: { key: string; label: string; price: number }[]
   orderForm: LandingPageOrderForm
+
+  /*
+   * Offer mechanics. All absent on a page configuring none, which behaves
+   * exactly as landing pages did before they existed.
+   */
+  packages: LandingPagePackage[] | null
+  whyUs: LandingPageWhyUs[] | null
+  usageIdeas: LandingPageUsageIdea[] | null
+  /** An ISO instant, never a duration — every visitor counts down to one moment. */
+  offerEndsAt: string | null
+  stopOrdersAtDeadline: boolean
+  /**
+   * The SIZE of a limited run. How many have been taken is counted by the
+   * server from real orders — there is deliberately no field to seed it with.
+   */
+  scarcityTarget: number | null
+  orderPhone: string | null
+  /**
+   * Whether this campaign collects money before it ships.
+   *
+   * Refused on save unless the shop has advance payment enabled with at least
+   * one account — the form disables the switch for the same reason, so it
+   * cannot express what the API will reject.
+   */
+  requiresAdvancePayment: boolean
+  theme: LandingPageTheme | null
 
   successHeading: string | null
   successMessage: string | null
@@ -127,6 +221,21 @@ export interface LandingPage {
    */
   orderCount?: number
   revenue?: number
+
+  /**
+   * What each TIER produced. Present on the detail read only.
+   *
+   * Grouped by the key captured on the order, so a package the merchant has
+   * since deleted still reports what it earned — which is exactly when this is
+   * most wanted. Absent on the list, where it would cost a second grouped query
+   * for a figure nobody reads until they open one campaign.
+   */
+  packageTotals?: {
+    key: string | null
+    label: string | null
+    orderCount: number
+    revenue: number
+  }[]
 }
 
 export interface LandingPageInput {
@@ -148,8 +257,17 @@ export interface LandingPageInput {
   trustBadges?: LandingPageTrustBadge[]
 
   /** Omitted on create means "use the Bangla seed defaults". */
-  deliveryZones?: DeliveryZone[]
   orderForm?: LandingPageOrderForm
+
+  packages?: LandingPagePackage[]
+  whyUs?: LandingPageWhyUs[]
+  usageIdeas?: LandingPageUsageIdea[]
+  offerEndsAt?: string
+  stopOrdersAtDeadline?: boolean
+  scarcityTarget?: number
+  orderPhone?: string
+  requiresAdvancePayment?: boolean
+  theme?: LandingPageTheme
 
   successHeading?: string
   successMessage?: string

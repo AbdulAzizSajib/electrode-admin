@@ -38,10 +38,34 @@ vi.mock('react-router', async () => {
 
 vi.mock('@/lib/api/landing-pages', () => ({
   LANDING_PAGE_STATUSES: ['DRAFT', 'PUBLISHED'],
-  MAX_DELIVERY_ZONES: 5,
+  // Mirrors the real module's bounds. The mock is exhaustive rather than
+  // partial, so a constant added there must be added here too or every test in
+  // this file fails on the missing export.
+  MAX_PACKAGES: 6,
+  MAX_WHY_US: 12,
+  MAX_USAGE_IDEAS: 16,
   useLandingPage: () => ({ data: stub.page, isLoading: false, error: undefined }),
   useCreateLandingPage: () => ({ mutateAsync: createMutate, isPending: false }),
   useUpdateLandingPage: () => ({ mutateAsync: updateMutate, isPending: false }),
+}))
+/*
+ * The advance-payment switch reads the shop's settings to decide whether it can
+ * be enabled. Mocked with accounts present, so the switch is usable and the
+ * tests below exercise the form rather than the disabled state.
+ */
+vi.mock('@/lib/api/store-settings', () => ({
+  useStoreSettings: () => ({
+    data: {
+      checkoutConfig: {
+        advancePayment: {
+          enabled: true,
+          mobileAccounts: [{ id: 'a-1', provider: 'BKASH', number: '01700000000', accountType: 'Personal' }],
+          bankAccounts: [],
+        },
+      },
+    },
+    isLoading: false,
+  }),
 }))
 vi.mock('@/lib/api/products', () => ({
   useProducts: () => ({
@@ -82,13 +106,6 @@ vi.mock('@/components/forms/rich-text-editor', () => ({
 
 import LandingPageFormPage from '@/features/ui/landing-pages/landing-page-form-page'
 
-const zoneKeys = () =>
-  (screen.getAllByLabelText('Key') as HTMLInputElement[]).map((input) => input.value)
-const zoneAreas = () =>
-  (screen.getAllByLabelText('Area') as HTMLInputElement[]).map((input) => input.value)
-const removeButtons = () => screen.getAllByRole('button', { name: 'Remove' }) as HTMLButtonElement[]
-const addZone = () => screen.getByRole('button', { name: 'Add a delivery area' }) as HTMLButtonElement
-
 const retype = async (
   user: ReturnType<typeof userEvent.setup>,
   field: HTMLElement,
@@ -123,105 +140,6 @@ beforeEach(() => {
   createMutate.mockReset()
   updateMutate.mockReset()
   createMutate.mockResolvedValue({ id: 'lp-1' })
-})
-
-describe('LandingPageFormPage — a rule belonging to the whole zone list', () => {
-  it('refuses two areas sharing a key, against the list, and keeps both rows', async () => {
-    const user = userEvent.setup()
-    render(<LandingPageFormPage />)
-
-    await fillRequired(user)
-    // The two seeded zones, with the second's key changed to collide.
-    await retype(user, screen.getAllByLabelText('Key')[1], 'inside-dhaka')
-
-    await saveAndStay(user)
-
-    // Belongs to neither row on its own, so neither row can carry it.
-    expect(await screen.findByText('Each area needs its own distinct key')).toBeTruthy()
-    expect(createMutate).not.toHaveBeenCalled()
-    // Refused, not cleared.
-    expect(zoneKeys()).toEqual(['inside-dhaka', 'inside-dhaka'])
-    expect(zoneAreas()).toEqual(['ঢাকার ভিতরে', 'ঢাকার বাইরে'])
-  })
-
-  it('clears the message and saves once the keys differ again', async () => {
-    const user = userEvent.setup()
-    render(<LandingPageFormPage />)
-
-    await fillRequired(user)
-    await retype(user, screen.getAllByLabelText('Key')[1], 'inside-dhaka')
-    await saveAndStay(user)
-    await screen.findByText('Each area needs its own distinct key')
-
-    await retype(user, screen.getAllByLabelText('Key')[1], 'outside-dhaka')
-    await saveAndStay(user)
-
-    await waitFor(() => expect(createMutate).toHaveBeenCalled())
-    expect(screen.queryByText('Each area needs its own distinct key')).toBeNull()
-  })
-
-  it('still reports a key that is not a key, against the row that holds it', async () => {
-    const user = userEvent.setup()
-    render(<LandingPageFormPage />)
-
-    await fillRequired(user)
-    await retype(user, screen.getAllByLabelText('Key')[1], 'Outside Dhaka')
-
-    await saveAndStay(user)
-
-    expect(await screen.findByText('Lowercase words separated by single hyphens')).toBeTruthy()
-    expect(createMutate).not.toHaveBeenCalled()
-  })
-})
-
-describe('LandingPageFormPage — the zone list has a floor and a ceiling', () => {
-  it('offers no removal on the last remaining area', async () => {
-    const user = userEvent.setup()
-    render(<LandingPageFormPage />)
-
-    // Two to begin with, so both may be removed.
-    expect(removeButtons().every((button) => !button.disabled)).toBe(true)
-
-    await user.click(removeButtons()[1])
-
-    // A page with no zone can charge no delivery, so the last one stays.
-    expect(zoneKeys()).toEqual(['inside-dhaka'])
-    expect(removeButtons()[0].disabled).toBe(true)
-  })
-
-  it('stops offering to add an area at the ceiling', async () => {
-    const user = userEvent.setup()
-    render(<LandingPageFormPage />)
-
-    expect(addZone().disabled).toBe(false)
-    // Five is `MAX_DELIVERY_ZONES`; two are seeded.
-    for (let i = 0; i < 3; i += 1) await user.click(addZone())
-
-    expect(zoneKeys()).toHaveLength(5)
-    expect(addZone().disabled).toBe(true)
-  })
-
-  it('appends an empty area and leaves the ones above it alone', async () => {
-    const user = userEvent.setup()
-    render(<LandingPageFormPage />)
-
-    await user.click(addZone())
-
-    expect(zoneKeys()).toEqual(['inside-dhaka', 'outside-dhaka', ''])
-    expect(zoneAreas()).toEqual(['ঢাকার ভিতরে', 'ঢাকার বাইরে', ''])
-  })
-
-  it('removes the middle area and leaves the ones either side of it alone', async () => {
-    const user = userEvent.setup()
-    render(<LandingPageFormPage />)
-
-    await user.click(addZone())
-    await retype(user, screen.getAllByLabelText('Key')[2], 'chittagong')
-
-    await user.click(removeButtons()[1])
-
-    expect(zoneKeys()).toEqual(['inside-dhaka', 'chittagong'])
-  })
 })
 
 describe('LandingPageFormPage — the gallery is submitted in the order shown', () => {
@@ -336,8 +254,6 @@ describe('LandingPageFormPage — a page built here reopens as it was left', () 
     await user.type(screen.getByLabelText('Question'), 'Can I exchange?')
     await user.type(screen.getByLabelText('Answer'), 'Within 7 days.')
 
-    await retype(user, screen.getAllByLabelText('Delivery charge')[1], '150')
-
     await saveAndStay(user)
     await waitFor(() => expect(createMutate).toHaveBeenCalled())
     const sent = createMutate.mock.calls[0][0]
@@ -379,9 +295,5 @@ describe('LandingPageFormPage — a page built here reopens as it was left', () 
     ).toEqual(['Free delivery', 'Cash on delivery'])
     expect((screen.getByLabelText('Question') as HTMLInputElement).value).toBe('Can I exchange?')
     expect((screen.getByLabelText('Answer') as HTMLTextAreaElement).value).toBe('Within 7 days.')
-    expect(zoneKeys()).toEqual(['inside-dhaka', 'outside-dhaka'])
-    expect(
-      (screen.getAllByLabelText('Delivery charge') as HTMLInputElement[]).map((i) => i.value),
-    ).toEqual(['60', '150'])
   })
 })

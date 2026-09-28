@@ -29,13 +29,18 @@ import { EditorSection } from '@/features/ui/components/settings-editor'
 import { LANDING_PAGES_PATH } from '@/features/ui/landing-pages/landing-pages-page'
 import { ImageUrlField } from '@/features/ui/landing-pages/image-url-field'
 import {
-  DeliveryZonesField,
   FaqsListField,
   HighlightsListField,
   MediaListField,
   QuotesListField,
   TrustBadgesListField,
 } from '@/features/ui/landing-pages/landing-page-lists'
+import {
+  PackagesListField,
+  UsageIdeasListField,
+  WhyUsListField,
+} from '@/features/ui/landing-pages/landing-page-offer-lists'
+import { ThemeTokenFields } from '@/features/ui/landing-pages/landing-page-theme-fields'
 import {
   EMPTY,
   schema,
@@ -44,9 +49,30 @@ import {
   type LandingPageForm,
   type OutputValues,
 } from '@/features/ui/landing-pages/landing-page-schema'
+import { storefrontUrl } from '@/lib/api/client'
 import { useLandingPage, useCreateLandingPage, useUpdateLandingPage, type LandingPage } from '@/lib/api/landing-pages'
 import { useProducts } from '@/lib/api/products'
+import { useStoreSettings } from '@/lib/api/store-settings'
 import { formatCurrency } from '@/lib/utils/format'
+
+/**
+ * A UTC instant as `datetime-local` wants it: `YYYY-MM-DDTHH:mm`, in LOCAL time.
+ *
+ * `toISOString().slice(0, 16)` looks like it does this and does not — it yields
+ * UTC, so a merchant in Dhaka setting 9pm would reopen the form and read 3pm.
+ * Built from the local getters instead, which is the only way to produce the
+ * string that input actually expects.
+ */
+const toLocalDateTimeInput = (iso: string): string => {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+
+  const pad = (value: number) => value.toString().padStart(2, '0')
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}`
+}
 
 export default function LandingPageFormPage() {
   const { landingPageId } = useParams()
@@ -84,7 +110,27 @@ export default function LandingPageFormPage() {
         faqs: page.faqs ?? [],
         quotes: page.quotes ?? [],
         trustBadges: page.trustBadges ?? [],
-        deliveryZones: page.deliveryZones,
+        packages: page.packages ?? [],
+        whyUs: page.whyUs ?? [],
+        usageIdeas: page.usageIdeas ?? [],
+        /*
+         * `datetime-local` wants `YYYY-MM-DDTHH:mm` in LOCAL time, while the
+         * API stores and returns a UTC instant. Sliced after converting, so a
+         * merchant in Dhaka sees the Dhaka time they set rather than UTC.
+         */
+        offerEndsAt: page.offerEndsAt ? toLocalDateTimeInput(page.offerEndsAt) : '',
+        stopOrdersAtDeadline: page.stopOrdersAtDeadline,
+        scarcityTarget: page.scarcityTarget ?? undefined,
+        orderPhone: page.orderPhone ?? '',
+        requiresAdvancePayment: page.requiresAdvancePayment,
+        themeAccent: page.theme?.accent ?? '',
+        themeAccentSoft: page.theme?.accentSoft ?? '',
+        themeAccentContrast: page.theme?.accentContrast ?? '',
+        themeSurface: page.theme?.surface ?? '',
+        themeSurfaceAlt: page.theme?.surfaceAlt ?? '',
+        themeText: page.theme?.text ?? '',
+        themeTextMuted: page.theme?.textMuted ?? '',
+        themeBorder: page.theme?.border ?? '',
         orderForm: page.orderForm,
         successHeading: page.successHeading ?? '',
         successMessage: page.successMessage ?? '',
@@ -120,7 +166,38 @@ export default function LandingPageFormPage() {
           quotes: values.quotes ?? [],
           trustBadges: values.trustBadges ?? [],
 
-          deliveryZones: values.deliveryZones,
+          packages: values.packages ?? [],
+          whyUs: values.whyUs ?? [],
+          usageIdeas: values.usageIdeas ?? [],
+          /* Back to a UTC instant — the input gave local time. */
+          offerEndsAt: values.offerEndsAt
+            ? new Date(values.offerEndsAt).toISOString()
+            : undefined,
+          stopOrdersAtDeadline: values.stopOrdersAtDeadline,
+          scarcityTarget: values.scarcityTarget,
+          orderPhone: values.orderPhone?.trim() || undefined,
+          requiresAdvancePayment: values.requiresAdvancePayment,
+          /*
+           * Reassembled from the flat fields, with BLANKS OMITTED rather than
+           * sent as empty strings: an absent token means "use the default",
+           * and an empty string would fail the hex validation. A theme with
+           * nothing set is sent as `undefined`, which clears the column.
+           */
+          theme: (() => {
+            const tokens = {
+              accent: values.themeAccent?.trim(),
+              accentSoft: values.themeAccentSoft?.trim(),
+              accentContrast: values.themeAccentContrast?.trim(),
+              surface: values.themeSurface?.trim(),
+              surfaceAlt: values.themeSurfaceAlt?.trim(),
+              text: values.themeText?.trim(),
+              textMuted: values.themeTextMuted?.trim(),
+              border: values.themeBorder?.trim(),
+            }
+            const set = Object.entries(tokens).filter(([, v]) => Boolean(v))
+            return set.length > 0 ? Object.fromEntries(set) : undefined
+          })(),
+
           orderForm: values.orderForm,
 
           successHeading: values.successHeading?.trim() || undefined,
@@ -268,13 +345,13 @@ function LandingPageFields({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Address</FormLabel>
-                {/* The leading "/lp/" is a joined, non-editable prefix saying
+                {/* The leading "/offer/" is a joined, non-editable prefix saying
                     the value is a path segment, not a full URL. It sits outside
                     `FormControl` so the label still points at the input rather
                     than at the wrapper.
 
                     `aria-hidden`: the label already reads "Address", and a
-                    screen reader announcing "/lp/" as a separate stop before it
+                    screen reader announcing "/offer/" as a separate stop before it
                     is noise, not context — the FormDescription carries the
                     meaning in words. */}
                 <div className="flex w-full">
@@ -282,7 +359,7 @@ function LandingPageFields({
                     aria-hidden
                     className="inline-flex shrink-0 items-center rounded-l-md border border-r-0 border-input bg-muted px-2.5 text-sm text-muted-foreground"
                   >
-                    /lp/
+                    /offer/
                   </span>
                   <FormControl>
                     {/* `-ml-px` with `focus:z-10`: the two borders would
@@ -417,13 +494,20 @@ function LandingPageFields({
         */}
         {isEdit && record && (
           <a
-            href={`/lp/${record.slug}`}
+            /*
+              The PREVIEW route, not the public one. `/offer/<slug>` returns the
+              same 404 for a draft as for a slug that never existed — on purpose,
+              so unpublished campaigns cannot be probed for — which made it
+              useless for the one thing this link is for. `/preview` forwards the
+              merchant's session and renders any status.
+            */
+            href={storefrontUrl(`/offer/${record.slug}/preview`)}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-4 hover:underline"
           >
             <ExternalLink className="size-4" aria-hidden />
-            Preview /lp/{record.slug}
+            Preview /offer/{record.slug}
             <span className="sr-only">(opens in a new tab)</span>
             {record.status === 'DRAFT' && (
               <span className="font-normal text-muted-foreground">
@@ -515,6 +599,137 @@ function LandingPageFields({
 
         <FieldGroup label="Questions & answers">
           <FaqsListField form={form} />
+        </FieldGroup>
+      </EditorSection>
+
+      <EditorSection
+        title="The offer"
+        description="Packages, a deadline and a limited run. Every one of these is optional — a page that sets none of them behaves exactly as it did before they existed."
+      >
+        <FieldGroup label="Packages">
+          <PackagesListField form={form} />
+
+          {/*
+            What each tier actually sold. Shown beside the editor rather than on
+            a separate screen, because the decision it informs — which tier to
+            push, which to reprice — is made while looking at them.
+
+            Reads the captured label, so a tier removed above still reports what
+            it earned.
+          */}
+          {record?.packageTotals && record.packageTotals.length > 0 && (
+            <div className="mt-3 rounded-lg border border-border bg-muted/30 p-3 text-sm">
+              <p className="mb-2 font-medium text-foreground">What each package sold</p>
+              <ul className="flex flex-col gap-1">
+                {record.packageTotals.map((row) => (
+                  <li
+                    key={row.key ?? row.label ?? 'unknown'}
+                    className="flex items-baseline justify-between gap-3 text-muted-foreground"
+                  >
+                    <span>{row.label ?? row.key}</span>
+                    <span className="tabular-nums">
+                      {row.orderCount} order{row.orderCount === 1 ? '' : 's'} ·{' '}
+                      <span className="font-medium text-foreground">
+                        {formatCurrency(row.revenue)}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </FieldGroup>
+
+        <div className="grid gap-x-6 gap-y-4 md:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="offerEndsAt"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Offer ends</FormLabel>
+                <FormControl>
+                  <Input type="datetime-local" {...field} />
+                </FormControl>
+                <FormDescription>
+                  Shows a countdown to this moment. Left blank, no countdown is shown.
+                  Every visitor counts down to the same time — it never restarts.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="stopOrdersAtDeadline"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Stop taking orders at the deadline</FormLabel>
+                <FormControl>
+                  <div className="pt-2">
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  </div>
+                </FormControl>
+                <FormDescription>
+                  Off, the countdown is urgency only and orders keep coming in after
+                  it reaches zero.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="scarcityTarget"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Limited run</FormLabel>
+                <FormControl>
+                  <NumberInput min={1} className="w-full" {...field} />
+                </FormControl>
+                <FormDescription>
+                  e.g. 100 for &quot;first 100 buyers&quot;. Progress is counted from
+                  your real orders — there is no way to set a starting number, and
+                  there never will be: a figure a shopper catches you inventing costs
+                  you every other claim on the page.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="orderPhone"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Order by phone</FormLabel>
+                <FormControl>
+                  <Input placeholder="01867788456" {...field} />
+                </FormControl>
+                <FormDescription>
+                  Shown as a call button beside the form, for shoppers who will not
+                  type an address. Left blank, no button appears.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <AdvancePaymentSwitch form={form} />
+
+        <FieldGroup label="Why us">
+          <WhyUsListField form={form} />
+        </FieldGroup>
+
+        <FieldGroup label="Usage ideas">
+          <UsageIdeasListField form={form} />
+        </FieldGroup>
+
+        <FieldGroup label="Colours">
+          <ThemeTokenFields form={form} />
         </FieldGroup>
       </EditorSection>
 
@@ -709,11 +924,25 @@ function LandingPageFields({
           keyed on the phone.
         </p>
 
-        <FieldGroup label="Delivery areas">
-          <DeliveryZonesField form={form} />
-          <p className="text-xs text-muted-foreground">
-            What you charge for delivery to each area. This is what the customer is charged — your
-            product&apos;s shipping rule and any free-delivery threshold do not apply here.
+        {/*
+          The delivery-areas editor used to be here. A merchant who comes
+          looking for it must find out where it went — an editor that silently
+          vanishes reads as a feature that broke.
+        */}
+        <FieldGroup label="Delivery">
+          <p className="text-sm text-muted-foreground">
+            Delivery areas and prices are no longer set per campaign. The shopper
+            picks their district and the charge comes from your shop&apos;s own
+            delivery options, so the same address costs the same whether someone
+            orders through your shop or through this page — and changing a price
+            in{' '}
+            <a
+              href="/ui/checkout-settings"
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              Checkout Setting
+            </a>{' '}
+            changes it everywhere at once.
           </p>
         </FieldGroup>
 
@@ -867,5 +1096,82 @@ function LandingPageFields({
         </div>
       </EditorSection>
     </div>
+  )
+}
+
+
+/**
+ * The per-campaign advance-payment switch.
+ *
+ * DISABLED WHEN THE SHOP CANNOT BACK IT, with the reason shown, so the form
+ * cannot express something the API will refuse — the same posture the rest of
+ * the panel takes. The accounts are configured two screens away, which is
+ * exactly the kind of dependency a merchant otherwise discovers as "the toggle
+ * does nothing", so the link is part of the control rather than documentation.
+ *
+ * There is deliberately no account field here. The bKash and bank details are
+ * the shop's, shared by every campaign — a merchant maintaining the same number
+ * in six campaign pages will eventually update five of them, and the sixth
+ * takes real money to a closed account.
+ */
+function AdvancePaymentSwitch({ form }: { form: LandingPageForm }) {
+  const settings = useStoreSettings()
+  const advance = settings.data?.checkoutConfig?.advancePayment
+
+  const shopEnabled = Boolean(advance?.enabled)
+  const hasAccount =
+    (advance?.mobileAccounts?.length ?? 0) > 0 || (advance?.bankAccounts?.length ?? 0) > 0
+  const available = shopEnabled && hasAccount
+
+  return (
+    <FormField
+      control={form.control}
+      name="requiresAdvancePayment"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Take payment in advance</FormLabel>
+          <FormControl>
+            <div className="pt-2">
+              <Switch
+                checked={field.value}
+                onCheckedChange={field.onChange}
+                disabled={!available}
+              />
+            </div>
+          </FormControl>
+          <FormDescription>
+            {available ? (
+              <>
+                The shopper sends the delivery charge — or the full amount — before
+                you ship, and an order waits until you verify it. Uses the accounts
+                from{' '}
+                <a
+                  href="/ui/checkout-settings"
+                  className="text-primary underline-offset-4 hover:underline"
+                >
+                  Checkout Setting
+                </a>
+                , shared by every campaign. Fewer orders, but far fewer refused
+                parcels — which is the trade this is for.
+              </>
+            ) : (
+              <>
+                {shopEnabled
+                  ? 'Add a mobile banking or bank account in '
+                  : 'Turn advance payment on in '}
+                <a
+                  href="/ui/checkout-settings"
+                  className="text-primary underline-offset-4 hover:underline"
+                >
+                  Checkout Setting
+                </a>{' '}
+                before a campaign can ask for it.
+              </>
+            )}
+          </FormDescription>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
   )
 }

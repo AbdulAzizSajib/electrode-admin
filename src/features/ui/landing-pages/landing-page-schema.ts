@@ -3,7 +3,6 @@ import type { UseFormReturn } from 'react-hook-form'
 import { numberWithDefault, optionalNumber, requiredNumber } from '@/lib/validation/numeric'
 import {
   LANDING_PAGE_STATUSES,
-  type DeliveryZone,
   type LandingPageOrderForm,
 } from '@/lib/api/landing-pages'
 
@@ -56,18 +55,6 @@ const mediaRow = z
     })
   })
 
-const deliveryZone = z.object({
-  label: z.string().min(1, 'Name the delivery area'),
-  price: requiredNumber('Set the charge (0 for free)'),
-  key: z
-    .string()
-    .min(1, 'Give this area a key')
-    .refine(
-      (value) => !value || ZONE_KEY_PATTERN.test(value),
-      'Lowercase words separated by single hyphens',
-    ),
-})
-
 const formField = z.object({
   label: z.string(),
   placeholder: optionalText,
@@ -103,17 +90,30 @@ export const schema = z.object({
     }),
   ),
   quotes: z.array(
-    z.object({
-      name: z.string().min(1, 'Whose quote is this?'),
-      text: z.string().min(1, 'What did they say?'),
-      /*
-       * antd's `InputNumber` clamped to its own min/max, so this bound could
-       * never be reported; a native number input does not, so it needs words.
-       * Phrased as the tax rule's percentage bound is.
-       */
-      rating: optionalNumber({ min: 1, max: 5, message: 'A rating is between 1 and 5' }),
-      photoUrl: optionalText,
-    }),
+    z
+      .object({
+        name: z.string().min(1, 'Whose quote is this?'),
+        /*
+         * OPTIONAL, because a review may be a screenshot instead — the message
+         * a customer actually sent. The refinement below is what keeps a card
+         * from being empty; requiring this instead would force a merchant to
+         * retype a message they already have a picture of.
+         */
+        text: optionalText,
+        /*
+         * antd's `InputNumber` clamped to its own min/max, so this bound could
+         * never be reported; a native number input does not, so it needs words.
+         * Phrased as the tax rule's percentage bound is.
+         */
+        rating: optionalNumber({ min: 1, max: 5, message: 'A rating is between 1 and 5' }),
+        photoUrl: optionalText,
+        /** The review itself as an image. */
+        imageUrl: optionalText,
+      })
+      .refine((quote) => Boolean(quote.text?.trim() || quote.imageUrl?.trim()), {
+        message: 'Add the review text, or a screenshot of it',
+        path: ['text'],
+      }),
   ),
   trustBadges: z.array(
     z.object({
@@ -122,12 +122,109 @@ export const schema = z.object({
     }),
   ),
 
-  deliveryZones: z.array(deliveryZone).superRefine((zones, ctx) => {
-    const keys = zones.map((zone) => zone.key).filter(Boolean)
-    if (new Set(keys).size !== keys.length) {
-      ctx.addIssue({ code: 'custom', message: 'Each area needs its own distinct key' })
-    }
-  }),
+  /*
+   * The tiers this campaign offers.
+   *
+   * `key` is generated once when a package is added and is NOT editable here —
+   * an order records it, so letting a merchant rewrite it would reattach past
+   * orders to a different tier. The two group rules below are `superRefine`s
+   * for the reason design.md Decision 3 gives for the zones': a rule about the
+   * whole list cannot be expressed on one field.
+   */
+  packages: z
+    .array(
+      z
+        .object({
+          key: z.string().min(1),
+          label: z.string().min(1, 'Name this package'),
+          productId: z.string().min(1, 'Choose the product this package sells'),
+          price: requiredNumber('Enter the price', { min: 0, message: 'Enter a valid price' }),
+          compareAtPrice: optionalNumber({ min: 0, message: 'Enter a valid price' }),
+          freeGiftText: optionalText,
+          badge: optionalText,
+          preselected: z.boolean().optional(),
+        })
+        .refine(
+          (pkg) =>
+            pkg.compareAtPrice === undefined ||
+            pkg.compareAtPrice === null ||
+            pkg.compareAtPrice > pkg.price,
+          {
+            /*
+             * A struck-through figure BELOW the price advertises a discount
+             * that is a price increase — the one arithmetic error a shopper is
+             * guaranteed to notice.
+             */
+            message: 'The struck-through price must be higher than the price charged',
+            path: ['compareAtPrice'],
+          },
+        ),
+    )
+    .superRefine((packages, ctx) => {
+      const preselected = packages
+        .map((pkg, index) => ({ pkg, index }))
+        .filter(({ pkg }) => pkg.preselected)
+
+      if (preselected.length > 1) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [preselected[1]!.index, 'preselected'],
+          message: 'Only one package can be preselected',
+        })
+      }
+    }),
+
+  whyUs: z.array(
+    z.object({
+      title: z.string().min(1, 'Write the reason'),
+      text: optionalText,
+    }),
+  ),
+
+  usageIdeas: z.array(
+    z.object({
+      label: z.string().min(1, 'Write the idea'),
+      icon: optionalText,
+    }),
+  ),
+
+  /*
+   * An ISO instant from a datetime-local input, or empty for no countdown.
+   * Never a duration — see LandingPage.prisma on why every visitor must count
+   * down to the same moment.
+   */
+  offerEndsAt: optionalText,
+  stopOrdersAtDeadline: z.boolean(),
+  /*
+   * The SIZE of a limited run. There is deliberately no field for how many have
+   * been taken: the server counts that from real orders, and a field a merchant
+   * could type into would be a number they would eventually type a flattering
+   * value into.
+   */
+  scarcityTarget: optionalNumber({ min: 1, message: 'A run is at least 1' }),
+  orderPhone: optionalText,
+  /*
+   * Whether this campaign collects money before it ships. The accounts come
+   * from Checkout Setting — there is deliberately no account field here.
+   */
+  requiresAdvancePayment: z.boolean(),
+  /*
+   * The campaign's colour tokens, flat on the form rather than nested — the
+   * form is a flat map and nesting one branch would make every field path
+   * inconsistent with the rest. Reassembled into `theme` on save.
+   *
+   * Every one blank-able: blank means "the default", which the storefront's
+   * globals.css supplies. There is deliberately no way to express "transparent".
+   */
+  themeAccent: optionalText,
+  themeAccentSoft: optionalText,
+  themeAccentContrast: optionalText,
+  themeSurface: optionalText,
+  themeSurfaceAlt: optionalText,
+  themeText: optionalText,
+  themeTextMuted: optionalText,
+  themeBorder: optionalText,
+
 
   orderForm: z.object({
     heading: optionalText,
@@ -177,11 +274,6 @@ export type LandingPageForm = UseFormReturn<FormValues, unknown, OutputValues>
  * create payload omits them, so the two cannot diverge in behaviour — only in
  * what the merchant is shown before saving.
  */
-export const DEFAULT_ZONES: DeliveryZone[] = [
-  { key: 'inside-dhaka', label: 'ঢাকার ভিতরে', price: 60 },
-  { key: 'outside-dhaka', label: 'ঢাকার বাইরে', price: 120 },
-]
-
 export const DEFAULT_ORDER_FORM: LandingPageOrderForm = {
   heading: 'অর্ডার করতে নিচের ফর্মটি পূরণ করুন',
   subheading: 'আপনার তথ্য দিন, পণ্য হাতে পেয়ে টাকা পরিশোধ করুন।',
@@ -212,7 +304,22 @@ export const EMPTY: FormValues = {
   faqs: [],
   quotes: [],
   trustBadges: [],
-  deliveryZones: DEFAULT_ZONES,
+  packages: [],
+  whyUs: [],
+  usageIdeas: [],
+  offerEndsAt: '',
+  stopOrdersAtDeadline: false,
+  scarcityTarget: undefined,
+  orderPhone: '',
+  requiresAdvancePayment: false,
+  themeAccent: '',
+  themeAccentSoft: '',
+  themeAccentContrast: '',
+  themeSurface: '',
+  themeSurfaceAlt: '',
+  themeText: '',
+  themeTextMuted: '',
+  themeBorder: '',
   orderForm: DEFAULT_ORDER_FORM,
   successHeading: '',
   successMessage: '',

@@ -188,6 +188,16 @@ export interface Order {
   landingPageId: string | null
   landingPageTitle: string | null
   /**
+   * WHICH TIER of a multi-package campaign this order was for.
+   *
+   * Captured at placement like `landingPageTitle` above, so a merchant editing
+   * or deleting the package cannot rewrite what a past order says it sold. Null
+   * on a page with no packages and on every order from the normal checkout.
+   */
+  landingPackageKey: string | null
+  landingPackageLabel: string | null
+  landingPackagePrice: number | null
+  /**
    * What the shopper chose at checkout, captured when the order was placed.
    *
    * `deliveryOptionLabel` does NOT change when the merchant later renames,

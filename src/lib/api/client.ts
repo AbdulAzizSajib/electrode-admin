@@ -30,6 +30,37 @@ export const BASE_URL = (import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_URL).
   '',
 )
 
+/** Where the storefront lives when nothing says otherwise — the local dev server. */
+const DEFAULT_STOREFRONT_URL = 'http://localhost:4000'
+
+/**
+ * Origin of the customer storefront, with no trailing slash.
+ *
+ * The panel and the storefront are SEPARATE ORIGINS, which is the whole reason
+ * this exists. A bare `/offer/<slug>` href resolves against whatever origin the
+ * document was served from — the panel — so "View page" navigated the admin's
+ * own router to a route it does not have and rendered the admin's "Page not
+ * found". The link looked broken and the landing page looked missing, when both
+ * were fine.
+ *
+ * Every outbound link to the shop must be built from this. See
+ * `storefrontUrl` below.
+ */
+export const STOREFRONT_URL = (
+  import.meta.env.VITE_STOREFRONT_URL || DEFAULT_STOREFRONT_URL
+).replace(/\/+$/, '')
+
+/**
+ * An absolute storefront URL for a path this panel wants to link out to.
+ *
+ * Takes the path with its leading slash (`/offer/winter-sale`) and returns
+ * `https://shop.example.com/offer/winter-sale`. A missing leading slash is
+ * added rather than rejected: every caller writes a rooted path, and silently
+ * producing `…comoffer/…` would be worse than being forgiving here.
+ */
+export const storefrontUrl = (path: string): string =>
+  `${STOREFRONT_URL}${path.startsWith('/') ? path : `/${path}`}`
+
 export interface PaginationMeta {
   page: number
   limit: number
