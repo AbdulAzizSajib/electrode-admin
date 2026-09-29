@@ -140,7 +140,12 @@ export function ResourceFormPage<
   // asynchronously and cannot be told which submitter fired it.
   const returnAfterSave = React.useRef(false)
 
-  // Fill the form once the record arrives, keyed on the record itself. An
+  // Which record this form has already been filled from. Compared against
+  // `recordId` rather than against the record object, because the object is a
+  // NEW IDENTITY ON EVERY REFETCH and the effect below must not re-run then.
+  const seededFor = React.useRef<string | null>(null)
+
+  // Fill the form once the record arrives, keyed on WHICH record it is. An
   // overlay got this for free by unmounting on close; a page does not, so
   // editing record A, going back and editing record B must re-sync here or B's
   // form would open holding A's values.
@@ -149,14 +154,29 @@ export function ResourceFormPage<
   // `/new` are one component by design, so going straight from an edit URL to
   // the create URL leaves this mounted with the edited record still in the
   // fields. Argument-less `reset()` restores the caller's `defaultValues`.
+  //
+  // KEYED ON `recordId`, NEVER ON THE RECORD OBJECT. The query client runs with
+  // `refetchOnWindowFocus` and a 30s `staleTime`, so leaving the tab and coming
+  // back hands this a fresh object with identical contents. Depending on that
+  // object re-seeded the form mid-edit and silently discarded everything the
+  // merchant had typed since — they then pressed Save and wrote the stored
+  // values back over their own work, with no error and nothing to see. Re-seed
+  // only when the form is looking at a DIFFERENT record than it was filled
+  // from; a refetch of the same one must leave the fields alone.
   React.useEffect(() => {
-    if (record) {
+    if (record && seededFor.current !== recordId) {
       // `keepDefaultValues` matters: without it react-hook-form adopts the
       // record as the form's new defaults, and the bare `reset()` below would
       // then restore that record instead of emptying the form.
       form.reset(toValues(record), { keepDefaultValues: true })
+      seededFor.current = recordId ?? null
     } else if (!recordId) {
-      form.reset()
+      // Back to `/new`: empty the fields and forget what they were filled from,
+      // so returning to that same record afterwards seeds it again.
+      if (seededFor.current !== null) {
+        form.reset()
+        seededFor.current = null
+      }
     }
     // `toValues` is defined inline by every caller and would re-run this on
     // every render if depended on; the record is what actually changes.

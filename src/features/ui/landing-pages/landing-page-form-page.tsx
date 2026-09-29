@@ -150,8 +150,16 @@ export default function LandingPageFormPage() {
           productId: values.productId,
 
           headline: values.headline,
-          subheadline: values.subheadline?.trim() || undefined,
-          badgeText: values.badgeText?.trim() || undefined,
+          /*
+           * Empty string, not undefined — the same spelling `facebookPixelId`
+           * uses below. `undefined` means "leave unchanged", so sending it for
+           * a blank field made these two IMPOSSIBLE TO CLEAR: a merchant who
+           * removed the badge saved, saw it come back, and had no way to take
+           * a finished discount off the page. The backend turns `""` into a
+           * stored null.
+           */
+          subheadline: values.subheadline?.trim() ?? '',
+          badgeText: values.badgeText?.trim() ?? '',
           bodyHtml: values.bodyHtml,
 
           /*

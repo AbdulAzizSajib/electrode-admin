@@ -114,6 +114,182 @@ export interface LandingPageTheme {
 export const MAX_PACKAGES = 6
 export const MAX_WHY_US = 12
 export const MAX_USAGE_IDEAS = 16
+export const MAX_CUSTOM_SECTIONS = 8
+export const MAX_CUSTOM_SECTION_HEADING = 160
+export const MAX_CUSTOM_SECTION_BODY = 8000
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────
+ * WHICH SECTIONS A CAMPAIGN PAGE IS BUILT FROM.
+ *
+ * MIRRORS the backend's `LANDING_SECTION_KEYS` and
+ * `DEFAULT_LANDING_SECTION_ORDER` in landing-page.constant.ts, and carries the
+ * standing obligation to be kept in step with them.
+ *
+ * The packages never import each other, so a key renamed on one side produces
+ * NO type error here: the admin simply saves a key the backend refuses, or
+ * offers the merchant a section the storefront cannot render. Same obligation
+ * the packages and theme shapes above already carry.
+ *
+ * See server/openspec/changes/add-landing-page-section-builder.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+export const LANDING_SECTION_KEYS = [
+  'HERO',
+  'OFFER',
+  'HIGHLIGHTS',
+  'WHY_US',
+  'BODY',
+  'USAGE_IDEAS',
+  'QUOTES',
+  'FAQS',
+  'CTA',
+  'CUSTOM',
+] as const
+
+export type LandingSectionKey = (typeof LANDING_SECTION_KEYS)[number]
+
+/**
+ * The DEFAULT ORDER — what a page with no stored order renders.
+ *
+ * Transcribed from the storefront's own default. A page the merchant has never
+ * opened this editor for is in exactly this state, so it is what the editor
+ * must show them before they change anything.
+ */
+export const DEFAULT_LANDING_SECTION_ORDER: readonly LandingSectionKey[] = [
+  'HERO',
+  'OFFER',
+  'HIGHLIGHTS',
+  'CTA',
+  'WHY_US',
+  'BODY',
+  'USAGE_IDEAS',
+  'CTA',
+  'QUOTES',
+  'FAQS',
+  'CTA',
+]
+
+/**
+ * The keys that may appear MORE THAN ONCE.
+ *
+ * Named rather than written as a literal wherever entries are matched: every
+ * one of those places would otherwise collapse every custom section into the
+ * first, and every call-to-action strip into one. Match on `key` + `id` for
+ * CUSTOM and on POSITION for CTA — never on `key` alone.
+ *
+ * Exactly the rule `PROMO_SECTION_KEY` states for MID_BANNERS in store-settings.
+ */
+export const LANDING_REPEATABLE_SECTION_KEYS: readonly LandingSectionKey[] = [
+  'CTA',
+  'CUSTOM',
+]
+
+/**
+ * Sections the merchant may not switch off.
+ *
+ * The backend refuses an order without them, so hiding the switch here is the
+ * courtesy rather than the enforcement — a campaign with no hero is a paid
+ * click that can buy nothing.
+ */
+export const LANDING_REQUIRED_SECTION_KEYS: readonly LandingSectionKey[] = ['HERO']
+
+/** How a custom section arranges its own content. Mirrors the backend. */
+export const LANDING_CUSTOM_SECTION_LAYOUTS = ['PROSE', 'CENTERED', 'HIGHLIGHT'] as const
+
+export type LandingCustomSectionLayout = (typeof LANDING_CUSTOM_SECTION_LAYOUTS)[number]
+
+/**
+ * What each section is, in the merchant's words.
+ *
+ * The description says what the section SHOWS rather than restating its name,
+ * because "Why us" tells a merchant nothing about which part of their campaign
+ * page vanishes when they switch it off — and that is the one thing they need
+ * to know before touching the switch. Same reasoning as HOME_SECTION_REGISTRY.
+ */
+export const LANDING_SECTION_REGISTRY: {
+  key: LandingSectionKey
+  label: string
+  description: string
+}[] = [
+  {
+    key: 'HERO',
+    label: 'Product and order form',
+    description:
+      'The gallery, headline, price and the order form beside it. Always shown — it is what the page exists to do.',
+  },
+  {
+    key: 'OFFER',
+    label: 'Countdown and stock meter',
+    description:
+      'The deadline you set and how many of the limited run are left. Shown only when you have configured one of them.',
+  },
+  {
+    key: 'HIGHLIGHTS',
+    label: 'Key benefits',
+    description: 'The benefit cards, two to a row.',
+  },
+  {
+    key: 'WHY_US',
+    label: 'Why choose us',
+    description: 'The numbered reasons grid.',
+  },
+  {
+    key: 'BODY',
+    label: 'Description',
+    description: 'Your own written description of the product.',
+  },
+  {
+    key: 'USAGE_IDEAS',
+    label: 'Ways to use it',
+    description: 'The short tiles showing what a buyer can do with it.',
+  },
+  {
+    key: 'QUOTES',
+    label: 'Customer reviews',
+    description: 'The reviews you have added, with their photos and ratings.',
+  },
+  {
+    key: 'FAQS',
+    label: 'Questions and answers',
+    description: 'The FAQ list buyers can open and read.',
+  },
+  {
+    key: 'CTA',
+    label: 'Order button strip',
+    description:
+      'A band with an order button and your phone number. You can place several down the page — each one jumps back to the form.',
+  },
+  {
+    key: 'CUSTOM',
+    label: 'Your own section',
+    description: 'A heading and text you write yourself, placed anywhere on the page.',
+  },
+]
+
+/**
+ * One entry in a page's section order.
+ *
+ * ORDER IS THE DATA — this array is sent and stored as the merchant arranged
+ * it, never sorted on the way out.
+ */
+export interface LandingSectionConfigEntry {
+  key: LandingSectionKey
+  /** False hides the section WITHOUT clearing its content. */
+  enabled: boolean
+  /**
+   * A CUSTOM section's identity, generated once when it is created.
+   *
+   * NEVER REGENERATE IT on save. Position is not an identity: rewriting these
+   * would reattach a merchant's heading and body to a different section the
+   * first time they dragged one.
+   */
+  id?: string
+  heading?: string
+  /** Merchant-authored HTML, sanitised by the storefront at render. */
+  body?: string
+  layout?: LandingCustomSectionLayout
+}
 
 export interface LandingPageFormField {
   label: string
@@ -198,6 +374,7 @@ export interface LandingPage {
    */
   requiresAdvancePayment: boolean
   theme: LandingPageTheme | null
+  sectionConfig: LandingSectionConfigEntry[] | null
 
   successHeading: string | null
   successMessage: string | null
@@ -246,7 +423,9 @@ export interface LandingPageInput {
   productId: string
 
   headline: string
+  /** `''` clears it; omitting it leaves the stored value alone. */
   subheadline?: string
+  /** `''` clears it; omitting it leaves the stored value alone. */
   badgeText?: string
   bodyHtml: string
 
@@ -268,6 +447,7 @@ export interface LandingPageInput {
   orderPhone?: string
   requiresAdvancePayment?: boolean
   theme?: LandingPageTheme
+  sectionConfig?: LandingSectionConfigEntry[]
 
   successHeading?: string
   successMessage?: string

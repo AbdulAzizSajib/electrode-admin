@@ -210,6 +210,58 @@ describe('ResourceFormPage', () => {
     })
   })
 
+  it('keeps what the merchant is typing when the record is refetched', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+
+    // The same record, fetched twice: identical contents, NEW OBJECT IDENTITY.
+    // This is what `refetchOnWindowFocus` hands the scaffold every time the
+    // merchant leaves the tab and comes back with the query past its staleTime.
+    const first = { id: 'w-1', name: 'Bolt', note: '30% off' }
+    const second = { id: 'w-1', name: 'Bolt', note: '30% off' }
+
+    const { rerender } = render(
+      <Harness onSave={onSave} recordId="w-1" record={first} />,
+    )
+
+    await waitFor(() => expect(inputValue('Note')).toBe('30% off'))
+
+    await user.clear(screen.getByLabelText('Note'))
+    await user.type(screen.getByLabelText('Note'), '50% off')
+
+    rerender(<Harness onSave={onSave} recordId="w-1" record={second} />)
+
+    // The edit survives the refetch. Re-seeding here used to drop it silently,
+    // and the next Save then wrote the stored value back over the merchant's
+    // own work — no error, nothing on screen, the field simply reverted.
+    await waitFor(() => expect(inputValue('Note')).toBe('50% off'))
+
+    await user.click(screen.getByRole('button', { name: /save and continue editing/i }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    expect(onSave.mock.calls[0]?.[0]).toMatchObject({ note: '50% off' })
+  })
+
+  it('re-seeds when the form moves to a different record', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+
+    const { rerender } = render(
+      <Harness onSave={onSave} recordId="w-1" record={{ id: 'w-1', name: 'Bolt', note: 'first' }} />,
+    )
+
+    await waitFor(() => expect(inputValue('Note')).toBe('first'))
+
+    // A different record, so the guard above must NOT hold the old one's values.
+    rerender(
+      <Harness onSave={onSave} recordId="w-2" record={{ id: 'w-2', name: 'Nut', note: 'second' }} />,
+    )
+
+    await waitFor(() => {
+      expect(inputValue('Name')).toBe('Nut')
+      expect(inputValue('Note')).toBe('second')
+    })
+  })
+
   it('does not re-navigate when saving an existing record and staying', async () => {
     const user = userEvent.setup()
     navigate.mockClear()

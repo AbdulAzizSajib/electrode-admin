@@ -105,15 +105,7 @@ vi.mock('@/components/forms/rich-text-editor', () => ({
 }))
 
 import LandingPageFormPage from '@/features/ui/landing-pages/landing-page-form-page'
-
-const retype = async (
-  user: ReturnType<typeof userEvent.setup>,
-  field: HTMLElement,
-  text: string,
-) => {
-  await user.clear(field)
-  await user.type(field, text)
-}
+import { DEFAULT_ORDER_FORM } from '@/features/ui/landing-pages/landing-page-schema'
 
 /** Everything a create needs beyond the lists, so a save gets past validation. */
 const fillRequired = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -295,5 +287,98 @@ describe('LandingPageFormPage — a page built here reopens as it was left', () 
     ).toEqual(['Free delivery', 'Cash on delivery'])
     expect((screen.getByLabelText('Question') as HTMLInputElement).value).toBe('Can I exchange?')
     expect((screen.getByLabelText('Answer') as HTMLTextAreaElement).value).toBe('Within 7 days.')
+  })
+
+  /*
+   * Emptying the badge has to SEND something. These two fields were mapped with
+   * `|| undefined`, which spells "leave unchanged" — so a merchant whose
+   * discount had ended cleared the field, saved, and watched it come back, with
+   * no way to take it off the page. `''` is what the backend reads as "clear
+   * it"; it stores a null.
+   */
+  it('sends an empty string when a merchant clears the badge', async () => {
+    const user = userEvent.setup()
+    stub.landingPageId = 'lp-1'
+    stub.page = {
+      id: 'lp-1',
+      title: 'Winter Offer',
+      slug: 'winter-offer',
+      status: 'DRAFT',
+      productId: 'p-1',
+      headline: 'Premium winter hoodie',
+      subheadline: 'Warm and soft',
+      badgeText: '৩০% ছাড়',
+      bodyHtml: '<p>Warm.</p>',
+      media: [],
+      highlights: [],
+      faqs: [],
+      quotes: [],
+      trustBadges: [],
+      packages: [],
+      whyUs: [],
+      usageIdeas: [],
+      orderForm: DEFAULT_ORDER_FORM,
+      sortOrder: 0,
+      stopOrdersAtDeadline: false,
+      requiresAdvancePayment: false,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    }
+
+    render(<LandingPageFormPage />)
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('Badge') as HTMLInputElement).value).toBe('৩০% ছাড়'),
+    )
+
+    await user.clear(screen.getByLabelText('Badge'))
+    await saveAndStay(user)
+
+    await waitFor(() => expect(updateMutate).toHaveBeenCalled())
+    expect(updateMutate.mock.calls[0][0].input.badgeText).toBe('')
+  })
+
+  /* The other half of the same rule: a real edit still has to arrive. */
+  it('sends a changed badge', async () => {
+    const user = userEvent.setup()
+    stub.landingPageId = 'lp-1'
+    stub.page = {
+      id: 'lp-1',
+      title: 'Winter Offer',
+      slug: 'winter-offer',
+      status: 'DRAFT',
+      productId: 'p-1',
+      headline: 'Premium winter hoodie',
+      subheadline: null,
+      badgeText: '৩০% ছাড়',
+      bodyHtml: '<p>Warm.</p>',
+      media: [],
+      highlights: [],
+      faqs: [],
+      quotes: [],
+      trustBadges: [],
+      packages: [],
+      whyUs: [],
+      usageIdeas: [],
+      orderForm: DEFAULT_ORDER_FORM,
+      sortOrder: 0,
+      stopOrdersAtDeadline: false,
+      requiresAdvancePayment: false,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    }
+
+    render(<LandingPageFormPage />)
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('Badge') as HTMLInputElement).value).toBe('৩০% ছাড়'),
+    )
+
+    await user.clear(screen.getByLabelText('Badge'))
+    await user.type(screen.getByLabelText('Badge'), '৫০% ছাড়')
+    await saveAndStay(user)
+
+    await waitFor(() => expect(updateMutate).toHaveBeenCalled())
+    expect(updateMutate.mock.calls[0][0].input.badgeText).toBe('৫০% ছাড়')
   })
 })

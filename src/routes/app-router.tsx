@@ -96,6 +96,9 @@ const LandingPageFormPage = lazy(
 )
 const HomeSliderPage = lazy(() => import('@/features/ui/home-slider/home-slider-page'))
 const HomeSectionsPage = lazy(() => import('@/features/ui/home-sections/home-sections-page'))
+const LandingSectionsPage = lazy(
+  () => import('@/features/ui/landing-sections/landing-sections-page'),
+)
 const HeaderLinksPage = lazy(() => import('@/features/ui/header-links/header-links-page'))
 const FooterLinksPage = lazy(() => import('@/features/ui/footer-links/footer-links-page'))
 const CatalogSettingsPage = lazy(
@@ -282,6 +285,16 @@ export function AppRouter() {
             <Route path="/ui/landing-pages" element={<LandingPagesListPage />} />
             <Route path="/ui/landing-pages/new" element={<LandingPageFormPage />} />
             <Route path="/ui/landing-pages/:landingPageId" element={<LandingPageFormPage />} />
+            {/*
+              The section order for ONE campaign page, so it is nested under
+              that page rather than sitting beside Home sections in the sidebar:
+              there is no such thing as "the" landing page's sections, and a
+              top-level entry would have nothing to open.
+            */}
+            <Route
+              path="/ui/landing-pages/:landingPageId/sections"
+              element={<LandingSectionsPage />}
+            />
             <Route path="/ui/home-slider" element={<HomeSliderPage />} />
             <Route path="/ui/home-sections" element={<HomeSectionsPage />} />
             <Route path="/ui/banners" element={<BannersPage />} />

@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useNavigate } from 'react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Copy, Eye, ExternalLink, Radio, Rocket } from 'lucide-react'
+import { Copy, ExternalLink, Eye, LayoutList, Radio, Rocket } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -135,6 +135,17 @@ export default function LandingPagesListPage() {
             >
               <Copy className="size-4" aria-hidden />
               Duplicate
+            </DropdownMenuItem>
+            {/*
+              The section order belongs to ONE page, so it is reached from that
+              page's row rather than from a top-level sidebar entry — there is no
+              such thing as "the" landing page's sections for a link to open.
+            */}
+            <DropdownMenuItem
+              onSelect={() => navigate(`${LANDING_PAGES_PATH}/${row.id}/sections`)}
+            >
+              <LayoutList className="size-4" aria-hidden />
+              Page sections
             </DropdownMenuItem>
             {/*
               TWO LINKS, NOT ONE, because they answer different questions.
