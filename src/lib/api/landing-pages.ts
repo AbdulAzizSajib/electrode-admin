@@ -136,6 +136,7 @@ export const MAX_CUSTOM_SECTION_BODY = 8000
  */
 export const LANDING_SECTION_KEYS = [
   'HERO',
+  'ORDER_FORM',
   'OFFER',
   'HIGHLIGHTS',
   'WHY_US',
@@ -158,6 +159,7 @@ export type LandingSectionKey = (typeof LANDING_SECTION_KEYS)[number]
  */
 export const DEFAULT_LANDING_SECTION_ORDER: readonly LandingSectionKey[] = [
   'HERO',
+  'ORDER_FORM',
   'OFFER',
   'HIGHLIGHTS',
   'CTA',
@@ -189,10 +191,16 @@ export const LANDING_REPEATABLE_SECTION_KEYS: readonly LandingSectionKey[] = [
  * Sections the merchant may not switch off.
  *
  * The backend refuses an order without them, so hiding the switch here is the
- * courtesy rather than the enforcement — a campaign with no hero is a paid
- * click that can buy nothing.
+ * courtesy rather than the enforcement — a campaign with no product and no
+ * order form is a paid click that can buy nothing.
+ *
+ * Both, since the two were split into separate sections: while they were one
+ * key, requiring it covered the form as a side effect.
  */
-export const LANDING_REQUIRED_SECTION_KEYS: readonly LandingSectionKey[] = ['HERO']
+export const LANDING_REQUIRED_SECTION_KEYS: readonly LandingSectionKey[] = [
+  'HERO',
+  'ORDER_FORM',
+]
 
 /** How a custom section arranges its own content. Mirrors the backend. */
 export const LANDING_CUSTOM_SECTION_LAYOUTS = ['PROSE', 'CENTERED', 'HIGHLIGHT'] as const
@@ -214,9 +222,21 @@ export const LANDING_SECTION_REGISTRY: {
 }[] = [
   {
     key: 'HERO',
-    label: 'Product and order form',
+    label: 'Product',
     description:
-      'The gallery, headline, price and the order form beside it. Always shown — it is what the page exists to do.',
+      'The photos, headline and price. Always shown — it is what the page is selling.',
+  },
+  {
+    /*
+     * The key still reads HERO above and ORDER_FORM here because the two were
+     * one section until they were split; the backend kept the old key for the
+     * product half rather than rewrite every stored order. The merchant only
+     * ever sees these labels.
+     */
+    key: 'ORDER_FORM',
+    label: 'Order form',
+    description:
+      'The name, phone and address fields buyers fill in, with the total. Always shown — move it above the product if your buyers already know what they are ordering.',
   },
   {
     key: 'OFFER',

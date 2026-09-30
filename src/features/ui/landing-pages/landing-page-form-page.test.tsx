@@ -215,6 +215,72 @@ describe('LandingPageFormPage — the gallery is submitted in the order shown', 
   })
 })
 
+/** A saved page, as the API hands it back. */
+const savedPage = (status: 'DRAFT' | 'PUBLISHED') => ({
+  id: 'lp-1',
+  title: 'Winter Offer',
+  slug: 'winter-offer',
+  status,
+  productId: 'p-1',
+  headline: 'Premium winter hoodie',
+  subheadline: null,
+  badgeText: null,
+  bodyHtml: '<p>Warm.</p>',
+  media: [],
+  highlights: [],
+  faqs: [],
+  quotes: [],
+  trustBadges: [],
+  packages: [],
+  whyUs: [],
+  usageIdeas: [],
+  offerEndsAt: null,
+  stopOrdersAtDeadline: false,
+  scarcityTarget: null,
+  orderPhone: null,
+  requiresAdvancePayment: false,
+  theme: null,
+  orderForm: DEFAULT_ORDER_FORM,
+  successHeading: null,
+  successMessage: null,
+  metaTitle: null,
+  metaDescription: null,
+  ogImageUrl: null,
+  facebookPixelId: null,
+  sortOrder: 0,
+  createdAt: '2026-01-01T00:00:00Z',
+  updatedAt: '2026-01-01T00:00:00Z',
+})
+
+/*
+ * REGRESSION, and the one field on this page whose loss is silent.
+ *
+ * A Radix `Select` inside a `<form>` renders a hidden native `<select>` whose
+ * effect answers a PROGRAMMATIC value change by writing it into that select and
+ * dispatching `change`, which Radix routes back to `onValueChange`. Until the
+ * options have registered the value read back is `''` — so the post-mount
+ * `form.reset(toValues(record))` that fills this page cleared the very field it
+ * was meant to set. The trigger rendered blank, and zod then refused the save
+ * with an invalid-option message about a field the merchant never touched.
+ *
+ * The round-trip test below reads text inputs, which are filled by the same
+ * reset and are not affected, so it passed throughout. Only the Select catches
+ * this.
+ */
+describe('LandingPageFormPage — the status survives being opened', () => {
+  it.each(['DRAFT', 'PUBLISHED'] as const)('shows the saved status: %s', async (status) => {
+    stub.landingPageId = 'lp-1'
+    stub.page = savedPage(status)
+
+    render(<LandingPageFormPage />)
+
+    const trigger = await screen.findByRole('combobox', { name: 'Status' })
+
+    await waitFor(() =>
+      expect(trigger.textContent).toContain(status === 'DRAFT' ? 'Draft' : 'Published'),
+    )
+  })
+})
 describe('LandingPageFormPage — a page built here reopens as it was left', () => {
   /*
    * The other direction of the migration: `toValues` is where a rewrite quietly

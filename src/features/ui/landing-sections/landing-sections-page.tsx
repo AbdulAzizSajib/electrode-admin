@@ -26,6 +26,7 @@ import {
 import {
   DEFAULT_LANDING_SECTION_ORDER,
   LANDING_CUSTOM_SECTION_LAYOUTS,
+  LANDING_REPEATABLE_SECTION_KEYS,
   LANDING_REQUIRED_SECTION_KEYS,
   LANDING_SECTION_REGISTRY,
   MAX_CUSTOM_SECTION_BODY,
@@ -87,6 +88,54 @@ const LAYOUT_LABEL: Record<LandingCustomSectionLayout, string> = {
 const newCustomId = (): string => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
   return `custom-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+/**
+ * A stored order, plus any section it has never heard of.
+ *
+ * MIRRORS the storefront's own restore pass in `lib/landing-sections.ts`, and
+ * has to: a stored order and the build reading it are versioned separately, so
+ * a page saved before a section existed names every section BUT that one. The
+ * storefront already puts it back at render time; without the same pass here
+ * the editor shows a list that does not match the live page, and — since the
+ * backend refuses an order missing a required section — the merchant's next
+ * save is rejected by a rule about a row the screen never showed them.
+ *
+ * That is not hypothetical: splitting the old `HERO` block into a product
+ * section and an order form made ORDER_FORM required, and every order stored
+ * before that split names neither it nor anything else new.
+ *
+ * INSERTED AT ITS DEFAULT POSITION rather than appended, so a section arrives
+ * where it was designed to sit instead of below the last call to action.
+ *
+ * CTA and CUSTOM are skipped: they repeat, so `"was it mentioned"` has no single
+ * answer, and a page that deliberately kept one strip must not regain the
+ * other two. A section MENTIONED AND SWITCHED OFF is a decision, not an
+ * omission, so it counts as present.
+ */
+const withMissingSections = (
+  stored: LandingSectionConfigEntry[],
+): LandingSectionConfigEntry[] => {
+  const restored = [...stored]
+  const mentioned = new Set(stored.map((entry) => entry.key))
+
+  DEFAULT_LANDING_SECTION_ORDER.forEach((key, defaultIndex) => {
+    if (LANDING_REPEATABLE_SECTION_KEYS.includes(key)) return
+    if (mentioned.has(key)) return
+
+    const at = restored.findIndex(
+      (entry) => DEFAULT_LANDING_SECTION_ORDER.indexOf(entry.key) > defaultIndex,
+    )
+
+    const entry: LandingSectionConfigEntry = { key, enabled: true }
+
+    if (at === -1) restored.push(entry)
+    else restored.splice(at, 0, entry)
+
+    mentioned.add(key)
+  })
+
+  return restored
 }
 
 /** The entry a freshly added custom section starts as. */
@@ -310,8 +359,9 @@ export default function LandingSectionsPage() {
    */
   const draft = useSettingsDraft<LandingSectionConfigEntry[]>(
     data &&
-      (data.sectionConfig ??
-        DEFAULT_LANDING_SECTION_ORDER.map((key) => ({ key, enabled: true }))),
+      (data.sectionConfig
+        ? withMissingSections(data.sectionConfig)
+        : DEFAULT_LANDING_SECTION_ORDER.map((key) => ({ key, enabled: true }))),
     DEFAULT_LANDING_SECTION_ORDER.map((key) => ({ key, enabled: true })),
   )
   const blocker = useUnsavedChangesGuard(draft.isDirty)
