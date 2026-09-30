@@ -42,10 +42,24 @@ import {
  * The storefront footer: its link columns, social icons, and the brand/contact
  * block on either end.
  *
+ * THE CHAT WIDGET IS NOT HERE — it is on UI → Site Settings. It lived here
+ * briefly, on the reasoning that this page owns "how a shopper reaches the
+ * merchant". That was wrong twice over: the widget floats on every page rather
+ * than sitting in the footer, so nobody looks for it under Footer Links, and
+ * this page's own description says it edits "the bottom of every storefront
+ * page", which the widget is not part of.
+ *
  * Writes everything EXCEPT `mainNav` and `announcementBar`, which belong to
  * Header Links, and `newsletter`, which belongs to Home Sections. The field
  * sets are disjoint and `PATCH /settings` is a partial upsert, so the pages can
  * be saved in any order without any of them losing another's work.
+ *
+ * THE SOCIAL ICONS RENDER UNDER THE BRAND BLOCK on the storefront, not in the
+ * bottom bar — the preview below mirrors that. And the bottom bar's left half
+ * is composed from `storeName`/`siteNameAccent`, NOT from `copyrightText`,
+ * which is still stored and still editable on Store Settings but is no longer
+ * read by the storefront. See server/openspec/changes/add-footer-credit-and-chat-widget,
+ * design.md Decision 3.
  *
  * THE NEWSLETTER IS NOT HERE ANY MORE, and this is where people will look for
  * it. It used to be a strip welded into the top of the footer, on every page,
@@ -68,6 +82,7 @@ interface FooterDraft {
   contactPhone: string
   address: string
 }
+
 
 export default function FooterLinksPage() {
   const { data, isLoading, error } = useStoreSettings()
@@ -141,10 +156,24 @@ export default function FooterLinksPage() {
       await updateMutation.mutateAsync({
         footerColumns,
         socialLinks,
-        ...(draft.value.aboutText.trim() ? { aboutText: draft.value.aboutText.trim() } : {}),
-        ...(draft.value.contactEmail.trim() ? { contactEmail: draft.value.contactEmail.trim() } : {}),
-        ...(draft.value.contactPhone.trim() ? { contactPhone: draft.value.contactPhone.trim() } : {}),
-        ...(draft.value.address.trim() ? { address: draft.value.address.trim() } : {}),
+        /*
+         * ALWAYS SENT, including as `''`, because that is the only way these can be CLEARED.
+         *
+         * They were omitted-when-empty, and an omitted key means "leave unchanged" under the
+         * partial upsert — so emptying the about text or the phone and saving was a silent
+         * no-op: the save succeeded and the old value came back on the next reload. It reads
+         * as the field being broken rather than as a rule.
+         *
+         * Safe as `''` because the backend types all three as plain strings with NO `.min()`,
+         * where empty is a real value meaning "the shop has no about text / no address".
+         * `contactEmail` clears too, but as NULL rather than `''` — it is `z.email()`, which
+         * rejects the empty string, so null is the only value that can mean "no public email".
+         * Same rule as the logo URLs on the Site settings page.
+         */
+        aboutText: draft.value.aboutText.trim(),
+        contactPhone: draft.value.contactPhone.trim(),
+        address: draft.value.address.trim(),
+        contactEmail: draft.value.contactEmail.trim() || null,
       })
       draft.markSaved(draft.value)
       toast({ title: 'Footer saved' })
@@ -188,7 +217,7 @@ export default function FooterLinksPage() {
           settings rather than the draft. */}
       <FooterPreview
         draft={draft.value}
-        copyrightText={data?.copyrightText ?? ''}
+        brandName={[data?.storeName, data?.siteNameAccent].filter(Boolean).join(' ')}
         isDirty={draft.isDirty}
       />
 
@@ -420,6 +449,7 @@ export default function FooterLinksPage() {
         ))}
       </EditorSection>
 
+
       <EditorActions
         isDirty={draft.isDirty}
         isSaving={updateMutation.isPending}
@@ -432,14 +462,36 @@ export default function FooterLinksPage() {
   )
 }
 
+/**
+ * The storefront's own agency credit, mirrored so the preview tells the truth.
+ *
+ * A CONSTANT IN THE STOREFRONT, deliberately not a setting — it is the builder's credit, not the
+ * merchant's content, and there is no field here to edit it. Kept in step with
+ * `nextjs/src/lib/agency-credit.ts` by hand, exactly like every other limit and default this panel
+ * mirrors.
+ *
+ * TEXT HERE, THE TRACED MARK THERE. The storefront renders an inline lockup
+ * (`nextjs/src/components/ui/AgencyLogo`); this preview is a 4px-padded sketch at a fraction of
+ * the size, where the mark's letterforms would be illegible and its green frame would read as a
+ * smudge. The preview's job is to show the merchant WHERE the credit sits and that it is not
+ * theirs to edit, which the name in position does — copying the paths across two workspaces to
+ * render them 16px wide would be the drift risk without the benefit.
+ */
+const AGENCY_CREDIT_PREVIEW = { prefix: 'Design & Developed by', name: 'TOP IT SOLUTION' }
+
 function FooterPreview({
   draft,
-  copyrightText,
+  brandName,
   isDirty,
 }: {
   draft: FooterDraft
-  /** From the stored settings — this page no longer edits it. */
-  copyrightText: string
+  /**
+   * The composed `storeName` + `siteNameAccent`, which is what the storefront's copyright line
+   * renders. NOT `copyrightText` — that column is still stored and still editable on Store
+   * Settings, but the footer stopped reading it. Showing it here would preview a line the shop
+   * does not render.
+   */
+  brandName: string
   isDirty: boolean
 }) {
   return (
@@ -458,6 +510,12 @@ function FooterPreview({
           <div>
             <p className="mb-1.5 font-semibold">Brand</p>
             <p className="line-clamp-4 opacity-80">{draft.aboutText}</p>
+            {/* Under the brand block, which is where the storefront renders them. */}
+            {draft.socialLinks.length > 0 && (
+              <p className="mt-2 capitalize opacity-80">
+                {draft.socialLinks.map((s) => s.platform).join(' · ')}
+              </p>
+            )}
           </div>
           {draft.footerColumns.map((column, i) => (
             <div key={i}>
@@ -481,10 +539,15 @@ function FooterPreview({
           </div>
         </div>
 
-        <div className="mt-3 flex items-center justify-between border-t border-white/20 pt-2 text-xs opacity-80">
-          <span className="capitalize">{draft.socialLinks.map((s) => s.platform).join(' · ')}</span>
+        {/* Two halves, matching the storefront: the store's copyright left, the builder's credit
+            right. The social icons moved up into the brand block above. */}
+        <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/20 pt-2 text-xs opacity-80">
           <span>
-            © {new Date().getFullYear()}, {copyrightText}
+            Copyright © {new Date().getFullYear()}
+            {brandName ? ` | ${brandName}` : ''}
+          </span>
+          <span>
+            {AGENCY_CREDIT_PREVIEW.prefix} {AGENCY_CREDIT_PREVIEW.name}
           </span>
         </div>
       </div>

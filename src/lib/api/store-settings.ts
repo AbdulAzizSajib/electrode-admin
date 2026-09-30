@@ -90,6 +90,32 @@ export interface SocialLink {
   url: string
 }
 
+/** Which service the storefront's floating chat bubble opens. One at a time, never both. */
+export const CHAT_CHANNELS = ['whatsapp', 'messenger'] as const
+export type ChatWidgetChannel = (typeof CHAT_CHANNELS)[number]
+
+/**
+ * The storefront's floating chat bubble.
+ *
+ * Mirrors the backend's `chatWidgetSchema`. `channel` selects which destination is REQUIRED — the
+ * other is kept rather than cleared, so a merchant comparing the two does not retype the one they
+ * come back to.
+ *
+ * `whatsappNumber` arrives from the admin read ALREADY RESOLVED: blank means "use the store's
+ * contactPhone", and the backend applies that fallback on the way out, to this read and the
+ * storefront's alike. The editor therefore displays a real number rather than an empty box beside a
+ * working widget — see the backend's `resolveChatWidget`, and design.md Decision 4 in
+ * server/openspec/changes/add-footer-credit-and-chat-widget.
+ */
+export interface ChatWidget {
+  enabled: boolean
+  channel: ChatWidgetChannel
+  /** E.164, e.g. `+8801782521705`. Normalised by the backend on write. */
+  whatsappNumber?: string
+  messengerUsername?: string
+  greeting?: string
+}
+
 export interface Newsletter {
   heading: string
   subtext: string
@@ -271,6 +297,12 @@ export const SETTINGS_LIMITS = {
    */
   middleBarLinks: 4,
   socialLinks: 10,
+  /** `chatWidgetSchema.whatsappNumber` — the same bound `contactPhone` carries. */
+  chatWhatsappNumber: 30,
+  /** `chatWidgetSchema.messengerUsername`. */
+  chatMessengerUsername: 100,
+  /** `chatWidgetSchema.greeting` — a short label beside the bubble, not a sentence. */
+  chatGreeting: 60,
   checkoutNotice: 300,
   /** `navChildSchema.label`, `footerColumnsSchema.title`, and the announcement link label. */
   labelLength: 100,
@@ -1195,6 +1227,12 @@ export interface StoreSettings {
   mainNav: NavItem[] | null
   footerColumns: FooterColumn[] | null
   socialLinks: SocialLink[] | null
+  /**
+   * Null until a merchant saves the chat widget editor. Unlike the other blobs here, the value that
+   * DOES arrive is resolved rather than raw — the backend fills a blank `whatsappNumber` from
+   * `contactPhone` so this editor shows the number the storefront will actually dial.
+   */
+  chatWidget: ChatWidget | null
   announcementBar: AnnouncementBar | null
   /** Null until a merchant saves the header editor; the page seeds from DEFAULT_MIDDLE_BAR_LINKS. */
   middleBarLinks: MiddleBarLink[] | null
@@ -1287,21 +1325,21 @@ export interface StoreSettingsInput {
    * previously never unset it.
    */
   freeShippingThreshold?: number | null
-  contactEmail?: string
+  /** `| null` to clear: the backend types it `z.email()`, which rejects `''`. */
+  contactEmail?: string | null
   contactPhone?: string
   address?: string
-  logoUrl?: string
-  footerLogoUrl?: string
   /**
-   * The browser-tab icon. `| null` unlike the two logo URLs above, and that
-   * difference is load-bearing rather than an inconsistency.
+   * The two brand logos. `| null` to REMOVE the artwork.
    *
-   * Every other optional key here says "leave unchanged" by being omitted, so
-   * there is no way to express REMOVE for a field whose empty value is not
-   * itself valid — which is why clearing a logo through this panel does nothing
-   * today. The backend makes `faviconUrl` nullable specifically to fix that, so
-   * send `null` to take an icon down. Never `''`: the backend rejects it.
+   * An omitted key says "leave unchanged" under the partial upsert, and `z.url()`
+   * rejects `''` — so until these became nullable, clearing a logo in this panel
+   * silently did nothing: the save succeeded and the image came back on reload.
+   * Send `null` to take one down. Never `''`.
    */
+  logoUrl?: string | null
+  footerLogoUrl?: string | null
+  /** The browser-tab icon. Nullable on exactly the same rule as the two above. */
   faviconUrl?: string | null
   /** Sent unconditionally by the site-settings editor — a mode always has a value. */
   headerBrandMode?: BrandDisplayMode
@@ -1313,7 +1351,8 @@ export interface StoreSettingsInput {
   aboutText?: string
   copyrightText?: string
 
-  siteUrl?: string
+  /** `| null` to clear: validated as a URL on the backend, which rejects `''`. */
+  siteUrl?: string | null
   metaTitle?: string
   metaDescription?: string
 
@@ -1327,6 +1366,8 @@ export interface StoreSettingsInput {
   mainNav?: NavItem[]
   footerColumns?: FooterColumn[]
   socialLinks?: SocialLink[]
+  /** The WHOLE block, never a slice — switching channel must not leave half the previous one behind. */
+  chatWidget?: ChatWidget
   announcementBar?: AnnouncementBar
   middleBarLinks?: MiddleBarLink[]
   newsletter?: Newsletter

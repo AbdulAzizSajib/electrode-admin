@@ -97,9 +97,19 @@ function toInput(values: OutputValues): StoreSettingsInput {
     currencyPosition: values.currencyPosition,
     currencyDecimals: values.currencyDecimals,
   }
-  if (values.contactEmail) input.contactEmail = values.contactEmail
-  if (values.contactPhone) input.contactPhone = values.contactPhone
-  if (values.address) input.address = values.address
+  /*
+   * ALWAYS SENT, never omitted when blank — omitting means LEAVE UNCHANGED under the partial
+   * upsert, so clearing one of these boxes and saving used to be a silent no-op and the old
+   * value returned on the next read.
+   *
+   * `contactEmail` clears as NULL because the backend validates it with `z.email()`, which
+   * rejects `''`. The other two are plain strings with no `.min()`, so `''` is itself the
+   * cleared value. The difference follows from each field's type, not from preference — the
+   * same split the Footer links editor and the Site settings page now follow.
+   */
+  input.contactEmail = values.contactEmail || null
+  input.contactPhone = values.contactPhone
+  input.address = values.address
   return input
 }
 

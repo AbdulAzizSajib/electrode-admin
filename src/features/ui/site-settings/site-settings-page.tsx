@@ -8,6 +8,8 @@ import { ErrorState } from '@/components/ui/error-state'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
+import { SegmentedRadioGroup } from '@/components/ui/radio-group'
 import { toast } from '@/components/ui/use-toast'
 import {
   EditorActions,
@@ -26,14 +28,18 @@ import {
   useStoreSettings,
   useUpdateStoreSettings,
   nearestContentWidth,
+  CHAT_CHANNELS,
   DEFAULT_BRAND_DISPLAY,
   DEFAULT_SITE_CONTENT_WIDTH,
   DEFAULT_THEME,
   FULL_WIDTH,
   LOGO_HEIGHT_LIMITS,
+  SETTINGS_LIMITS,
   SITE_CONTENT_WIDTHS,
   THEME_COLOR_FIELDS,
   type BrandDisplayMode,
+  type ChatWidget,
+  type ChatWidgetChannel,
   type StoreSettingsInput,
   type Theme,
   type ThemeColorKey,
@@ -64,8 +70,8 @@ interface SiteDraft {
   footerLogoUrl: string
   /**
    * The browser-tab icon. Empty means "no icon chosen" and is SENT AS NULL,
-   * not omitted — see `save()`. That is what makes Clear actually clear, and it
-   * is the one field on this page where that works.
+   * not omitted — see `save()`. The two logo URLs above now do the same; every
+   * URL field on this page clears with null rather than by being left out.
    */
   faviconUrl: string
   /**
@@ -85,6 +91,15 @@ interface SiteDraft {
   metaDescription: string
   copyrightText: string
   /**
+   * The floating chat bubble on the storefront.
+   *
+   * Lives on THIS page rather than under Footer Links, where it first landed:
+   * the bubble floats over every page instead of sitting in the footer, so
+   * Footer Links is not where a merchant looks for it. It sits with the site's
+   * other whole-storefront settings.
+   */
+  chatWidget: ChatWidget
+  /**
    * Both typefaces live in here as `theme.font` and `theme.adminFont`.
    *
    * There is no longer a raw-text companion field. Fonts used to be pasted on
@@ -94,6 +109,16 @@ interface SiteDraft {
    */
   theme: Theme
 }
+
+/**
+ * The chat widget as a store that has never configured one has it.
+ *
+ * Mirrors the backend's `DEFAULT_CHAT_WIDGET`. Seeded here rather than read from the API
+ * because the ADMIN read returns the stored row as-is — a null column has to be
+ * distinguishable from one configured to the default, the same reason every other editor on
+ * this panel carries a `DEFAULT_*` mirror.
+ */
+const DEFAULT_CHAT_WIDGET: ChatWidget = { enabled: false, channel: 'whatsapp' }
 
 const EMPTY_DRAFT: SiteDraft = {
   storeName: '',
@@ -109,6 +134,7 @@ const EMPTY_DRAFT: SiteDraft = {
   metaTitle: '',
   metaDescription: '',
   copyrightText: '',
+  chatWidget: DEFAULT_CHAT_WIDGET,
   theme: DEFAULT_THEME,
 }
 
@@ -257,11 +283,17 @@ export default function SiteSettingsPage() {
       metaTitle: data.metaTitle ?? '',
       metaDescription: data.metaDescription ?? '',
       copyrightText: data.copyrightText ?? '',
+      chatWidget: data.chatWidget ?? DEFAULT_CHAT_WIDGET,
       theme: data.theme ?? DEFAULT_THEME,
     },
     EMPTY_DRAFT,
   )
   const blocker = useUnsavedChangesGuard(draft.isDirty)
+  /*
+   * The one field on this page that can be saved into a state that silently does nothing, so
+   * the one that needs an inline error. See `save()`.
+   */
+  const [chatError, setChatError] = React.useState<string | null>(null)
 
   const value = draft.value
   const set = (patch: Partial<SiteDraft>) => draft.set({ ...value, ...patch })
@@ -301,6 +333,42 @@ export default function SiteSettingsPage() {
 
   const save = async () => {
     /*
+     * REFUSE A WIDGET WITH NOWHERE TO GO, before the request rather than after.
+     *
+     * The backend already guards this — it serves `enabled: false` when the selected channel
+     * has no reachable destination — but that guard is INVISIBLE from here: the save succeeds,
+     * the toast says saved, and the bubble simply never appears on the storefront. That is
+     * exactly the failure this check exists to make loud.
+     *
+     * Only while ENABLED. A merchant configures the widget over several saves, and nothing is
+     * at risk while it is switched off.
+     */
+    if (value.chatWidget.enabled) {
+      if (value.chatWidget.channel === 'messenger' && !value.chatWidget.messengerUsername?.trim()) {
+        setChatError('Enter your Messenger username, or switch the chat button off.')
+        toast({ title: 'The chat button has nowhere to go', variant: 'destructive' })
+        return
+      }
+      /*
+       * Blank is legitimate for WhatsApp — it means "use the store contact phone", which the
+       * backend resolves. This fires only when that fallback resolves to nothing either.
+       * `contactPhone` is not edited on this page, so it is read from the loaded row (`data`).
+       */
+      if (
+        value.chatWidget.channel === 'whatsapp' &&
+        !value.chatWidget.whatsappNumber?.trim() &&
+        !data?.contactPhone?.trim()
+      ) {
+        setChatError(
+          'Enter a WhatsApp number — the store contact phone is empty, so there is nothing to fall back to.',
+        )
+        toast({ title: 'The chat button has nowhere to go', variant: 'destructive' })
+        return
+      }
+    }
+    setChatError(null)
+
+    /*
      * Only non-empty values are sent. The backend's schema is `.optional()`, not
      * `.nullable()`, so "leave this unset" is expressed by omitting the key —
      * sending an empty string would store one.
@@ -336,20 +404,47 @@ export default function SiteSettingsPage() {
       footerLogoHeight: value.footerLogoHeight,
     }
     if (value.storeName.trim()) input.storeName = value.storeName.trim()
-    if (value.siteNameAccent.trim()) input.siteNameAccent = value.siteNameAccent.trim()
-    if (value.logoUrl.trim()) input.logoUrl = value.logoUrl.trim()
-    if (value.footerLogoUrl.trim()) input.footerLogoUrl = value.footerLogoUrl.trim()
+    /*
+     * ALWAYS SENT, including as `''` — not omitted when empty like the two logos below.
+     *
+     * This is how the field is CLEARED. An omitted key means "leave unchanged" under the
+     * backend's partial upsert, so the omit-when-empty rule made emptying this box a no-op:
+     * the save succeeded, the stored accent survived untouched, and the old value came back
+     * on the next reload. It read as the setting simply not working.
+     *
+     * Sending `''` works here where it would not for a logo because the backend types this
+     * as `z.string().max(100)` with NO `.min()` — an empty accent is a valid accent, meaning
+     * "the site name has no second half". `logoUrl`/`footerLogoUrl` below still carry the
+     * bug, and still cannot be fixed this way: they are validated as URLs, so `''` is
+     * rejected outright and clearing them needs `.nullable()` on the backend first.
+     */
+    input.siteNameAccent = value.siteNameAccent.trim()
+    /*
+     * ALWAYS SENT, as `null` when empty — the same rule `faviconUrl` below follows,
+     * and now for the same reason. These were omitted when blank, which under the
+     * partial upsert meant a logo could be REPLACED forever but never REMOVED:
+     * the Clear button emptied the box, the save succeeded, and the artwork came
+     * back on the next read.
+     *
+     * Never `''` — the backend validates these as URLs and rejects the empty
+     * string. `null` is what it accepts as "no artwork on this slot", which is
+     * what the column already meant.
+     */
+    input.logoUrl = value.logoUrl.trim() || null
+    input.footerLogoUrl = value.footerLogoUrl.trim() || null
     /*
      * ALWAYS SENT, and as `null` when empty — not omitted like the two logos
-     * directly above. This is the one field on this page whose Clear button
-     * actually clears.
+     * directly above.
      *
-     * The omit-when-empty rule those two follow cannot express "remove this":
-     * an omitted key means LEAVE UNCHANGED under the backend's partial upsert,
-     * so emptying a logo here and saving leaves the stored URL exactly where it
-     * was. That is a real bug for `logoUrl`/`footerLogoUrl` today — it is not
-     * being fixed here, because those columns reject null and changing that is
-     * a backend change of its own.
+     * Omitting a key means LEAVE UNCHANGED under the backend's partial upsert, so
+     * a field whose empty value is itself invalid needs `null` to express REMOVE.
+     * `logoUrl`/`footerLogoUrl` above had exactly this bug and now send `null`
+     * too.
+     *
+     * `siteNameAccent` and `copyrightText` clear by sending `''` instead, because
+     * they are plain strings with no `.min()`. The URL fields cannot — `''` fails
+     * validation — so they clear with `null`. That is the whole difference, and
+     * it follows from the field's type rather than from preference.
      *
      * `faviconUrl` is nullable on the backend precisely so this works. Never
      * send `''`: it is rejected as a malformed URL.
@@ -364,7 +459,29 @@ export default function SiteSettingsPage() {
      * which is exactly the clobbering the disjoint-key-set rule exists to
      * prevent.
      */
-    if (value.copyrightText.trim()) input.copyrightText = value.copyrightText.trim()
+    /*
+     * Always sent, for the same reason `siteNameAccent` above is: omitting it when empty
+     * meant the field could never be cleared, only overwritten. Typed `z.string().max(300)`
+     * with no `.min()` on the backend, so `''` is a valid value rather than a rejected one.
+     */
+    input.copyrightText = value.copyrightText.trim()
+    /*
+     * The WHOLE block, always — a present value replaces the column outright, so sending a
+     * slice would leave half the previous channel's configuration behind.
+     *
+     * A blank `whatsappNumber` is sent as `''` DELIBERATELY: there it means "use the store
+     * contact phone", which an omitted key could not say. The other two optional strings are
+     * dropped when blank, because for them absence is what "unset" means.
+     */
+    input.chatWidget = {
+      enabled: value.chatWidget.enabled,
+      channel: value.chatWidget.channel,
+      whatsappNumber: value.chatWidget.whatsappNumber?.trim() ?? '',
+      ...(value.chatWidget.messengerUsername?.trim()
+        ? { messengerUsername: value.chatWidget.messengerUsername.trim() }
+        : {}),
+      ...(value.chatWidget.greeting?.trim() ? { greeting: value.chatWidget.greeting.trim() } : {}),
+    }
 
     try {
       const saved = await updateMutation.mutateAsync(input)
@@ -597,10 +714,18 @@ export default function SiteSettingsPage() {
             />
           </Labelled>
         </div>
+        {/*
+          The hint used to read "Shown in the footer", which stopped being true when the footer's
+          bottom bar was rebuilt to compose its copyright from the store name instead — see
+          server/openspec/changes/add-footer-credit-and-chat-widget, design.md Decision 3. The
+          column is still stored and still written from here, deliberately: dropping a populated
+          column to change a layout destroys merchant text for no gain. But a field that silently
+          changes nothing on the storefront reads as a bug, so it says so.
+        */}
         <Labelled
           id="copyright-text"
           label="Copyright text"
-          hint="Shown in the footer. Leave empty to omit the line entirely."
+          hint="No longer shown on the storefront — the footer now reads your store name. Kept so your wording is not lost."
         >
           <Input
             id="copyright-text"
@@ -757,6 +882,130 @@ export default function SiteSettingsPage() {
             official.
           </p>
         )}
+      </EditorSection>
+
+      {/*
+        The floating chat bubble. Not a list, so no add button and no capacity note — one
+        widget, one channel at a time.
+
+        The two destination fields are MUTUALLY EXCLUSIVE in the UI but not in the data:
+        switching channel hides the other field and keeps its value, so a merchant comparing
+        the two does not retype the one they come back to.
+      */}
+      <EditorSection
+        title="Chat widget"
+        description="A floating button on every shop page that opens a conversation with you. Not shown on campaign landing pages."
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <Label htmlFor="chat-enabled">Show the chat button</Label>
+              <p className="text-xs text-muted-foreground">
+                Off keeps your settings here for when you switch it back on.
+              </p>
+            </div>
+            <Switch
+              id="chat-enabled"
+              checked={value.chatWidget.enabled}
+              onCheckedChange={(enabled) =>
+                set({ chatWidget: { ...value.chatWidget, enabled } })
+              }
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label>Opens in</Label>
+            <SegmentedRadioGroup
+              value={value.chatWidget.channel}
+              onValueChange={(channel) =>
+                set({
+                  chatWidget: { ...value.chatWidget, channel: channel as ChatWidgetChannel },
+                })
+              }
+              aria-label="Chat channel"
+              options={CHAT_CHANNELS.map((channel) => ({
+                value: channel,
+                label: channel === 'whatsapp' ? 'WhatsApp' : 'Messenger',
+              }))}
+            />
+          </div>
+
+          {value.chatWidget.channel === 'whatsapp' ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="chat-whatsapp">WhatsApp number</Label>
+              <Input
+                id="chat-whatsapp"
+                value={value.chatWidget.whatsappNumber ?? ''}
+                maxLength={SETTINGS_LIMITS.chatWhatsappNumber}
+                onChange={(e) =>
+                  set({ chatWidget: { ...value.chatWidget, whatsappNumber: e.target.value } })
+                }
+                placeholder="01712345678"
+                aria-invalid={Boolean(chatError)}
+                aria-describedby={chatError ? 'chat-error' : undefined}
+              />
+              {!chatError && (
+                /*
+                 * The RESOLVED destination, not the stored one — the backend fills a blank
+                 * number from the contact phone before serving it, so this line names the
+                 * number the storefront will actually dial.
+                 */
+                <p className="text-xs text-muted-foreground">
+                  {value.chatWidget.whatsappNumber?.trim()
+                    ? 'Must be a number with a WhatsApp account on it.'
+                    : data?.contactPhone?.trim()
+                      ? `Leave blank to use the store contact phone (${data.contactPhone.trim()}).`
+                      : 'Leave blank to use the store contact phone — but that is empty, so enter a number here.'}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="chat-messenger">Messenger username</Label>
+              <Input
+                id="chat-messenger"
+                value={value.chatWidget.messengerUsername ?? ''}
+                maxLength={SETTINGS_LIMITS.chatMessengerUsername}
+                onChange={(e) =>
+                  set({
+                    chatWidget: { ...value.chatWidget, messengerUsername: e.target.value },
+                  })
+                }
+                placeholder="yourpage"
+                aria-invalid={Boolean(chatError)}
+                aria-describedby={chatError ? 'chat-error' : undefined}
+              />
+              {!chatError && (
+                <p className="text-xs text-muted-foreground">
+                  The username from your page address, not the whole link — m.me/
+                  <b>yourpage</b>.
+                </p>
+              )}
+            </div>
+          )}
+
+          {chatError && (
+            <p id="chat-error" className="text-xs text-destructive">
+              {chatError}
+            </p>
+          )}
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="chat-greeting">Button label</Label>
+            <Input
+              id="chat-greeting"
+              value={value.chatWidget.greeting ?? ''}
+              maxLength={SETTINGS_LIMITS.chatGreeting}
+              onChange={(e) =>
+                set({ chatWidget: { ...value.chatWidget, greeting: e.target.value } })
+              }
+              placeholder="Chat With Us"
+            />
+            <p className="text-xs text-muted-foreground">
+              Shown beside the button on wider screens. Blank uses &ldquo;Chat With Us&rdquo;.
+            </p>
+          </div>
+        </div>
       </EditorSection>
 
       <EditorActions

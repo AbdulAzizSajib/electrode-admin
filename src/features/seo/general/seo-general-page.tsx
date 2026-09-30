@@ -79,13 +79,18 @@ export default function SeoGeneralPage() {
   const handleSave = async () => {
     try {
       /*
-       * One PATCH carrying both halves. `siteUrl` is only sent when it has a
-       * value: the backend validates it as a URL, so an empty string would be a
-       * 400 rather than a clear. Clearing it means omitting the key, which is
-       * the same partial-upsert rule every other settings screen follows.
+       * One PATCH carrying both halves. `siteUrl` is ALWAYS sent, as `null` when
+       * empty — never omitted.
+       *
+       * It used to be omitted when blank, on the belief that omission was how a
+       * field is cleared. It is the opposite: an omitted key means LEAVE
+       * UNCHANGED under the partial upsert, so clearing the box and saving was a
+       * silent no-op and the old origin came back on the next read. `''` is not
+       * the answer either — the backend validates this as a URL and rejects it —
+       * which is exactly why the column is nullable.
        */
       await updateSettings.mutateAsync({
-        ...(values.siteUrl.trim() ? { siteUrl: values.siteUrl.trim() } : {}),
+        siteUrl: values.siteUrl.trim() || null,
         metaTitle: values.metaTitle,
         metaDescription: values.metaDescription,
         seoConfig: config,
