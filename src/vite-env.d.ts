@@ -18,6 +18,11 @@ interface ImportMetaEnv {
    * Vite inlines this AT BUILD TIME. Changing it in a hosting dashboard does
    * nothing until the panel is rebuilt — unlike the server, where an env change
    * takes effect on restart.
+   *
+   * Optional since demo hosting: left unset, the panel calls its own origin,
+   * which is what lets one build serve several demo subdomains. A client
+   * installation still sets it, because there the panel and the API are
+   * separate origins.
    */
   readonly VITE_API_BASE_URL?: string
 

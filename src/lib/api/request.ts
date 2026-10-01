@@ -7,7 +7,7 @@
  * `{ success, message, data, meta? }` envelope, and throw `ApiError` carrying the backend's own
  * message whenever the response is not ok or the envelope reports failure.
  */
-import { ApiError, BASE_URL, type PaginationMeta } from '@/lib/api/client'
+import { ApiError, BASE_URL, DEMO_KEY_HEADER, demoKey, type PaginationMeta } from '@/lib/api/client'
 
 export interface ApiEnvelope<T> {
   success: boolean
@@ -27,11 +27,31 @@ export interface ApiEnvelope<T> {
  */
 export async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
   const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData
+  const demo = demoKey()
+
+  /*
+   * Headers are MERGED here rather than replaced.
+   *
+   * They used to ride in the object spread below, where a later `...init`
+   * replaced the whole `headers` object — so a caller passing any header at all
+   * silently dropped `Content-Type` and the backend could not parse the body.
+   * That was latent; it becomes load-bearing once the demo key has to reach the
+   * API on every request whatever else a caller sets.
+   *
+   * Precedence is unchanged in the way callers relied on: a header they pass
+   * still wins over the default. The demo key goes last because it is routing
+   * rather than a preference — sending the wrong one reads another shop.
+   */
+  const headers: Record<string, string> = {
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...((init?.headers as Record<string, string> | undefined) ?? {}),
+    ...(demo ? { [DEMO_KEY_HEADER]: demo } : {}),
+  }
 
   const res = await fetch(`${BASE_URL}${path}`, {
     credentials: 'include',
-    ...(isFormData ? {} : { headers: { 'Content-Type': 'application/json' } }),
     ...init,
+    headers,
   })
 
   const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null
