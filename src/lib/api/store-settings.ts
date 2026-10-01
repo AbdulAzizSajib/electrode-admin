@@ -639,6 +639,32 @@ export const HERO_VARIANT_OPTIONS: { value: HeroVariant; label: string; descript
 ]
 
 /**
+ * The HERO section's layout, narrowed from a section entry's `variant`.
+ *
+ * A section entry's `variant` is typed `SectionLayout` — the union of every
+ * layout any section offers — because one `homeConfig` array carries entries of
+ * every kind. Which union a given entry's value belongs to is decided by its
+ * `key`, and TypeScript cannot see that: a `.find((s) => s.key === 'HERO')`
+ * yields a `SectionLayout`, so assigning it to a `HeroVariant` is rejected even
+ * though it is always one in practice. `GRID` is the member that proves the
+ * compiler right to object — it is a real `SectionLayout` and not a hero layout.
+ *
+ * Narrowing through `HERO_VARIANT_OPTIONS` rather than a hand-written list of
+ * members: that array is already the picker's single source of valid hero
+ * layouts, so a layout added or withdrawn there cannot leave this guard behind.
+ *
+ * See server/openspec/changes/fix-cpanel-deploy-blockers/design.md Decision 4.
+ *
+ * Returns the registry default for anything it does not recognise, including
+ * `undefined` — which covers both the moment before the settings request lands
+ * and a stored value the backend has since withdrawn (`SPLIT_ONE`). Rendering
+ * the default is right in both cases; the panel has no hero to draw otherwise.
+ */
+export const asHeroVariant = (variant: SectionLayout | undefined): HeroVariant =>
+    HERO_VARIANT_OPTIONS.find((option) => option.value === variant)?.value ??
+    HERO_VARIANT_OPTIONS[0].value
+
+/**
  * The featured-categories layout picker's options, in registry order, first
  * one the default. Chosen on the Home Sections row — not on a page of its own
  * like the hero's — because the choice moves no artwork guidance and the row

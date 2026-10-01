@@ -1,0 +1,28 @@
+{
+  /*
+   * Test sources, type-checked separately from the app.
+   *
+   * They live under `src/` beside what they test, so `tsconfig.app.json` would
+   * otherwise sweep them in — and fail, because the app build declares neither
+   * vitest's globals (`describe`, `afterEach`, injected by `globals: true` in
+   * vite.config.ts) nor node's (`node:fs`, which one fixture-reading suite
+   * uses). Adding those types to the app project instead would let production
+   * code reach for `process` or `readFileSync` and still compile, which is the
+   * thing being prevented here: the panel is a browser bundle.
+   *
+   * `tsconfig.app.json` excludes these same globs. The two lists must stay in
+   * step — a file matched by neither is checked by nothing.
+   *
+   * See server/openspec/changes/fix-cpanel-deploy-blockers/design.md Decision 3.
+   */
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "types": ["vite/client", "vitest/globals", "node"]
+  },
+  "include": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test-setup.ts"],
+  // `extends` inherits tsconfig.app.json's `exclude`, which lists these very
+  // globs — leaving it in place would cancel the `include` above and the
+  // project would hold no files at all (TS18003).
+  "exclude": []
+}

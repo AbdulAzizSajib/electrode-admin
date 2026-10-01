@@ -25,5 +25,13 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  /*
+   * Tests are excluded and checked by `tsconfig.test.json` instead, which adds
+   * vitest's and node's globals. Keeping them out here is what stops production
+   * code from reaching for `process` or `readFileSync` and still compiling.
+   * The two globs lists must stay in step — a file matched by neither project
+   * is checked by nothing.
+   */
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test-setup.ts"]
 }

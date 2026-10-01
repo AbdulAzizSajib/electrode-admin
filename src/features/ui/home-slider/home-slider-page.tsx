@@ -55,6 +55,7 @@ import {
   DEFAULT_SITE_CONTENT_WIDTH,
   FULL_WIDTH,
   HERO_VARIANT_OPTIONS,
+  asHeroVariant,
   type HeroVariant,
 } from '@/lib/api/store-settings'
 import { formatDateTime } from '@/lib/utils/format'
@@ -118,10 +119,17 @@ export default function HomeSliderPage() {
    *
    * NOT DEFAULTED HERE beyond the read itself: the backend resolves the layout
    * on every read, so a live payload always carries a valid one. The fallback
-   * covers only the moment before the settings request lands, and it is the
-   * same default the backend would have resolved to.
+   * `asHeroVariant` applies covers only the moment before the settings request
+   * lands, and it is the same default the backend would have resolved to.
+   *
+   * Through `asHeroVariant` because a section entry's `variant` is typed as
+   * every layout ANY section offers — `GRID` among them — and only the entry's
+   * `key` says it is a hero's. See that helper for why the narrowing is not
+   * spelled out here.
    */
-  const variant: HeroVariant = settings?.homeConfig?.find((s) => s.key === 'HERO')?.variant ?? 'SPLIT_THREE'
+  const variant: HeroVariant = asHeroVariant(
+    settings?.homeConfig?.find((s) => s.key === 'HERO')?.variant,
+  )
 
   const slots = React.useMemo(() => heroSlots(variant), [variant])
   const unused = React.useMemo(() => unusedSlots(variant), [variant])
