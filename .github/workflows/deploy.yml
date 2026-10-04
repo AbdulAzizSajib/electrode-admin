@@ -1,0 +1,96 @@
+# Builds the admin SPA and syncs dist/ into the cPanel document root over SSH.
+# Setup (SSH key, secrets, variables) is in CICD-topitsolution.md.
+name: Deploy admin
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-admin
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+      VITE_STOREFRONT_URL: ${{ vars.VITE_STOREFRONT_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The build succeeds without either, and ships a panel that is broken.
+      - name: Build-time URLs present
+        run: |
+          test -n "$VITE_API_BASE_URL"   || { echo "::error::VITE_API_BASE_URL variable is not set"; exit 1; }
+          test -n "$VITE_STOREFRONT_URL" || { echo "::error::VITE_STOREFRONT_URL variable is not set"; exit 1; }
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm run build
+
+      - name: SSH setup
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host cpanel
+            HostName ${{ secrets.SSH_HOST }}
+            Port ${{ secrets.SSH_PORT }}
+            User ${{ secrets.SSH_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+          EOF
+
+      # The host has no rsync, so the build ships as a tarball and is swapped
+      # in as a whole directory — no stale hashed assets, no half-new panel.
+      - name: Upload
+        run: |
+          tar -czf admin.tar.gz -C dist .
+          ssh cpanel 'mkdir -p ~/deploy'
+          scp admin.tar.gz cpanel:deploy/admin.tar.gz
+
+      - name: Release
+        run: |
+          ssh cpanel 'bash -s' <<'REMOTE'
+          set -eo pipefail
+          APP="$HOME/admin-public"
+          NEW="$HOME/admin-public.new"
+          OLD="$HOME/admin-public.old"
+
+          rm -rf "$NEW" && mkdir -p "$NEW"
+          tar -xzf "$HOME/deploy/admin.tar.gz" -C "$NEW"
+          rm -f "$HOME/deploy/admin.tar.gz"
+          test -f "$NEW/index.html" || { echo "index.html missing in archive"; exit 1; }
+
+          # .htaccess is hand-placed on the host and not in dist/ — carry it
+          # over, or every refresh on a deep link 404s.
+          test -f "$APP/.htaccess" || { echo "$APP/.htaccess missing — see DEPLOY-topitsolution.md §7"; exit 1; }
+          cp -p "$APP/.htaccess" "$NEW/.htaccess"
+
+          rm -rf "$OLD"
+          mv "$APP" "$OLD"
+          mv "$NEW" "$APP"
+          echo "Released."
+          REMOTE
+
+      - name: Health check
+        run: |
+          curl -fsS -o /dev/null -w '%{http_code}\n' --retry 3 --retry-delay 5 \
+            https://admin.topitsolution.com/
+          # A deep link proves the SPA rewrite in .htaccess is still in place.
+          curl -fsS -o /dev/null -w '%{http_code}\n' \
+            https://admin.topitsolution.com/login
