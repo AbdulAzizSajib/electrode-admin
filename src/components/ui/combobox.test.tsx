@@ -129,8 +129,8 @@ describe('Combobox', () => {
     await user.click(screen.getByRole('combobox', { name: 'Brand' }))
     await user.keyboard('zzzz')
 
-    await waitFor(() => expect(screen.getByText('Nothing matches what you typed')).not.toBeNull())
-    expect(screen.queryByText('There are none yet')).toBeNull()
+    await waitFor(() => expect(screen.getByText('আপনার টাইপ করা লেখার সাথে কিছুই মিলছে না।')).not.toBeNull())
+    expect(screen.queryByText('এখানে কোনো তথ্য নেই')).toBeNull()
   })
 
   it('says there are none when the list is genuinely empty', async () => {
@@ -139,8 +139,8 @@ describe('Combobox', () => {
 
     await user.click(screen.getByRole('combobox', { name: 'Brand' }))
 
-    await waitFor(() => expect(screen.getByText('There are none yet')).not.toBeNull())
-    expect(screen.queryByText('Nothing matches what you typed')).toBeNull()
+    await waitFor(() => expect(screen.getByText('এখানে কোনো তথ্য নেই')).not.toBeNull())
+    expect(screen.queryByText('আপনার টাইপ করা লেখার সাথে কিছুই মিলছে না।')).toBeNull()
   })
 
   it('says the options are still arriving rather than showing an empty list', async () => {
@@ -150,7 +150,7 @@ describe('Combobox', () => {
     await user.click(screen.getByRole('combobox', { name: 'Brand' }))
 
     await waitFor(() => expect(screen.getByText('Loading options…')).not.toBeNull())
-    expect(screen.queryByText('There are none yet')).toBeNull()
+    expect(screen.queryByText('এখানে কোনো তথ্য নেই')).toBeNull()
     expect(screen.queryByRole('listbox')).toBeNull()
   })
 
@@ -210,7 +210,7 @@ describe('Combobox', () => {
     await user.click(screen.getByRole('combobox', { name: 'Brand' }))
     await user.keyboard('zzzz')
 
-    await waitFor(() => expect(screen.getByText('Nothing matches what you typed')).not.toBeNull())
+    await waitFor(() => expect(screen.getByText('আপনার টাইপ করা লেখার সাথে কিছুই মিলছে না।')).not.toBeNull())
 
     // The moment it exists for: searched, not found, create it from here.
     await user.click(screen.getByRole('button', { name: 'Add brand' }))

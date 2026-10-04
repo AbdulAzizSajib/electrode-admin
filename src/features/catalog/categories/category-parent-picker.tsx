@@ -164,7 +164,7 @@ export function CategoryParentPicker({
                 ...options.map((c) => ({ value: c.id, label: c.name })),
               ]}
               aria-label={levelIndex === 0 ? ariaLabel : `Subcategory of ${parentName}`}
-              searchPlaceholder="Search categories"
+              searchPlaceholder="ক্যাটেগরি সিলেক্ট করুন অথবা নতুন ক্যাটেগরি তৈরি করুন"
               createAction={
                 onCreate
                   ? {

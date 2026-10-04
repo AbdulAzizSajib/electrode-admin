@@ -79,7 +79,8 @@ export function QuickCreateAttribute({
       open={open}
       onOpenChange={onOpenChange}
       title="New attribute"
-      description="Its values are selected on this product straight away, and the combinations rebuilt."
+      description="এর ভ্যালুগুলো সরাসরি এই প্রোডাক্টে নির্বাচন করা হবে এবং কম্বিনেশনগুলো নতুন করে তৈরি হবে।
+"
       submitLabel="Create attribute"
       pending={mutation.isPending}
       error={error}
@@ -89,7 +90,7 @@ export function QuickCreateAttribute({
         <Input
           id="quick-attribute-name"
           autoFocus
-          placeholder="Colour"
+          placeholder="সাইজ, রং, উপাদান"
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
@@ -113,7 +114,7 @@ export function QuickCreateAttribute({
             <div key={row.key} className="flex items-center gap-2">
               <Input
                 aria-label={`Value ${index + 1}`}
-                placeholder="Red"
+                placeholder="যেমন: লাল, বড়, সুতি"
                 value={row.label}
                 onChange={(event) => setRow(row.key, { label: event.target.value })}
               />

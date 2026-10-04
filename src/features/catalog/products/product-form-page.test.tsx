@@ -715,7 +715,7 @@ describe('ProductFormPage', () => {
       // search failed.
       await user.click(screen.getByRole('combobox', { name: 'Brand' }))
       await user.keyboard('Nike')
-      await waitFor(() => expect(screen.getByText('Nothing matches what you typed')).not.toBeNull())
+      await waitFor(() => expect(screen.getByText('আপনার টাইপ করা লেখার সাথে কিছুই মিলছে না।')).not.toBeNull())
       await user.click(screen.getByRole('button', { name: 'Add brand' }))
 
       const dialog = await screen.findByRole('dialog')

@@ -1028,7 +1028,7 @@ export default function ProductFormPage() {
                           <FormLabel>Name</FormLabel>
                           <FormControl>
                             <Input
-                              placeholder="product name"
+                              placeholder="প্রোডাক্ট এর নাম..."
                               {...field}
                               onChange={(event) => {
                                 field.onChange(event)
@@ -1049,7 +1049,7 @@ export default function ProductFormPage() {
                           <div className="relative">
                             <FormControl>
                               <Input
-                                placeholder="product code"
+                                placeholder="প্রোডাক্ট কোড..."
                                 className="pr-8"
                                 {...field}
                                 onChange={(event) => {
@@ -1081,7 +1081,8 @@ export default function ProductFormPage() {
                       <FormItem data-field="shortDescription">
                         <FormLabel>Overview</FormLabel>
                         <FormControl>
-                          <RichTextEditor    
+                          <RichTextEditor   
+                            placeholder="প্রোডাক্ট এর সংক্ষিপ্ত বিবরণ..."       
                             minHeight="min-h-20"
                             value={field.value}
                             onChange={field.onChange}
@@ -1099,7 +1100,7 @@ export default function ProductFormPage() {
                       <FormItem data-field="description">
                         <FormLabel>Description</FormLabel>
                         <FormControl>
-                          <RichTextEditor value={field.value} onChange={field.onChange} />
+                          <RichTextEditor placeholder="প্রোডাক্ট এর সম্পূর্ণ বিবরণ..." value={field.value} onChange={field.onChange} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1130,7 +1131,7 @@ export default function ProductFormPage() {
                           <Input maxLength={200} {...field} />
                         </FormControl>
                         <FormDescription>
-                          Shown as the heading in Google. Leave blank to use the product name.
+                          গুগল সার্চে এটি মূল শিরোনাম (Title) হিসেবে দেখাবে। ফাঁকা রাখলে গুগল প্রোডাক্টের নামটাই শিরোনাম হিসেবে নিয়ে নেবে।
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -1147,7 +1148,7 @@ export default function ProductFormPage() {
                           <Textarea rows={3} maxLength={500} {...field} />
                         </FormControl>
                         <FormDescription>
-                          The sentence under the link in search results. Around 160 characters.
+                         গুগল সার্চে লিংকের নিচে এই ছোট বিবরণটি দেখাবে। এটি ১৬০ অক্ষরের মধ্যে রাখা ভালো। ফাঁকা রাখলে গুগল নিজে থেকেই পেজ থেকে লেখা নিয়ে নেবে।
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -1187,8 +1188,8 @@ export default function ProductFormPage() {
                         <FormLabel>Brand</FormLabel>
                         <FormControl>
                           <Combobox
-                            placeholder="Select a brand"
-                            searchPlaceholder="Search brands"
+                            placeholder="ব্র্যান্ড সিলেক্ট করুন"
+                            searchPlaceholder="ব্র্যান্ড সার্চ করুন অথবা নতুন ব্র্যান্ড তৈরি করুন"
                             aria-label="Brand"
                             options={brands.map((b) => ({
                               value: b.id,
@@ -1258,8 +1259,8 @@ export default function ProductFormPage() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="SIMPLE">Simple</SelectItem>
-                            <SelectItem value="VARIABLE">Variable</SelectItem>
+                            <SelectItem value="SIMPLE">Simple (একই রকমের)</SelectItem>
+                            <SelectItem value="VARIABLE">Variable (আলাদা সাইজ/রঙের)</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -1283,9 +1284,9 @@ export default function ProductFormPage() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="DRAFT">Draft</SelectItem>
-                            <SelectItem value="ACTIVE">Active</SelectItem>
-                            <SelectItem value="ARCHIVED">Archived</SelectItem>
+                            <SelectItem value="DRAFT">Draft (খসড়া)</SelectItem>
+                            <SelectItem value="ACTIVE">Active (চলমান)</SelectItem>
+                            <SelectItem value="ARCHIVED">Archived (আর্কাইভ করা)</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -1297,7 +1298,7 @@ export default function ProductFormPage() {
                     name="isFeatured"
                     render={({ field }) => (
                       <FormItem data-field="isFeatured">
-                        <FormLabel>Featured</FormLabel>
+                        <FormLabel>Featured (বিশেষ আকর্ষণ ?)</FormLabel>
                         <FormControl>
                           <Switch
                             aria-label="Featured"
@@ -1315,9 +1316,9 @@ export default function ProductFormPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Pricing &amp; rules</CardTitle>
-                  <CardDescription>
+                  {/* <CardDescription>
                     What it costs, how it is taxed, and how it gets to the shopper.
-                  </CardDescription>
+                  </CardDescription> */}
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
                   {/* `tabular-nums` on all three prices, so they read as a column
@@ -1337,7 +1338,7 @@ export default function ProductFormPage() {
                           />
                         </FormControl>
                         <FormDescription>
-                          What you paid your supplier. Never shown to customers.
+                      আপনার কেনা দাম। কাস্টমাররা এটি দেখতে পাবেন না।
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -1357,7 +1358,7 @@ export default function ProductFormPage() {
                             {...field}
                           />
                         </FormControl>
-                        <FormDescription>What the customer actually pays.</FormDescription>
+                        <FormDescription>কাস্টমারের পরিশোধিত মূল্য</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -1381,8 +1382,7 @@ export default function ProductFormPage() {
                          * which reads oddly without saying so.
                          */}
                         <FormDescription>
-                          Shown struck through above the offer price. Leave empty if this product is
-                          not on offer.
+                        অফার মূল্যের উপরে এই দামটি কাটা চিহ্নের (Strikethrough) মধ্যে দেখাবে। প্রোডাক্টে কোনো অফার না থাকলে এটি ফাঁকা রাখুন।
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -1396,8 +1396,8 @@ export default function ProductFormPage() {
                         <FormLabel>Tax rule</FormLabel>
                         <FormControl>
                           <Combobox
-                            placeholder="Select a tax rule"
-                            searchPlaceholder="Search tax rules"
+                            placeholder="ট্যাক্স রুলস সিলেক্ট করুন"
+                            searchPlaceholder="ট্যাক্স রুলস সার্চ করুন অথবা নতুন ট্যাক্স রুল তৈরি করুন"
                             aria-label="Tax rule"
                             options={taxRules.map((rule) => ({
                               value: rule.id,
@@ -1425,8 +1425,8 @@ export default function ProductFormPage() {
                         <FormLabel>Bundle deal</FormLabel>
                         <FormControl>
                           <Combobox
-                            placeholder="No offer"
-                            searchPlaceholder="Search bundle deals"
+                            placeholder="কোন অফার নেই"
+                            searchPlaceholder="অফার সার্চ করুন অথবা নতুন অফার তৈরি করুন"
                             aria-label="Bundle deal"
                             clearable
                             options={bundleDeals.map((deal) => ({
@@ -1444,7 +1444,7 @@ export default function ProductFormPage() {
                           />
                         </FormControl>
                         <FormDescription>
-                          Optional. A product with none is sold without an offer.
+                         ঐচ্ছিক (না দিলেও চলবে)। এটি ফাঁকা রাখলে প্রোডাক্টটি কোনো অফার ছাড়াই বিক্রি হবে।
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -1456,10 +1456,10 @@ export default function ProductFormPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Product facts</CardTitle>
-                  <CardDescription>
+                  {/* <CardDescription>
                     What a shopper needs to know before buying. Anything left unset shows nothing at
                     all rather than an empty label.
-                  </CardDescription>
+                  </CardDescription> */}
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
                   <FormField
@@ -1469,9 +1469,9 @@ export default function ProductFormPage() {
                       <FormItem data-field="unit">
                         <FormLabel>Sold in</FormLabel>
                         <FormControl>
-                          <Input placeholder="1 piece" {...field} />
+                          <Input placeholder="১ পিস" {...field} />
                         </FormControl>
-                        <FormDescription>“1 piece”, “pack of 2”, “500 ml”.</FormDescription>
+                        <FormDescription>যেমন: ১ পিস, ২ টির প্যাক, ৫০০ মিলি</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -1483,7 +1483,7 @@ export default function ProductFormPage() {
                       <FormItem data-field="badge">
                         <FormLabel>Badge</FormLabel>
                         <FormControl>
-                          <Input placeholder="New" maxLength={40} {...field} />
+                          <Input placeholder="ব্যাজ (যেমন: নতুন, অফার, বা সেরা ট্যাগ)" maxLength={40} {...field} />
                         </FormControl>
                         <FormDescription>A short label on the product card.</FormDescription>
                         <FormMessage />
@@ -1495,7 +1495,7 @@ export default function ProductFormPage() {
                     name="isRefundable"
                     render={({ field }) => (
                       <FormItem data-field="isRefundable">
-                        <FormLabel>Refundable</FormLabel>
+                        <FormLabel>Refundable (টাকা ফেরতযোগ্য ?)</FormLabel>
                         <TriStateField
                           label="Refundable"
                           value={field.value}
@@ -1510,7 +1510,7 @@ export default function ProductFormPage() {
                     name="hasWarranty"
                     render={({ field }) => (
                       <FormItem data-field="hasWarranty">
-                        <FormLabel>Warranty</FormLabel>
+                        <FormLabel>Warranty (ওয়ারেন্টি আছে ?)</FormLabel>
                         <TriStateField
                           label="Warranty"
                           value={field.value}
@@ -1527,7 +1527,7 @@ export default function ProductFormPage() {
                 <CardHeader>
                   <CardTitle>Specifications</CardTitle>
                   <CardDescription>
-                    Free-form details — material, model number, whatever this kind of product needs.
+                   প্রোডাক্টের বিস্তারিত তথ্য — যেমন উপাদান, মডেল নাম্বার বা এই ধরনের প্রোডাক্টের জন্য যা যা জানা প্রয়োজন।
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -1555,7 +1555,7 @@ export default function ProductFormPage() {
                             <FormItem>
                               <FormControl>
                                 <Input
-                                  placeholder="Battery life"
+                                  placeholder="যেমন: ব্যাটারির স্থায়িত্ব, র্যাম/স্টোরেজ, ১০০% কটন, ১ বছরের ওয়ারেন্টি"
                                   aria-label="Specification detail"
                                   {...field}
                                 />
@@ -1571,7 +1571,7 @@ export default function ProductFormPage() {
                             <FormItem>
                               <FormControl>
                                 <Input
-                                  placeholder="40 hours"
+                                  placeholder="যেমন: ১০ ঘন্টা, ৪ জিবি/৬৪ জিবি, ১০০% কটন, ১ বছরের ওয়ারেন্টি"
                                   aria-label="Specification value"
                                   {...field}
                                 />
@@ -1612,18 +1612,18 @@ export default function ProductFormPage() {
                       On a create there are no checkboxes to tick, so telling the
                       merchant to tick them named a control that is not there. */}
                   <CardDescription>
-                    {isEdit
-                      ? 'Tick the attribute values this product sells. Every combination becomes a row you can price and stock.'
-                      : 'Colours, sizes and capacities — each combination priced and stocked separately.'}
+                   {isEdit
+  ? 'এই প্রোডাক্টে যে যে সাইজ বা রঙ আছে সেগুলোতে টিক চিহ্ন দিন। প্রতিটি মিল (combination) থেকে আলাদা সারি তৈরি হবে, যেখানে আপনি দাম ও স্টক সেট করতে পারবেন।'
+  : 'রঙ, সাইজ বা ক্ষমতা — প্রতিটির আলাদা আলাদা কম্বিনেশনের জন্য দাম এবং স্টক আলাদাভাবে সেট করা যাবে।'}
+
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {!isEdit ? (
-                    <Alert title="Available after saving">
-                      A variant attaches to a product, so this becomes available once the product
-                      exists. Save it and this section opens on the same page — nothing you have
-                      typed is lost.
-                    </Alert>
+                    <Alert title="সেভ করার পর চালু হবে">
+  ভ্যারিয়েন্ট তৈরি করতে হলে আগে প্রোডাক্টটি তৈরি হতে হবে। তাই প্রোডাক্টটি সেভ করার পর এই সেকশনটি এই পেজেই চালু হয়ে যাবে — আপনার এতক্ষণ টাইপ করা কোনো তথ্যই হারিয়ে যাবে না।
+</Alert>
+
                   ) : (
                     <VariantEditor
                       attributes={attributes}
@@ -1648,8 +1648,8 @@ export default function ProductFormPage() {
                 <CardHeader>
                   <CardTitle>Inventory</CardTitle>
                   <CardDescription>
-                    Stock is not set here. It moves when you receive a purchase order or adjust
-                    stock, so every change leaves a record of where the units came from.
+                   এখানে স্টক সরাসরি সেট করা যায় না। আপনি যখন নতুন প্রোডাক্ট কিনবেন (Purchase Order পাবেন) বা স্টক অ্যাডজাস্ট করবেন, তখন এটি নিজে থেকেই আপডেট হবে। এর ফলে প্রতিটি পরিবর্তনের নিখুঁত হিসাব বা রেকর্ড থাকবে যে প্রোডাক্টগুলো কোথা থেকে এসেছে।
+
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
@@ -1669,7 +1669,10 @@ export default function ProductFormPage() {
                     <p className="flex h-8 items-center text-sm tabular-nums">
                       {isEdit ? (product?.stockQuantity ?? 0) : 0}
                       <span className="ml-2 text-xs text-muted-foreground">
-                        {isEdit ? 'across all warehouses' : 'until stock is received'}
+                      {isEdit 
+  ? 'সবগুলো ওয়্যারহাউস বা গুদাম মিলিয়ে' 
+  : 'নতুন স্টক আসার আগ পর্যন্ত'}
+
                       </span>
                     </p>
                   </div>
@@ -1683,7 +1686,7 @@ export default function ProductFormPage() {
                           <NumberInput min={0} className="w-full" {...field} />
                         </FormControl>
                         <FormDescription>
-                          Flags the product once stock drops to this level.
+                       স্টক কমে এই পরিমাণে নামলেই প্রোডাক্টটিতে লাল পতাকা বা অ্যালার্ট (Alert) দেখাবে।
                         </FormDescription>
                         <FormMessage />
                       </FormItem>

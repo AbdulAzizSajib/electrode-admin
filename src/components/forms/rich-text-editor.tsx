@@ -280,9 +280,7 @@ export function RichTextEditor({
         '[&_.ql-container]:rounded-b-md [&_.ql-container]:border-0 [&_.ql-container]:font-sans [&_.ql-container]:text-sm',
         // The writing area, matching the prose styles the storefront renders with.
         '[&_.ql-editor]:px-3 [&_.ql-editor]:py-2',
-        // Quill's placeholder is its own grey and italic; every other field on
-        // the form uses upright muted text.
-        '[&_.ql-editor.ql-blank::before]:not-italic [&_.ql-editor.ql-blank::before]:text-muted-foreground',
+        '[&_.ql-editor.ql-blank::before]:![font-style:normal] [&_.ql-editor.ql-blank::before]:text-muted-foreground',
         '[&_.ql-editor_h2]:mb-1 [&_.ql-editor_h2]:mt-3 [&_.ql-editor_h2]:text-base [&_.ql-editor_h2]:font-semibold',
         '[&_.ql-editor_h3]:mb-1 [&_.ql-editor_h3]:mt-3 [&_.ql-editor_h3]:text-sm [&_.ql-editor_h3]:font-semibold',
         '[&_.ql-editor_p]:my-1.5',

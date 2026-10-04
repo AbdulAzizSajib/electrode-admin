@@ -69,7 +69,7 @@ function normalise(tags: string[], maxLength: number): string[] {
 export function TagInput({
   value = [],
   onChange,
-  placeholder = 'Type a keyword and press Enter',
+  placeholder = 'এক বা একাদিক কিওয়ার্ড লিখুন এবং এন্টার (Enter) চাপুন।',
   disabled,
   maxLength = 60,
   id,

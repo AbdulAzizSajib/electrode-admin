@@ -113,7 +113,7 @@ export function MediaSidebar({
         <CardContent className="flex flex-col gap-3">
           <Thumbnail url={primary?.url ?? pendingPrimaryUrl} className="aspect-square w-full" />
           <p className="text-xs text-muted-foreground">
-            Shown on the product card. Whichever image is starred below is the main one.
+           প্রোডাক্ট কার্ডে এটি দেখানো হবে। নিচে যে ছবিটিতে স্টার (তারকা চিহ্ন) দেওয়া থাকবে, সেটিই মূল ছবি হিসেবে সেট হবে।
           </p>
         </CardContent>
       </Card>
@@ -145,8 +145,7 @@ export function MediaSidebar({
           ) : (
             <>
               <p className="text-xs text-muted-foreground">
-                Pick a poster frame first if you want a specific one — otherwise a frame is taken
-                from the video itself.
+                ভিডিওর নির্দিষ্ট কোনো ফ্রেম থাম্বনেইল হিসেবে দেখাতে চাইলে প্রথমে সেটি সিলেক্ট করুন, অন্যথায় ভিডিও থেকে যেকোনো একটি ফ্রেম স্বয়ংক্রিয়ভাবে নিয়ে নেওয়া হবে।
               </p>
               <input
                 ref={posterInputRef}
@@ -208,8 +207,7 @@ export function MediaSidebar({
         <CardContent className="flex flex-col gap-4">
           {!productExists ? (
             <Alert title="Available after saving">
-              Gallery images attach to a product, so this becomes available once the product
-              exists. Save it and you can add them here without leaving the page.
+             গ্যালারির ছবিগুলো প্রোডাক্টের সাথে যুক্ত থাকে, তাই প্রোডাক্টটি সেভ করার পরই ছবি আপলোডের এই অপশনটি চালু হবে। পেজটি সেভ করুন, তাহলে এই পেজ থেকেই আপনি ছবিগুলো যোগ করতে পারবেন—কোথাও যেতে হবে না।
             </Alert>
           ) : (
             <>

@@ -208,10 +208,11 @@ export function VariantEditor({
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3">
         {attributes.length === 0 ? (
-          <Alert title="No attributes defined yet">
-            Attributes are shop-wide. Define Colour or Size once under Catalog → Attributes, then
-            tick its values here — or add one from here without leaving this product.
-          </Alert>
+        <Alert title="এখনও কোনো অ্যাট্রিবিউট নেই">
+  Catalog → Attributes থেকে Colour (রং), Size (সাইজ) ইত্যাদি অ্যাট্রিবিউট তৈরি
+  করুন এবং এখানে প্রয়োজনীয় ভ্যালু নির্বাচন করুন। চাইলে এই প্রোডাক্ট থেকেই
+  নতুন অ্যাট্রিবিউট যোগ করতে পারবেন।
+</Alert>
         ) : (
           attributes.map((attribute) => {
             const ids = attribute.values.map((v) => v.id)
@@ -308,12 +309,13 @@ export function VariantEditor({
 
       {rows.length === 0 ? (
         <EmptyState
-          title="No combinations yet"
-          description={
-            selectedAttributes.length === 0
-              ? 'Tick the values this product sells and its combinations appear here. A product selling none is sold as a single item with its own price and stock.'
-              : 'Tick at least one value on each attribute.'
-          }
+          title="এখনও কোনো কম্বিনেশন (মিল) তৈরি হয়নি"
+         description={
+  selectedAttributes.length === 0
+    ? 'প্রোডাক্টের বৈশিষ্ট্যগুলোতে (সাইজ বা রঙ) টিক দিন, তাহলেই সেগুলোর কম্বিনেশন এখানে চলে আসবে। কোনো বৈশিষ্ট্য টিক না দিলে প্রোডাক্টটি একটি একক আইটেম হিসেবে নিজস্ব দাম ও স্টকে বিক্রি হবে।'
+    : 'প্রতিটি বৈশিষ্ট্যের (Attribute) অন্তত একটি মান বা অপশনে টিক দিন।'
+}
+
         />
       ) : (
         <div className="overflow-x-auto">
