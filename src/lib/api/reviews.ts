@@ -29,8 +29,9 @@ export interface Review {
   productId: string
   /** Only present on admin-list responses. */
   product?: ReviewProductRef
-  customerId: string
-  customer: ReviewCustomerRef
+  customerId: string | null
+  customer: ReviewCustomerRef | null
+  authorName: string | null
   rating: number
   title: string | null
   comment: string | null
@@ -38,6 +39,28 @@ export interface Review {
   adminReply: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface CreateAdminReviewInput {
+  productId: string
+  authorName: string
+  rating: number
+  title?: string
+  comment?: string
+  status?: ReviewStatus
+  adminReply?: string
+  createdAt?: string
+}
+
+export interface UpdateAdminReviewInput {
+  productId?: string
+  authorName?: string | null
+  rating?: number
+  title?: string | null
+  comment?: string | null
+  status?: ReviewStatus
+  adminReply?: string | null
+  createdAt?: string
 }
 
 export interface ReviewListParams extends ListParams {
@@ -63,6 +86,26 @@ async function listReviews(params: ReviewListParams = {}): Promise<PaginatedResp
   }
 }
 
+async function createAdminReview(input: CreateAdminReviewInput): Promise<Review> {
+  const res = await request<Review>('/reviews/admin', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+  return res.data
+}
+
+async function updateAdminReview(id: string, input: UpdateAdminReviewInput): Promise<Review> {
+  const res = await request<Review>(`/reviews/admin/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+  return res.data
+}
+
+async function deleteReview(id: string): Promise<void> {
+  await request<void>(`/reviews/${id}`, { method: 'DELETE' })
+}
+
 async function updateReviewStatus(id: string, status: ReviewStatus): Promise<Review> {
   const res = await request<Review>(`/reviews/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
   return res.data
@@ -75,6 +118,30 @@ async function replyToReview(id: string, adminReply: string): Promise<Review> {
 
 export function useReviews(params: ReviewListParams = {}) {
   return useQuery({ queryKey: queryKeys.reviews.list(params), queryFn: () => listReviews(params) })
+}
+
+export function useCreateAdminReview() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreateAdminReviewInput) => createAdminReview(input),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.reviews.all }),
+  })
+}
+
+export function useUpdateAdminReview() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateAdminReviewInput }) => updateAdminReview(id, input),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.reviews.all }),
+  })
+}
+
+export function useDeleteReview() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteReview(id),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.reviews.all }),
+  })
 }
 
 export function useUpdateReviewStatus() {

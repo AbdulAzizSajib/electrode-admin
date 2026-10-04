@@ -1224,6 +1224,8 @@ export interface StoreSettings {
   footerLogoUrl: string | null
   /** The browser-tab icon. Null means the merchant chose none and the website falls back to its own. */
   faviconUrl: string | null
+  /** The admin panel's browser-tab icon. Null means the merchant chose none and the panel falls back to `/favicon.svg`. */
+  adminFaviconUrl: string | null
   /**
    * Which of the two things each brand slot shows, decided independently.
    *
@@ -1367,6 +1369,8 @@ export interface StoreSettingsInput {
   footerLogoUrl?: string | null
   /** The browser-tab icon. Nullable on exactly the same rule as the two above. */
   faviconUrl?: string | null
+  /** The admin panel's browser-tab icon. Nullable on the same rule as `faviconUrl`. */
+  adminFaviconUrl?: string | null
   /** Sent unconditionally by the site-settings editor — a mode always has a value. */
   headerBrandMode?: BrandDisplayMode
   footerBrandMode?: BrandDisplayMode

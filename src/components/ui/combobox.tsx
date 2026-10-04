@@ -192,11 +192,11 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
               disabled={disabled}
               onBlur={onBlur}
               className={cn(
-                'flex h-10 w-full min-w-0 items-center justify-between gap-1.5 rounded-md border border-input bg-background px-2.5 py-1 text-left text-sm text-foreground',
+                'flex h-10 w-full min-w-0 items-center rounded-md border border-input bg-background pl-2.5 py-1 text-left text-sm text-foreground',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 'disabled:cursor-not-allowed disabled:opacity-50',
-                // Room for the clear control, so a long label does not run under it.
-                clearable && selected && 'pr-8',
+                // Right padding makes room for the icon overlay (X + chevron, or just chevron).
+                clearable && selected ? 'pr-14' : 'pr-8',
               )}
               {...aria}
             >
@@ -208,13 +208,32 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
               >
                 {selected ? selected.label : placeholder}
               </span>
-              {loading ? (
-                <Loader2 className="size-3.5 shrink-0 animate-spin opacity-60" />
-              ) : (
-                <ChevronDown className="size-3.5 shrink-0 opacity-60" />
-              )}
             </button>
           </PopoverTrigger>
+
+          {/*
+           * Icon overlay — sits on top of the button's right side.
+           * ChevronDown is pointer-events-none so clicks fall through to the
+           * PopoverTrigger button and open the list as normal.
+           * The X clear button is pointer-events-auto to intercept its own click.
+           */}
+          <div className="pointer-events-none absolute right-2.5 flex items-center gap-1">
+            {clearable && selected && !disabled && (
+              <button
+                type="button"
+                aria-label="Clear selection"
+                onClick={() => onValueChange?.(null)}
+                className="pointer-events-auto rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <X className="size-3" />
+              </button>
+            )}
+            {loading ? (
+              <Loader2 className="size-3.5 shrink-0 animate-spin opacity-60" />
+            ) : (
+              <ChevronDown className="size-3.5 shrink-0 opacity-60" />
+            )}
+          </div>
 
           <PopoverContent
             align="start"
@@ -295,17 +314,6 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
             )}
           </PopoverContent>
         </Popover>
-
-        {clearable && selected && !disabled && (
-          <button
-            type="button"
-            aria-label="Clear selection"
-            onClick={() => onValueChange?.(null)}
-            className="absolute right-6 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <X className="size-3" />
-          </button>
-        )}
       </div>
     )
   },

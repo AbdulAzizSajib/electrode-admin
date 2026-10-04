@@ -74,6 +74,7 @@ interface SiteDraft {
    * URL field on this page clears with null rather than by being left out.
    */
   faviconUrl: string
+  adminFaviconUrl: string
   /**
    * Which of the two things each brand slot shows.
    *
@@ -126,6 +127,7 @@ const EMPTY_DRAFT: SiteDraft = {
   logoUrl: '',
   footerLogoUrl: '',
   faviconUrl: '',
+  adminFaviconUrl: '',
   headerBrandMode: DEFAULT_BRAND_DISPLAY.headerBrandMode,
   footerBrandMode: DEFAULT_BRAND_DISPLAY.footerBrandMode,
   headerLogoHeight: LOGO_HEIGHT_LIMITS.headerDefault,
@@ -270,6 +272,7 @@ export default function SiteSettingsPage() {
       logoUrl: data.logoUrl ?? '',
       footerLogoUrl: data.footerLogoUrl ?? '',
       faviconUrl: data.faviconUrl ?? '',
+      adminFaviconUrl: data.adminFaviconUrl ?? '',
       /*
        * Seeded from the mirrored defaults, because the admin read returns the
        * row as-is: a store that has never chosen a mode sends null here, and
@@ -301,10 +304,13 @@ export default function SiteSettingsPage() {
 
   /** Which logo slot an upload is in flight for, so only that one shows a spinner. */
   const [uploading, setUploading] = React.useState<
-    'logoUrl' | 'footerLogoUrl' | 'faviconUrl' | null
+    'logoUrl' | 'footerLogoUrl' | 'faviconUrl' | 'adminFaviconUrl' | null
   >(null)
 
-  const handleUpload = async (slot: 'logoUrl' | 'footerLogoUrl' | 'faviconUrl', file: File) => {
+  const handleUpload = async (
+    slot: 'logoUrl' | 'footerLogoUrl' | 'faviconUrl' | 'adminFaviconUrl',
+    file: File,
+  ) => {
     setUploading(slot)
     try {
       const { url } = await uploadMutation.mutateAsync(file)
@@ -450,6 +456,7 @@ export default function SiteSettingsPage() {
      * send `''`: it is rejected as a malformed URL.
      */
     input.faviconUrl = value.faviconUrl.trim() || null
+    input.adminFaviconUrl = value.adminFaviconUrl.trim() || null
     /*
      * `siteUrl`, `metaTitle` and `metaDescription` are deliberately NOT sent
      * any more — SEO → General owns them now. Still loaded into this page's
@@ -652,23 +659,31 @@ export default function SiteSettingsPage() {
         </div>
 
         {/*
-          Outside the two-column grid above, because the favicon belongs to
-          NEITHER slot — it is the site's mark, not the header's or the footer's,
-          and it has no display mode to pair with. Putting it in one of those
-          columns would read as "the header's icon".
+          Outside the two-column grid above, because the favicons belong to
+          NEITHER header nor footer — they are the browser-tab marks for the
+          storefront and the admin panel.
         */}
-        <div className="mt-6 flex max-w-sm flex-col gap-2 border-t border-border pt-6">
-          <LogoField
-            label="Favicon"
-            url={value.faviconUrl}
-            busy={uploading === 'faviconUrl'}
-            onPick={(file) => handleUpload('faviconUrl', file)}
-            onClear={() => set({ faviconUrl: '' })}
-          />
+        <div className="mt-6 flex flex-col gap-3 border-t border-border pt-6">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <LogoField
+              label="Storefront favicon"
+              url={value.faviconUrl}
+              busy={uploading === 'faviconUrl'}
+              onPick={(file) => handleUpload('faviconUrl', file)}
+              onClear={() => set({ faviconUrl: '' })}
+            />
+            <LogoField
+              label="Admin panel favicon"
+              url={value.adminFaviconUrl}
+              busy={uploading === 'adminFaviconUrl'}
+              onPick={(file) => handleUpload('adminFaviconUrl', file)}
+              onClear={() => set({ adminFaviconUrl: '' })}
+            />
+          </div>
           {/*
             Three things a merchant cannot work out from the field itself: how small it renders
             (artwork picked for a header will be a smudge), what clearing it does (falls back to
-            the website's own icon, never a blank tab), and — the one that would otherwise cost
+            the default icon, never a blank tab), and — the one that would otherwise cost
             somebody an afternoon — that an SVG will upload happily and then not work.
 
             Verified against the real upload route: a PNG comes back as `image/png` and an ICO as
@@ -682,11 +697,11 @@ export default function SiteSettingsPage() {
             those fields predate this change.
           */}
           <p className="text-xs text-muted-foreground">
-            The small icon shown in a browser tab, a bookmark and search results. It renders about
-            16–32px across, so a square image works best — a wide header logo will not be readable
-            at that size. Use a <strong>PNG or an .ico</strong>: an SVG will upload but will not
-            show up as an icon. Clear it and your website falls back to its own icon; the tab is
-            never left blank.
+            The small icons shown in a browser tab, bookmarks and search results — set separately
+            for your public storefront and this admin panel. Each renders about 16–32px across, so a
+            square image works best; a wide header logo will not be readable at that size. Use a{' '}
+            <strong>PNG or an .ico</strong>: an SVG will upload but will not show up as an icon.
+            Clear either one and it falls back to its default icon; the tab is never left blank.
           </p>
         </div>
       </EditorSection>

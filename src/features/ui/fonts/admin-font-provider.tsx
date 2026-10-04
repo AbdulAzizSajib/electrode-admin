@@ -31,6 +31,7 @@ import { DEFAULT_THEME, useStoreSettings } from '@/lib/api/store-settings'
 
 /** Identifies the injected link so it is replaced, never duplicated. */
 const LINK_ID = 'admin-font-stylesheet'
+const DEFAULT_ADMIN_FAVICON = '/favicon.svg'
 
 export function AdminFontProvider({ children }: { children: React.ReactNode }) {
   /*
@@ -43,6 +44,7 @@ export function AdminFontProvider({ children }: { children: React.ReactNode }) {
   const adminFont = data?.theme?.adminFont ?? DEFAULT_THEME.adminFont
   const family = adminFont?.family
   const href = resolveFontHref(adminFont?.url)
+  const adminFaviconUrl = data?.adminFaviconUrl?.trim() || null
 
   /*
    * Both values are re-validated before use even though the API validated them
@@ -78,6 +80,28 @@ export function AdminFontProvider({ children }: { children: React.ReactNode }) {
     link.href = href
     document.head.appendChild(link)
   }, [href])
+
+  React.useEffect(() => {
+    let iconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+    if (!iconLink) {
+      iconLink = document.createElement('link')
+      iconLink.rel = 'icon'
+      document.head.appendChild(iconLink)
+    }
+
+    if (adminFaviconUrl) {
+      /*
+       * `index.html` ships with `type="image/svg+xml"` for `/favicon.svg`.
+       * Uploaded favicons are PNG or `.ico`, so leaving the SVG MIME type on
+       * the `<link>` causes browsers to reject the image when `href` switches.
+       */
+      iconLink.removeAttribute('type')
+      iconLink.href = adminFaviconUrl
+    } else {
+      iconLink.type = 'image/svg+xml'
+      iconLink.href = DEFAULT_ADMIN_FAVICON
+    }
+  }, [adminFaviconUrl])
 
   return <>{children}</>
 }

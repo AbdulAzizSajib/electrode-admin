@@ -1191,6 +1191,7 @@ export default function ProductFormPage() {
                             placeholder="ব্র্যান্ড সিলেক্ট করুন"
                             searchPlaceholder="ব্র্যান্ড সার্চ করুন অথবা নতুন ব্র্যান্ড তৈরি করুন"
                             aria-label="Brand"
+                            clearable
                             options={brands.map((b) => ({
                               value: b.id,
                               label: b.name,
@@ -1399,6 +1400,7 @@ export default function ProductFormPage() {
                             placeholder="ট্যাক্স রুলস সিলেক্ট করুন"
                             searchPlaceholder="ট্যাক্স রুলস সার্চ করুন অথবা নতুন ট্যাক্স রুল তৈরি করুন"
                             aria-label="Tax rule"
+                            clearable
                             options={taxRules.map((rule) => ({
                               value: rule.id,
                               label: `${rule.name} — ${rule.type === 'PERCENT' ? `${Number(rule.value)}%` : Number(rule.value)}`,

@@ -100,7 +100,12 @@ const SECTION_INFO = new Map(HOME_SECTION_REGISTRY.map((section) => [section.key
  * deliberately absent: its cards share a grid with a countdown panel, so it
  * offers no choice and the backend rejects a layout on it.
  */
-const PRODUCT_ROW_KEYS: HomeSectionKey[] = ['BEST_SELLING', 'FEATURED_PRODUCTS', 'NEW_ARRIVALS']
+const PRODUCT_ROW_KEYS: HomeSectionKey[] = [
+  'BEST_SELLING',
+  'FEATURED_PRODUCTS',
+  'DEAL_OF_WEEK',
+  'NEW_ARRIVALS',
+]
 
 /**
  * Which header links each section would hide if it were switched off, by their stored labels.
