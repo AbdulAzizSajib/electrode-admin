@@ -3,6 +3,7 @@ import { ImagePlus, Loader2, X } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { toast } from '@/components/ui/use-toast'
 import { useUploadImage } from '@/lib/api/uploads'
+import { cloudinaryThumb } from '@/lib/cloudinary'
 
 /**
  * The logo shown beside one payment account on the storefront's checkout page.
@@ -80,7 +81,7 @@ export function AccountIconField({
           ) : value ? (
             // Plain `img`: this is a merchant-supplied URL on an admin screen
             // behind a login, with no optimizer in front of it either way.
-            <img src={value} alt="" className="size-full object-contain" />
+            <img src={cloudinaryThumb(value, 36)} alt="" className="size-full object-contain" />
           ) : (
             <ImagePlus className="size-4" aria-hidden />
           )}

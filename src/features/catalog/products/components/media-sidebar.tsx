@@ -111,7 +111,7 @@ export function MediaSidebar({
           <CardTitle className="text-sm">Main image</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <Thumbnail url={primary?.url ?? pendingPrimaryUrl} className="aspect-square w-full" />
+          <Thumbnail url={primary?.url ?? pendingPrimaryUrl} size={320} className="aspect-square w-full" />
           <p className="text-xs text-muted-foreground">
            প্রোডাক্ট কার্ডে এটি দেখানো হবে। নিচে যে ছবিটিতে স্টার (তারকা চিহ্ন) দেওয়া থাকবে, সেটিই মূল ছবি হিসেবে সেট হবে।
           </p>
@@ -231,7 +231,7 @@ export function MediaSidebar({
                     key={image.id ?? `url-${index}`}
                     className="flex items-start gap-2 rounded-md border border-border p-2"
                   >
-                    <Thumbnail url={image.url} className="size-12 shrink-0" />
+                    <Thumbnail url={image.url} size={48} className="size-12 shrink-0" />
                     <div className="flex flex-1 flex-col gap-1.5">
                       {/* A placeholder is not an accessible name, and it
                           disappears the moment the field is typed in — so each

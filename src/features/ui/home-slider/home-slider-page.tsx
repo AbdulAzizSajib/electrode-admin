@@ -60,6 +60,7 @@ import {
 } from '@/lib/api/store-settings'
 import { formatDateTime } from '@/lib/utils/format'
 import { cn } from '@/lib/utils/cn'
+import { cloudinaryThumb } from '@/lib/cloudinary'
 
 /**
  * The homepage hero, arranged the way the storefront arranges it.
@@ -664,8 +665,9 @@ function SlotTile({
       >
         {banner.image ? (
           <img
-            src={banner.image}
+            src={cloudinaryThumb(banner.image, 480)}
             alt=""
+            loading="lazy"
             /* Dimmed when the storefront is not showing it, so "why isn't this
                live?" is answerable at a glance rather than by opening each one. */
             className={cn('h-full w-full object-cover', !isLive && 'opacity-40 grayscale')}
@@ -776,8 +778,9 @@ function UnusedRow({
     <div className="flex items-center gap-3 rounded-md border border-border p-2">
       {banner.image ? (
         <img
-          src={banner.image}
+          src={cloudinaryThumb(banner.image, 80)}
           alt=""
+          loading="lazy"
           className="h-12 w-20 shrink-0 rounded border border-border object-cover"
         />
       ) : (

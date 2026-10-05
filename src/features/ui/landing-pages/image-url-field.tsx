@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { toast } from '@/components/ui/use-toast'
 import { useUploadImage } from '@/lib/api/uploads'
+import { cloudinaryThumb } from '@/lib/cloudinary'
 
 /**
  * An image field whose VALUE is the stored URL.
@@ -101,7 +102,7 @@ export function ImageUrlField({
 
       {value && (
         <img
-          src={value}
+          src={cloudinaryThumb(value, 80, { crop: 'fill' })}
           alt=""
           className="size-20 rounded-md border border-border object-cover"
         />

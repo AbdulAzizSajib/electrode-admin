@@ -9,6 +9,7 @@
 import type { Order, OrderShippingAddress } from '@/lib/api/orders'
 import type { StoreSettings } from '@/lib/api/store-settings'
 import { formatDate } from '@/lib/utils/format'
+import { cloudinaryThumb } from '@/lib/cloudinary'
 
 /** Store name and contact details, for the top of a document. */
 export function StoreIdentity({
@@ -30,7 +31,8 @@ export function StoreIdentity({
     <div className="section">
       {showLogo && settings.logoUrl ? (
         <img
-          src={settings.logoUrl}
+          // 60mm is ~227px at 96dpi; 2x keeps the printed logo crisp.
+          src={cloudinaryThumb(settings.logoUrl, 240)}
           alt=""
           style={{ maxHeight: '18mm', maxWidth: '60mm', marginBottom: '2mm' }}
         />

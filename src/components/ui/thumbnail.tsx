@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { Image as ImageIcon } from 'lucide-react'
+import { cloudinaryThumb } from '@/lib/cloudinary'
 import { cn } from '@/lib/utils/cn'
 
 /**
@@ -24,9 +25,16 @@ import { cn } from '@/lib/utils/cn'
 export function Thumbnail({
   url,
   alt = '',
+  size = 40,
   className,
 }: {
   url?: string | null
+  /**
+   * The CSS size the box is drawn at, in px — what `className` already makes
+   * it. The image is requested at twice this, square-cropped by Cloudinary,
+   * instead of as the original upload; the stored `url` is not changed.
+   */
+  size?: number
   /**
    * Left empty by default, deliberately. Beside a product name that is already
    * on screen, the image is decoration and a screen reader announcing the name
@@ -66,8 +74,10 @@ export function Thumbnail({
 
   return (
     <img
-      src={url}
+      src={cloudinaryThumb(url, size, { crop: 'fill' })}
       alt={alt}
+      width={size}
+      height={size}
       loading="lazy"
       onError={() => setFailedUrl(url)}
       className={cn('shrink-0 rounded-md border border-border object-cover', className)}

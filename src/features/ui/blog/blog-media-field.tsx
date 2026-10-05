@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/use-toast'
 import { useUploadImage, useUploadVideo } from '@/lib/api/uploads'
 import { EMPTY_MEDIA, type BlogMedia } from '@/features/ui/blog/blog-media'
+import { cloudinaryThumb } from '@/lib/cloudinary'
 
 /**
  * The post's single media slot: nothing, an image, or a video.
@@ -88,7 +89,7 @@ export function BlogMediaField({
       {value.mediaType === 'IMAGE' && value.imageUrl && (
         <div className="flex items-center gap-3">
           <img
-            src={value.imageUrl}
+            src={cloudinaryThumb(value.imageUrl, 112)}
             alt=""
             className="h-20 w-28 rounded-md border border-border object-cover"
           />
@@ -108,7 +109,7 @@ export function BlogMediaField({
           {/* The poster frame, not the player: this is what listings show, so
               this is what the merchant should be approving. */}
           <img
-            src={value.videoThumbnailUrl}
+            src={cloudinaryThumb(value.videoThumbnailUrl, 112)}
             alt=""
             className="h-20 w-28 rounded-md border border-border object-cover"
           />

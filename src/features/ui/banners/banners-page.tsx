@@ -21,6 +21,7 @@ import {
   type BannerPlacement,
   type BannerStatus,
 } from '@/lib/api/banners'
+import { cloudinaryThumb } from '@/lib/cloudinary'
 
 export const BANNERS_PATH = '/ui/banners'
 
@@ -107,7 +108,7 @@ export default function BannersPage() {
           {banners.map((banner) => (
             <Card key={banner.id} className="flex items-center gap-3 p-2.5">
               {banner.image ? (
-                <img src={banner.image} alt="" className="h-14 w-24 shrink-0 rounded-md border border-border object-cover" />
+                <img src={cloudinaryThumb(banner.image, 96)} alt="" loading="lazy" className="h-14 w-24 shrink-0 rounded-md border border-border object-cover" />
               ) : (
                 <div className="flex h-14 w-24 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground">
                   <ImageOff className="size-4" />

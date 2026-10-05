@@ -16,6 +16,7 @@
 import { Outlet } from 'react-router'
 import * as React from 'react'
 import { usePublicBranding } from '@/lib/api/public-settings'
+import { cloudinaryThumb } from '@/lib/cloudinary'
 
 /**
  * What the layout shows before — or instead of — a settings response. Not the
@@ -74,7 +75,7 @@ export function AuthLayout() {
         <div className="flex flex-col items-center gap-3 text-center">
           {showLogo ? (
             <img
-              src={logoUrl as string}
+              src={cloudinaryThumb(logoUrl as string, 200)}
               alt={storeName}
               className="h-11 max-w-[200px] object-contain"
               onError={() => setLogoFailed(true)}

@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { ImagePlus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { cloudinaryThumb } from '@/lib/cloudinary'
 
 export interface SingleImageFieldProps {
   /** The locally-picked file pending upload, or null when nothing is picked. */
@@ -45,7 +46,7 @@ export function SingleImageField({ value, onChange, currentUrl, label = 'Upload 
     <div className="flex flex-col gap-2">
       {shownUrl && (
         <div className="flex flex-row items-center gap-2.5">
-          <img src={shownUrl} alt="" className="size-16 rounded-md border border-border object-cover" />
+          <img src={cloudinaryThumb(shownUrl, 64, { crop: 'fill' })} alt="" className="size-16 rounded-md border border-border object-cover" />
           <div className="flex flex-col gap-1">
             <span className="truncate text-xs text-muted-foreground">
               {value ? value.name : 'Current image'}

@@ -656,7 +656,7 @@ export default function OrderDetailPage() {
                             is matching it against a shelf. A line with no image
                             gets a same-sized placeholder, so rows stay level. */}
                         <div className="flex items-center gap-3">
-                          <Thumbnail url={item.image} className="size-10" />
+                          <Thumbnail url={item.image} size={40} className="size-10" />
                           <div className="min-w-0">
                             {item.productName}
                             <div className="text-xs font-normal text-muted-foreground">{item.sku}</div>

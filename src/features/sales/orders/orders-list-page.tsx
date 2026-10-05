@@ -228,7 +228,7 @@ export default function OrdersListPage() {
               key={`${item.productId}-${item.variantId ?? ''}-${i}`}
               className="flex items-center gap-2 text-sm"
             >
-              <Thumbnail url={item.image} className="size-8" />
+              <Thumbnail url={item.image} size={32} className="size-8" />
               <span className="min-w-0">
                 <span className="tabular-nums">{item.quantity}×</span> {item.productName}
               </span>

@@ -298,7 +298,7 @@ function LinePrice({
 
   return (
     <span className="flex items-center justify-end gap-2">
-      <Thumbnail url={image} className="size-8" />
+      <Thumbnail url={image} size={32} className="size-8" />
       <span className="flex flex-col items-end leading-tight">
         <span className="font-medium tabular-nums text-foreground">
           {formatCurrency(lineTotal)}

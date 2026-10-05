@@ -15,6 +15,7 @@ import { useCategoryTree } from '@/lib/api/categories'
 import { useBrands } from '@/lib/api/brands'
 import { CategoryFilter } from '@/features/catalog/products/category-filter'
 import { formatCurrency, formatDate, formatTime } from '@/lib/utils/format'
+import { cloudinaryThumb } from '@/lib/cloudinary'
 
 const STOCK_VARIANT = { in_stock: 'success', low_stock: 'warning', out_of_stock: 'destructive' } as const
 const STOCK_LABEL = { in_stock: 'In stock', low_stock: 'Low stock', out_of_stock: 'Out of stock' } as const
@@ -79,8 +80,11 @@ export default function ProductsListPage() {
       cell: ({ row }) => (
         <div className="flex items-center gap-2.5">
           <img
-            src={row.original.images[0]?.url}
+            src={cloudinaryThumb(row.original.images[0]?.url, 32, { crop: 'fill' })}
             alt=""
+            width={32}
+            height={32}
+            loading="lazy"
             className="size-8 shrink-0 rounded-md border border-border bg-muted object-cover"
           />
           <span className="font-medium text-foreground">{row.original.name}</span>

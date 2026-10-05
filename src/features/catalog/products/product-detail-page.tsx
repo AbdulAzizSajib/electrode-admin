@@ -15,6 +15,7 @@ import { toast } from '@/components/ui/use-toast'
 import { useBreadcrumbLabel } from '@/components/layout/breadcrumb-context'
 import { useDeleteProduct, useProduct } from '@/lib/api/products'
 import { formatCurrency, formatDateTime } from '@/lib/utils/format'
+import { cloudinaryThumb } from '@/lib/cloudinary'
 
 const STOCK_VARIANT = { in_stock: 'success', low_stock: 'warning', out_of_stock: 'destructive' } as const
 const STOCK_LABEL = { in_stock: 'In stock', low_stock: 'Low stock', out_of_stock: 'Out of stock' } as const
@@ -101,7 +102,11 @@ export default function ProductDetailPage() {
               {images.length === 0 && <span className="text-sm text-muted-foreground">No images added.</span>}
               {images.map((img) => (
                 <div key={img.id ?? img.url} className="relative">
-                  <img src={img.url} alt={img.altText ?? ''} className="size-24 rounded-md border border-border object-cover" />
+                  <img
+                    src={cloudinaryThumb(img.url, 96, { crop: 'fill' })}
+                    alt={img.altText ?? ''}
+                    loading="lazy"
+                    className="size-24 rounded-md border border-border object-cover" />
                   {img.isPrimary && (
                     <Badge variant="default" className="absolute -top-1.5 -right-1.5">
                       Primary

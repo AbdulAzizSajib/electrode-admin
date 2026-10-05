@@ -45,6 +45,7 @@ import {
   type ThemeColorKey,
 } from '@/lib/api/store-settings'
 import { contrastRatio } from '@/features/ui/site-settings/contrast'
+import { cloudinaryThumb } from '@/lib/cloudinary'
 
 /**
  * The storefront's identity and theme: logos, name, SEO, colours, typeface and
@@ -1361,7 +1362,7 @@ function LogoField({
            * merchant who just uploaded it does not have. Decorative here, unlike
            * on the storefront where the same image IS the brand's name.
            */
-          <img src={url} alt="" className="max-h-full max-w-full object-contain" />
+          <img src={cloudinaryThumb(url, 320)} alt="" className="max-h-full max-w-full object-contain" />
         ) : (
           <span className={`text-xs ${dark ? 'text-sidebar-foreground' : 'text-muted-foreground'}`}>
             Not set

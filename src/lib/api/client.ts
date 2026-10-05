@@ -10,16 +10,10 @@
 /**
  * Where the API lives when `VITE_API_BASE_URL` says nothing.
  *
- * The panel's own origin, not localhost. Two reasons, and the second is the
- * one that made this change necessary:
- *
- *   - A build with no variable set used to call `http://localhost:5000`, which
- *     works for exactly one person: the developer who built it. Everyone else
- *     got a panel asking their own machine for data. Failing against the origin
- *     fails visibly and locally instead.
- *   - The demo host serves several demonstration shops on several subdomains
- *     from ONE admin build. A baked absolute URL cannot do that; the origin can,
- *     because each demo's panel is served from that demo's own subdomain.
+ * The panel's own origin, not localhost. A build with no variable set used to
+ * call `http://localhost:5000`, which works for exactly one person: the
+ * developer who built it. Everyone else got a panel asking their own machine
+ * for data. Failing against the origin fails visibly and locally instead.
  *
  * `window` is guarded because this module is imported by tests that run without
  * a DOM.
@@ -38,8 +32,7 @@ const originBaseUrl = () =>
  *
  * Vite inlines the variable AT BUILD TIME, so a deployment that changes it must
  * be rebuilt — setting it in a hosting dashboard and restarting does nothing.
- * The origin fallback is the opposite: it is read in the browser, which is
- * precisely why one build can serve many subdomains.
+ * The origin fallback is the opposite: it is read in the browser.
  *
  * A trailing slash is stripped: every caller writes paths as `/products`, and
  * `…/api/v1/` + `/products` would request `//products`, which is a different
@@ -49,31 +42,6 @@ export const BASE_URL = (import.meta.env.VITE_API_BASE_URL || originBaseUrl()).r
   /\/+$/,
   '',
 )
-
-/**
- * The header naming which demonstration shop a request is for.
- *
- * Derived from the panel's own hostname, so one build serves every demo. The
- * API ignores it unless that deployment has a demo map configured, which is why
- * it can be sent unconditionally: a client installation receiving it behaves
- * exactly as if it had not.
- *
- * Routing, not permission — see server/src/app/lib/tenant.ts.
- */
-export const DEMO_KEY_HEADER = 'x-demo-key'
-
-/**
- * The demo key for this panel: the first label of its hostname.
- *
- * `fashion.demos.example.com` -> `fashion`. Returns null for a bare hostname or
- * localhost, where there is no demo to name and the header is simply omitted.
- */
-export const demoKey = (): string | null => {
-  if (typeof window === 'undefined') return null
-  const [first, ...rest] = window.location.hostname.split('.')
-  if (rest.length === 0 || !first) return null
-  return first.toLowerCase()
-}
 
 /** Where the storefront lives when nothing says otherwise — the local dev server. */
 const DEFAULT_STOREFRONT_URL = 'http://localhost:4000'
