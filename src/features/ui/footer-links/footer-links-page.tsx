@@ -547,7 +547,7 @@ function FooterPreview({
             {brandName ? ` | ${brandName}` : ''}
           </span>
           <span>
-            {AGENCY_CREDIT_PREVIEW.prefix} {AGENCY_CREDIT_PREVIEW.name}
+            {AGENCY_CREDIT_PREVIEW.prefix} {AGENCY_CREDIT_PREVIEW.name} 
           </span>
         </div>
       </div>
