@@ -122,6 +122,7 @@ const PageSeoPage = lazy(() => import('@/features/seo/page-seo/page-seo-page'))
 const CustomersListPage = lazy(() => import('@/features/customers/customers/customers-list-page'))
 const CustomerDetailPage = lazy(() => import('@/features/customers/customers/customer-detail-page'))
 const ReviewsPage = lazy(() => import('@/features/customers/reviews/reviews-page'))
+const AbandonedCartsPage = lazy(() => import('@/features/customers/abandoned-carts/abandoned-carts-page'))
 
 const SupportTicketsListPage = lazy(() => import('@/features/support/tickets/support-tickets-list-page'))
 const SupportTicketDetailPage = lazy(() => import('@/features/support/tickets/support-ticket-detail-page'))
@@ -336,6 +337,10 @@ export function AppRouter() {
           <Route path="/customers/customers" element={<CustomersListPage />} />
           <Route path="/customers/customers/:customerId" element={<CustomerDetailPage />} />
           <Route path="/customers/reviews" element={<ReviewsPage />} />
+          {/* No RoleGuard: every role may look. Deleting and purging are
+              OWNER/ADMIN, enforced by the backend and hidden by the page.
+              Kept in step with nav-config.ts by hand. */}
+          <Route path="/customers/abandoned-carts" element={<AbandonedCartsPage />} />
 
           <Route path="/support/tickets" element={<SupportTicketsListPage />} />
           <Route path="/support/tickets/:ticketId" element={<SupportTicketDetailPage />} />

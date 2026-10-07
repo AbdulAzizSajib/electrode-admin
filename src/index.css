@@ -78,6 +78,20 @@
   --shadow-color: 220 3% 15%;
 }
 
+/*
+ * The mobile bottom navigation bar's height — THE one place it is set. Read by
+ * three things that must agree: the bar itself (`mobile-bottom-nav.tsx`), the
+ * room `<main>` reserves below the page's last content (`shell-layout.tsx`),
+ * and the settings editors' sticky save bar (`settings-editor.tsx`), which sits
+ * on top of it. A plain rem rather than a spacing step, because this panel's
+ * `--spacing` is not Tailwind's and a step count would not mean what it says.
+ * Declared outside `@theme` so it is always emitted. See
+ * server/openspec/changes/add-admin-mobile-shell, design.md Decision 3.
+ */
+:root {
+  --admin-bottom-nav-height: 4rem;
+}
+
 @layer base {
   * {
     border-color: var(--color-border);

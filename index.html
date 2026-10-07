@@ -3,7 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      `viewport-fit=cover` so iOS reports `env(safe-area-inset-bottom)`; without
+      it the value is 0 and the mobile bottom nav sits under the home indicator.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!--
       Preconnects only. The panel's typeface is a SETTING now (UI → Site
       Setting → Fonts), so the stylesheet link is injected at runtime by

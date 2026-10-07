@@ -149,7 +149,7 @@ export const MultiSelect = React.forwardRef<HTMLButtonElement, MultiSelectProps>
               disabled={disabled}
               onBlur={onBlur}
               className={cn(
-                'flex h-10 w-full min-w-0 items-center justify-between gap-1.5 rounded-md border border-input bg-background px-2.5 py-1 text-left text-sm text-foreground',
+                'flex h-10 w-full min-w-0 items-center justify-between gap-1.5 rounded-md border border-input bg-background px-2.5 py-1 text-left text-sm text-foreground pointer-coarse:min-h-[44px] pointer-coarse:text-[16px]',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 'disabled:cursor-not-allowed disabled:opacity-50',
               )}
@@ -207,6 +207,19 @@ export const MultiSelect = React.forwardRef<HTMLButtonElement, MultiSelectProps>
                 aria-multiselectable
                 aria-label={aria['aria-label']}
                 className="max-h-60 overflow-y-auto"
+                /*
+                  Stops wheel and touch-move here so a Dialog's scroll lock
+                  never sees them. A Dialog locks scrolling to its own content
+                  with a listener on `document`, and this list is portalled OUT
+                  of that content — so inside a Dialog (the review and stock
+                  pickers) the list would not scroll at all. Stopping the events
+                  before they reach `document` lets the list scroll as normal;
+                  everything else about the popover is unchanged. `modal` was
+                  tried and rejected: it hides the trigger and the selected
+                  chips from screen readers and blocks clicks on them.
+                */
+                onWheel={(event) => event.stopPropagation()}
+                onTouchMove={(event) => event.stopPropagation()}
               >
                 {visible.map((option, index) => (
                   <li

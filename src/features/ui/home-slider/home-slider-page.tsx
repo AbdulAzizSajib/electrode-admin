@@ -699,7 +699,9 @@ function SlotTile({
         </span>
       )}
 
-      <div className="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+      {/* Always shown on touch screens, where hover does not exist — invisible
+          there, Edit and Remove were still tappable. See category-tree-node.tsx. */}
+      <div className="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
         <Button size="icon" variant="secondary" className="size-7" onClick={onEdit} aria-label="Edit slot">
           <Pencil className="size-3.5" />
         </Button>

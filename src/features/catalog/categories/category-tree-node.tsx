@@ -74,7 +74,11 @@ export function CategoryTreeNode({ category, depth, onEdit, onAddChild, onDelete
          * a hover delay is not an accessible name, and these buttons have no
          * text of their own.
          */}
-        <div className="ml-auto flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        {/* `pointer-coarse:opacity-100`: a touch screen has no hover, and these were
+            invisible there but still tappable — a tap near a row's right edge could
+            land on an unseen Delete. Mouse and keyboard keep the reveal. See
+            server/openspec/changes/add-admin-mobile-shell, design.md Decision 7. */}
+        <div className="ml-auto flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100">
           <Button
             variant="ghost"
             size="icon"

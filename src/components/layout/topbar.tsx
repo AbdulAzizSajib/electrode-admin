@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router'
-import { Bell, LogOut, Menu, Search, Settings, User as UserIcon, PanelLeft, Volume2, VolumeX } from 'lucide-react'
+import { Bell, LogOut, Search, Settings, User as UserIcon, PanelLeft, Volume2, VolumeX } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -32,7 +32,6 @@ export function Topbar({ soundMuted, onToggleSound }: TopbarProps) {
   const user = useSessionStore((s) => s.user)
   const logout = useSessionStore((s) => s.logout)
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
-  const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen)
   const { data: fetchedUnreadCount = 0 } = useUnreadNotificationCount()
 
   /*
@@ -49,16 +48,16 @@ export function Topbar({ soundMuted, onToggleSound }: TopbarProps) {
   }
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="lg:hidden"
-        onClick={() => setMobileNavOpen(true)}
-        aria-label="Open navigation"
-      >
-        <Menu className="size-4" />
-      </Button>
+    /*
+      `sticky top-0` below `lg`, where the document scrolls and the bar would
+      otherwise scroll away with the page; from `lg` it sits above `<main>`, the
+      scroller, and stays put anyway.
+
+      No hamburger: below `lg` the bottom bar's More opens the same drawer from
+      where the thumb already is. See server/openspec/changes/
+      add-admin-mobile-shell, design.md Decision 5.
+    */
+    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-3 lg:static lg:z-auto">
       <Button
         variant="ghost"
         size="icon"

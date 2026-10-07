@@ -285,7 +285,14 @@ export function EditorActions({
   onSave: () => void
 }) {
   return (
-    <div className="sticky bottom-0 z-10 flex items-center justify-end gap-2 border-t border-border bg-background/95 py-3 backdrop-blur">
+    /*
+      Below `lg` the document scrolls and the mobile bottom bar is fixed over
+      the bottom of the screen, so this sticks just ABOVE it — by the same token
+      the bar's height is set from — instead of underneath it. From `lg` there
+      is no bottom bar and it sticks to the bottom of `<main>` as before.
+      See server/openspec/changes/add-admin-mobile-shell, design.md Decision 3.
+    */
+    <div className="sticky bottom-[calc(var(--admin-bottom-nav-height)+env(safe-area-inset-bottom))] z-10 flex items-center justify-end gap-2 border-t border-border bg-background/95 py-3 backdrop-blur lg:bottom-0">
       <span className="mr-auto text-xs text-muted-foreground" aria-live="polite">
         {isSaving ? 'Saving…' : isDirty ? 'Unsaved changes' : ''}
       </span>

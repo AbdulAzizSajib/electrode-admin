@@ -338,6 +338,13 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Customers', path: '/customers/customers', icon: Contact },
       { label: 'Reviews', path: '/customers/reviews', icon: Star },
+      /*
+       * Carts shoppers filled and left. No `roles`: every role may look, and
+       * the router carries no RoleGuard to match. Deleting and purging are
+       * OWNER/ADMIN, enforced by the backend. See
+       * server/openspec/changes/add-abandoned-carts-admin.
+       */
+      { label: 'Abandoned Carts', path: '/customers/abandoned-carts', icon: ShoppingCart },
     ],
   },
   {
@@ -380,4 +387,80 @@ export function getVisiblePaths(role: AdminRole): string[] {
     }
   }
   return paths
+}
+
+/*
+ * The mobile bottom bar — the four screens a merchant reaches for most on a
+ * phone, plus More (the full drawer, rendered by the bar itself rather than
+ * listed here, since it is not a route).
+ *
+ * DERIVED FROM `NAV_SECTIONS`, not restated: icons and role rules are read off
+ * the sidebar's own entries, so the bar can never show a screen the sidebar
+ * hides, nor drift to a different icon. All four are visible to every role
+ * today; the filter is what keeps that true if `roles` is ever added to one.
+ * See server/openspec/changes/add-admin-mobile-shell, design.md Decision 4.
+ */
+export interface MobileNavItem {
+  label: string
+  path: string
+  icon: LucideIcon
+  roles?: AdminRole[]
+  /** Whether `pathname` belongs to this item, for the current-item highlight. */
+  matches: (pathname: string) => boolean
+}
+
+const isUnder = (pathname: string, path: string) =>
+  pathname === path || pathname.startsWith(`${path}/`)
+
+function sectionAt(path: string): NavSection {
+  const section = NAV_SECTIONS.find((s) => s.path === path)
+  if (!section) throw new Error(`nav-config: no top-level section at ${path}`)
+  return section
+}
+
+function sectionNamed(label: string): NavSection {
+  const section = NAV_SECTIONS.find((s) => s.label === label)
+  if (!section) throw new Error(`nav-config: no section named ${label}`)
+  return section
+}
+
+const inventorySection = sectionNamed('Inventory')
+
+/**
+ * Whether `pathname` is one of the screens listed under the sidebar's Inventory
+ * section — Returns, Refunds and Courier included, though their routes live
+ * under /sales. Read from the section, so moving a screen in or out of it moves
+ * the bottom bar's highlight with it.
+ */
+export function isInventoryPath(pathname: string): boolean {
+  return (inventorySection.items ?? []).some((item) => isUnder(pathname, item.path))
+}
+
+function topLevelItem(path: string, label?: string): MobileNavItem {
+  const section = sectionAt(path)
+  return {
+    label: label ?? section.label,
+    path,
+    icon: section.icon,
+    roles: section.roles,
+    matches: (pathname) => isUnder(pathname, path),
+  }
+}
+
+export const MOBILE_NAV_ITEMS: MobileNavItem[] = [
+  topLevelItem('/dashboard', 'Home'),
+  topLevelItem('/sales/orders'),
+  topLevelItem('/catalog/products'),
+  {
+    label: 'Inventory',
+    // Stock is the section's working screen; the rest are a tap away in More.
+    path: '/inventory/stock',
+    icon: inventorySection.icon,
+    roles: inventorySection.roles,
+    matches: isInventoryPath,
+  },
+]
+
+export function getVisibleMobileNavItems(role: AdminRole): MobileNavItem[] {
+  return MOBILE_NAV_ITEMS.filter((item) => isNavNodeVisible(item.roles, role))
 }
