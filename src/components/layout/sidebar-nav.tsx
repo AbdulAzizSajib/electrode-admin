@@ -86,6 +86,7 @@ export function SidebarNav({ collapsed = false, onNavigate }: SidebarNavProps) {
                   >
                     {pendingOrders > 99 ? '99+' : pendingOrders}
                   </Badge>
+                  
                 ))}
             </NavLink>
           )

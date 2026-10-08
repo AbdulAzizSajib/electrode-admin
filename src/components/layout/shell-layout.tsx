@@ -168,7 +168,7 @@ export function ShellLayout() {
               the 4rem rail rather than sitting left of centre. */}
           <div
             className={cn(
-              'flex h-14 shrink-0 items-center border-b border-sidebar-border',
+              'flex h-18 shrink-0 items-center border-b border-sidebar-border',
               sidebarCollapsed ? 'px-0' : 'px-3',
             )}
           >

@@ -45,7 +45,7 @@ export function ShellBrand({ collapsed = false }: { collapsed?: boolean }) {
   // free text, so a long one has to end in an ellipsis rather than push the
   // lockup out of its own box.
   return (
-    <span className="min-w-0 truncate text-xl font-bold text-Black text-center px-4">
+    <span className="min-w-0 truncate text-xl font-bold text-Black text-center px-4 ">
       {storeName}
       {accent && <span className="ml-1">{accent}</span>}
     </span>

@@ -1,6 +1,5 @@
 import { Link, useNavigate } from 'react-router'
-import { Bell, LogOut, Search, Settings, User as UserIcon, PanelLeft, Volume2, VolumeX } from 'lucide-react'
-import { Input } from '@/components/ui/input'
+import { Bell, LogOut, Settings, User as UserIcon, ChevronsLeft, ChevronsRight, Volume2, VolumeX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -31,6 +30,7 @@ export function Topbar({ soundMuted, onToggleSound }: TopbarProps) {
   const navigate = useNavigate()
   const user = useSessionStore((s) => s.user)
   const logout = useSessionStore((s) => s.logout)
+  const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
   const { data: fetchedUnreadCount = 0 } = useUnreadNotificationCount()
 
@@ -57,25 +57,20 @@ export function Topbar({ soundMuted, onToggleSound }: TopbarProps) {
       where the thumb already is. See server/openspec/changes/
       add-admin-mobile-shell, design.md Decision 5.
     */
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-3 lg:static lg:z-auto">
+    <header className="sticky top-0 z-30 flex h-18 shrink-0 items-center gap-3 border-b border-border bg-surface px-3 lg:static lg:z-auto ">
       <Button
         variant="ghost"
         size="icon"
         className="hidden lg:inline-flex"
         onClick={toggleSidebar}
-        aria-label="Toggle sidebar"
+        aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
-        <PanelLeft className="size-5!"  />
+        {sidebarCollapsed ? <ChevronsRight className="size-5!" /> : <ChevronsLeft className="size-5!" />}
       </Button>
 
       <Breadcrumbs />
 
       <div className="ml-auto flex items-center gap-2">
-        <div className="relative hidden sm:block">
-          <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search…" className="h-10 w-56 pl-7" />
-        </div>
-
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
