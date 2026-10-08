@@ -13,6 +13,13 @@ export interface SingleImageFieldProps {
    */
   currentUrl?: string | null
   label?: string
+  /**
+   * Offers a Remove button for the STORED image (`currentUrl`), not only for a
+   * freshly picked file. The field does not decide what removing means: the
+   * caller hides `currentUrl` and sends whatever its API takes as "no image".
+   * Omitted, there is no such button — the field behaves as it always has.
+   */
+  onRemoveCurrent?: () => void
 }
 
 /**
@@ -24,7 +31,13 @@ export interface SingleImageFieldProps {
  * Picking a file here does not replace the form's URL input: the backend accepts either a
  * multipart upload or a pre-hosted URL string, and both remain available.
  */
-export function SingleImageField({ value, onChange, currentUrl, label = 'Upload image' }: SingleImageFieldProps) {
+export function SingleImageField({
+  value,
+  onChange,
+  currentUrl,
+  label = 'Upload image',
+  onRemoveCurrent,
+}: SingleImageFieldProps) {
   const inputRef = React.useRef<HTMLInputElement>(null)
 
   // Derived from `value`, never stored — so the URL for a replaced file is always revoked.
@@ -51,10 +64,16 @@ export function SingleImageField({ value, onChange, currentUrl, label = 'Upload 
             <span className="truncate text-xs text-muted-foreground">
               {value ? value.name : 'Current image'}
             </span>
-            {value && (
+            {value ? (
               <Button type="button" variant="ghost" size="lg" className="self-start" onClick={clear}>
                 <Trash2 className="size-4" /> Remove
               </Button>
+            ) : (
+              onRemoveCurrent && (
+                <Button type="button" variant="ghost" size="lg" className="self-start" onClick={onRemoveCurrent}>
+                  <Trash2 className="size-4" /> Remove image
+                </Button>
+              )
             )}
           </div>
         </div>

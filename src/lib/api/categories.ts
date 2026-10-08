@@ -31,7 +31,9 @@ export interface Category {
 export interface CategoryInput {
   name: string
   description?: string
-  image?: string
+  /** `null` removes the stored image (the backend then deletes it from Cloudinary). */
+  image?: string | null
+  banner?: string | null
   status?: boolean
   sortOrder?: number
   /** Omit entirely for a top-level category — the backend rejects `null` here, it wants the key left out. */

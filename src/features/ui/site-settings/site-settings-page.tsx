@@ -337,6 +337,14 @@ export default function SiteSettingsPage() {
 
   const bodyContrast = contrastRatio(value.theme.background, value.theme.foreground)
   const brandContrast = contrastRatio(value.theme.background, value.theme.brand)
+  /*
+   * Against gray-900 (`#111827`), the colour card titles are fixed to on the
+   * storefront — the card colour changes, its text does not. Only when a card
+   * colour is set: unset cards keep their defaults, which already pass.
+   */
+  const cardBackground = value.theme.cardBackground
+  const cardContrast =
+    typeof cardBackground === 'string' ? contrastRatio(cardBackground, CARD_TEXT_COLOUR) : null
 
   const save = async () => {
     /*
@@ -566,17 +574,29 @@ export default function SiteSettingsPage() {
         the wrong page live. This line exists so the setting is still findable
         by someone who came looking for it here.
       */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
-        <span className="text-muted-foreground">Your home page currently shows</span>
-        <strong className="text-foreground">
-          {data?.siteMode === 'LANDING_PAGE' ? 'a single landing page' : 'the full website'}
-        </strong>
-        <Link
-          to="/ui/landing-pages"
-          className="font-medium text-primary underline-offset-4 hover:underline"
-        >
-          Change this on Landing Pages
-        </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+          <span className="text-muted-foreground">Your home page currently shows</span>
+          <strong className="text-foreground">
+            {data?.siteMode === 'LANDING_PAGE' ? 'a single landing page' : 'the full website'}
+          </strong>
+          <Link
+            to="/ui/landing-pages"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Change this on Landing Pages
+          </Link>
+        </div>
+
+        {/* At the top, beside the home-page line, and not sticky — on request.
+            See `EditorActions`. */}
+        <EditorActions
+          placement="top"
+          isDirty={draft.isDirty}
+          isSaving={updateMutation.isPending}
+          onReset={draft.reset}
+          onSave={save}
+        />
       </div>
 
       {/*
@@ -699,8 +719,8 @@ export default function SiteSettingsPage() {
           */}
           <p className="text-xs text-muted-foreground">
             The small icons shown in a browser tab, bookmarks and search results — set separately
-            for your public storefront and this admin panel. Each renders about 16–32px across, so a
-            square image works best; a wide header logo will not be readable at that size. Use a{' '}
+            for your public storefront and this admin panel. Each renders about 16–32px across, so
+            a square image works best; a wide header logo will not be readable at that size. Use a{' '}
             <strong>PNG or an .ico</strong>: an SVG will upload but will not show up as an icon.
             Clear either one and it falls back to its default icon; the tab is never left blank.
           </p>
@@ -851,6 +871,10 @@ export default function SiteSettingsPage() {
               onChange={(next) => setTheme({ [field.key]: next } as Partial<Theme>)}
             />
           ))}
+          <CardColorField
+            value={cardBackground}
+            onChange={(next) => setTheme({ cardBackground: next })}
+          />
         </div>
 
         {/* Advisory, never blocking: a merchant owns their brand, and a hard
@@ -858,6 +882,9 @@ export default function SiteSettingsPage() {
         <div className="flex flex-col gap-1 text-xs">
           <ContrastNote label="Body text on background" ratio={bodyContrast} />
           <ContrastNote label="Brand on background" ratio={brandContrast} />
+          {cardContrast !== null && (
+            <ContrastNote label="Card text on card" ratio={cardContrast} />
+          )}
         </div>
       </EditorSection>
 
@@ -1023,13 +1050,6 @@ export default function SiteSettingsPage() {
           </div>
         </div>
       </EditorSection>
-
-      <EditorActions
-        isDirty={draft.isDirty}
-        isSaving={updateMutation.isPending}
-        onReset={draft.reset}
-        onSave={save}
-      />
 
       <UnsavedChangesDialog blocker={blocker} />
     </div>
@@ -1236,6 +1256,63 @@ function ColorField({
       />
       <span id={hintId} className="text-xs text-muted-foreground">
         {hint}
+      </span>
+    </div>
+  )
+}
+
+/** The fixed dark grey (Tailwind gray-900) the storefront's card titles use. */
+const CARD_TEXT_COLOUR = '#111827'
+
+/**
+ * The OPTIONAL theme colour for the browsing cards.
+ *
+ * Separate from `ColorField` because it has a state the six required colours
+ * do not: UNSET, where the storefront keeps each card's own default (white
+ * product cards, grey category tiles). "Use default" returns to that by setting
+ * `null`, which the save sends and the backend reads as "clear" — leaving the
+ * key out would keep the stored colour instead. Choosing a colour starts from
+ * white, the product card's default, so the first pick changes nothing on the
+ * product cards until the merchant moves it.
+ */
+export function CardColorField({
+  value,
+  onChange,
+}: {
+  value: string | null | undefined
+  onChange: (next: string | null) => void
+}) {
+  const id = 'theme-cardBackground'
+  const hintId = `${id}-hint`
+  const isSet = typeof value === 'string'
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={isSet ? id : undefined}>Card background</Label>
+      {isSet ? (
+        <div className="flex items-center gap-2">
+          <ColorInput
+            id={id}
+            value={value}
+            onChange={(next) => onChange(next ?? '#ffffff')}
+            aria-describedby={hintId}
+          />
+          <Button type="button" variant="ghost" size="sm" onClick={() => onChange(null)}>
+            Use default
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Default</span>
+          <Button type="button" variant="outline" size="sm" onClick={() => onChange('#ffffff')}>
+            Choose a colour
+          </Button>
+        </div>
+      )}
+      <span id={hintId} className="text-xs text-muted-foreground">
+        {isSet
+          ? 'Product, category, brand, testimonial and blog cards'
+          : 'White product cards, grey category tiles — pick one colour for all cards'}
       </span>
     </div>
   )

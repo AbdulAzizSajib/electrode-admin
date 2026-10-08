@@ -437,8 +437,14 @@ export function unusedSlots(variant: HeroVariant): readonly HeroPlacement[] {
   return HERO_PLACEMENTS.filter((placement) => capacity[placement] === 0)
 }
 
-/** Mobile artwork is square across every slot — the storefront stacks the hero below `lg`. */
-export const MOBILE_ARTWORK = { width: 800, height: 800 }
+/**
+ * Mobile artwork for SLIDER slides — the only placement the storefront ever
+ * reads `mobileImage` for (nextjs HeroSlider.tsx); tiles always show their one
+ * artwork. Below `lg` every hero layout draws the slider at 4:3, so this is
+ * 4:3: it was "square, 800 × 800", which that box cropped by ~12% top and
+ * bottom. 1200px wide covers a 390px phone at 3× density.
+ */
+export const MOBILE_ARTWORK = { width: 1200, height: 900 }
 
 const HERO_PLACEMENT_SET = new Set<string>(HERO_PLACEMENTS)
 

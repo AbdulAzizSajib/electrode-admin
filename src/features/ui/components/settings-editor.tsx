@@ -263,6 +263,12 @@ export function EditorSubsection({
 /**
  * The sticky footer both editors share: dirty indicator, discard, save.
  *
+ * `placement="top"` renders the same controls as a plain, NON-sticky row under
+ * the page header instead — on request for Site Settings, whose merchant wanted
+ * the buttons at the top of the page rather than following the scroll. It
+ * carries no border or full-width row of its own, so the caller can sit it
+ * beside other content. Every other editor keeps the sticky footer.
+ *
  * `loading` on the save button rather than only swapping its label: the label
  * swap alone moves nothing on a fast save and everything on a slow one, so the
  * merchant's evidence that a click registered was a word changing width. The
@@ -278,21 +284,16 @@ export function EditorActions({
   isSaving,
   onReset,
   onSave,
+  placement = 'bottom',
 }: {
   isDirty: boolean
   isSaving: boolean
   onReset: () => void
   onSave: () => void
+  placement?: 'bottom' | 'top'
 }) {
-  return (
-    /*
-      Below `lg` the document scrolls and the mobile bottom bar is fixed over
-      the bottom of the screen, so this sticks just ABOVE it — by the same token
-      the bar's height is set from — instead of underneath it. From `lg` there
-      is no bottom bar and it sticks to the bottom of `<main>` as before.
-      See server/openspec/changes/add-admin-mobile-shell, design.md Decision 3.
-    */
-    <div className="sticky bottom-[calc(var(--admin-bottom-nav-height)+env(safe-area-inset-bottom))] z-10 flex items-center justify-end gap-2 border-t border-border bg-background/95 py-3 backdrop-blur lg:bottom-0">
+  const controls = (
+    <>
       <span className="mr-auto text-xs text-muted-foreground" aria-live="polite">
         {isSaving ? 'Saving…' : isDirty ? 'Unsaved changes' : ''}
       </span>
@@ -302,6 +303,27 @@ export function EditorActions({
       <Button onClick={onSave} loading={isSaving} disabled={!isDirty}>
         {isSaving ? 'Saving…' : 'Save changes'}
       </Button>
+    </>
+  )
+
+  if (placement === 'top') {
+    return (
+      <div className="flex items-center justify-end gap-2">
+        {controls}
+      </div>
+    )
+  }
+
+  return (
+    /*
+      Below `lg` the document scrolls and the mobile bottom bar is fixed over
+      the bottom of the screen, so this sticks just ABOVE it — by the same token
+      the bar's height is set from — instead of underneath it. From `lg` there
+      is no bottom bar and it sticks to the bottom of `<main>` as before.
+      See server/openspec/changes/add-admin-mobile-shell, design.md Decision 3.
+    */
+    <div className="sticky bottom-[calc(var(--admin-bottom-nav-height)+env(safe-area-inset-bottom))] z-10 flex items-center justify-end gap-2 border-t border-border bg-background/95 py-3 backdrop-blur lg:bottom-0">
+      {controls}
     </div>
   )
 }

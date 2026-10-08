@@ -1169,6 +1169,15 @@ export interface Theme {
   brandDark: string
   accent: string
   sale: string
+  /**
+   * The browsing cards' background (product cards, category, brand,
+   * testimonial and blog tiles). OPTIONAL, deliberately not in
+   * THEME_COLOR_FIELDS: absent means the default look (white product cards,
+   * grey category tiles), and the editor sends `null` to return to it — an
+   * omitted key would keep the stored colour. See
+   * server/openspec/changes/add-card-background-theme-color.
+   */
+  cardBackground?: string | null
   maxWidth: number | typeof FULL_WIDTH
   /** The storefront's typeface. */
   font: ThemeFont

@@ -196,6 +196,12 @@ export function SlotEditorDialog({
             )}
           </div>
 
+          {/*
+            Slider slides only: the storefront reads `mobileImage` for slider
+            slides and nowhere else, so on a tile this upload was accepted and
+            then never shown. See MOBILE_ARTWORK in hero-slots.ts.
+          */}
+          {slot.placement === 'HERO_SLIDER' && (
           <div className="flex flex-col gap-1.5">
             <Label>Mobile artwork (optional)</Label>
             <p className="text-xs text-muted-foreground">
@@ -209,6 +215,7 @@ export function SlotEditorDialog({
               label="Upload mobile artwork"
             />
           </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <Label>Links to</Label>

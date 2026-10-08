@@ -102,8 +102,9 @@ function toInput(values: OutputValues): CategoryInput {
     description: values.description ?? '',
     /*
      * `image` is the exception: the backend validates it with `z.url()`, which
-     * refuses `''`, so a cleared image cannot be expressed as an empty string
-     * and has to stay omitted.
+     * refuses `''`, so an empty box is omitted here. REMOVING the stored image
+     * is sent as `null` instead, by `withRemovals` in the component, and only
+     * when the merchant chose "Remove image".
      */
     image: values.image || undefined,
     status: values.status,
@@ -149,13 +150,37 @@ export default function CategoryFormPage() {
   const [imageFile, setImageFile] = React.useState<File | null>(null)
   const [bannerFile, setBannerFile] = React.useState<File | null>(null)
 
+  /*
+   * "Remove image" on the STORED artwork. Pending until save, like every other
+   * edit on this page: the field stops showing the stored image, and the save
+   * sends `null`, which the backend reads as "remove" and follows by deleting
+   * the file from Cloudinary. A newly picked file or a pasted address wins over
+   * a pending removal — that is a replacement, not a removal.
+   */
+  const [imageRemoved, setImageRemoved] = React.useState(false)
+  const [bannerRemoved, setBannerRemoved] = React.useState(false)
+
+  const removeImage = () => {
+    setImageRemoved(true)
+    // The URL box mirrors the stored image; leaving it filled would re-save it.
+    form.setValue('image', '', { shouldDirty: true })
+  }
+
+  const withRemovals = (values: OutputValues): CategoryInput => ({
+    ...toInput(values),
+    ...(imageRemoved && !imageFile && !values.image ? { image: null } : {}),
+    ...(bannerRemoved && !bannerFile ? { banner: null } : {}),
+  })
+
   const save = async (values: OutputValues) => {
     if (categoryId) {
-      await updateMutation.mutateAsync({ id: categoryId, input: toInput(values), imageFile, bannerFile })
+      await updateMutation.mutateAsync({ id: categoryId, input: withRemovals(values), imageFile, bannerFile })
       // The files have been sent; keeping them selected would re-upload the same
       // bytes on the next save from this page.
       setImageFile(null)
       setBannerFile(null)
+      setImageRemoved(false)
+      setBannerRemoved(false)
       return
     }
     const created = await createMutation.mutateAsync({ input: toInput(values), imageFile, bannerFile })
@@ -233,7 +258,7 @@ export default function CategoryFormPage() {
 
       <FormSection
         title="Artwork"
-        description="The image represents the category in listings; the banner runs across the top of its page."
+        description="The image is the category's icon in the storefront's category row. The banner is not shown on the storefront yet — it only stands in for the image when no image is set."
       >
         {/*
          * Upload and URL are two routes to the same artwork, not two fields, so
@@ -242,13 +267,46 @@ export default function CategoryFormPage() {
          * schema.
          */}
         <div className="flex flex-col gap-3">
-          <Label>Image</Label>
+          {/*
+            The size the storefront needs, beside the label, as on the Home
+            Slider. The tile (nextjs CategoryTile.tsx) draws the image
+            `object-contain` in a 64px square on desktop and ~120×64px on a
+            phone, over a light grey tile — so a SQUARE image, ideally a
+            transparent PNG, fits every tile without empty bars. 500px covers a
+            120px box on a 3× phone screen with room to spare.
+          */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Label>Image</Label>
+            <span
+              title="Square — shown as an icon, fitted inside the tile"
+              className="rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[11px] font-normal tabular-nums text-muted-foreground"
+            >
+              500 px × 500 px
+            </span>
+            <span className="text-[11px] text-muted-foreground">Square · transparent PNG works best</span>
+          </div>
           <SingleImageField
             value={imageFile}
             onChange={setImageFile}
-            currentUrl={data?.image}
+            currentUrl={imageRemoved ? null : data?.image}
+            onRemoveCurrent={categoryId && data?.image ? removeImage : undefined}
             label="Upload image"
           />
+          {imageRemoved && !imageFile && (
+            <p className="text-xs text-muted-foreground">
+              The image will be removed when you save.{' '}
+              <button
+                type="button"
+                className="font-medium text-primary hover:underline"
+                onClick={() => {
+                  setImageRemoved(false)
+                  form.setValue('image', data?.image ?? '', { shouldDirty: true })
+                }}
+              >
+                Undo
+              </button>
+            </p>
+          )}
           <FormField
             control={form.control}
             name="image"
@@ -276,13 +334,37 @@ export default function CategoryFormPage() {
         </div>
 
         <div className="flex flex-col gap-3">
-          <Label>Banner</Label>
+          {/*
+            No size badge: the storefront does not render a category banner
+            anywhere (nextjs services/category.ts only falls back to it for the
+            tile when `image` is empty). A size would promise a placement that
+            does not exist.
+          */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Label>Banner</Label>
+            <span className="text-[11px] text-muted-foreground">
+              Not shown on the storefront yet — used as the icon only if no image is set
+            </span>
+          </div>
           <SingleImageField
             value={bannerFile}
             onChange={setBannerFile}
-            currentUrl={data?.banner}
+            currentUrl={bannerRemoved ? null : data?.banner}
+            onRemoveCurrent={categoryId && data?.banner ? () => setBannerRemoved(true) : undefined}
             label="Upload banner"
           />
+          {bannerRemoved && !bannerFile && (
+            <p className="text-xs text-muted-foreground">
+              The banner will be removed when you save.{' '}
+              <button
+                type="button"
+                className="font-medium text-primary hover:underline"
+                onClick={() => setBannerRemoved(false)}
+              >
+                Undo
+              </button>
+            </p>
+          )}
         </div>
       </FormSection>
 
