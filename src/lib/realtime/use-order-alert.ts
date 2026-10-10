@@ -61,7 +61,9 @@ export function useOrderAlert(pulse: Pulse | undefined, muted: boolean): void {
   // Read through a ref so a change of mute state doesn't re-run the alert effect and re-fire
   // an alert for an order already handled.
   const mutedRef = useRef(muted)
-  mutedRef.current = muted
+  useEffect(() => {
+    mutedRef.current = muted
+  }, [muted])
 
   useEffect(() => {
     if (!pulse) return

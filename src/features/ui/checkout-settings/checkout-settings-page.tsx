@@ -42,6 +42,7 @@ import {
   MAX_PAYMENT_ACCOUNTS,
   MOBILE_BANKING_PROVIDERS,
   SETTINGS_LIMITS,
+  type AdvanceCalculationMode,
   type AdvancePaymentConfig,
   type BankAccount,
   type CheckoutConfig,
@@ -440,6 +441,9 @@ export default function CheckoutSettingsPage() {
   const advanceErrors = validateAdvancePayment(advance)
   const hasAdvanceErrors =
     Object.keys(advanceErrors.mobile).length > 0 || Object.keys(advanceErrors.bank).length > 0
+  const advanceMode: AdvanceCalculationMode = advance.calculationMode ?? 'PERCENTAGE'
+  const advancePercentage = advance.percentage ?? 10
+  const advanceFixedAmount = advance.fixedAmount ?? 100
 
   const setAdvance = (patch: Partial<AdvancePaymentConfig>) =>
     setConfig({ advancePayment: { ...advance, ...patch } })
@@ -898,7 +902,7 @@ export default function CheckoutSettingsPage() {
             <Label htmlFor="advance-payment-enabled">Ask for payment before shipping</Label>
             <span className="max-w-xl text-xs text-muted-foreground">
               {advance.enabled
-                ? 'Checkout offers two choices: send the delivery charge now and pay the rest at the door, or send the whole total now. Either way the order is held until the payment is verified.'
+                ? 'Checkout offers two choices: send the advance payment now and pay the rest at the door, or send the whole total now. Either way the order is held until the payment is verified.'
                 : 'Checkout is cash on delivery only. Nothing is collected up front and no payment choice is shown.'}
             </span>
             {!advance.enabled && !hasAnyAccount && (
@@ -915,6 +919,78 @@ export default function CheckoutSettingsPage() {
             )}
           </div>
         </div>
+
+        {advance.enabled && (
+          <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-4">
+            <div className="flex flex-col gap-1">
+              <Label className="text-sm font-medium">Advance payment calculation mode</Label>
+              <span className="text-xs text-muted-foreground">
+                {advanceMode === 'PERCENTAGE'
+                  ? 'Percentage based: Customer pays a set percentage of the product subtotal in advance.'
+                  : 'Fixed amount: Customer pays a fixed amount in advance, regardless of delivery fee or subtotal.'}
+              </span>
+            </div>
+            <div className="w-full sm:w-auto">
+              <SegmentedRadioGroup
+                value={advanceMode}
+                onValueChange={(val) => setAdvance({ calculationMode: val as AdvanceCalculationMode })}
+                options={[
+                  { value: 'PERCENTAGE', label: 'Percentage based' },
+                  { value: 'FIXED', label: 'Fixed amount' },
+                ]}
+              />
+            </div>
+
+            {advanceMode === 'PERCENTAGE' ? (
+              <div className="flex flex-col gap-1.5 sm:max-w-xs">
+                <Label htmlFor="advance-percentage" className="text-xs font-medium">
+                  Advance percentage (%)
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="advance-percentage"
+                    type="number"
+                    min="1"
+                    max="100"
+                    step="1"
+                    value={advancePercentage}
+                    onChange={(e) => {
+                      const val = Number(e.target.value)
+                      setAdvance({ percentage: isNaN(val) ? 10 : val })
+                    }}
+                    className="pr-8"
+                  />
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+                    %
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  e.g. {advancePercentage}% of a {formatCurrency(2000)} subtotal requires {formatCurrency((2000 * advancePercentage) / 100)} advance payment.
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5 sm:max-w-xs">
+                <Label htmlFor="advance-fixed-amount" className="text-xs font-medium">
+                  Fixed advance amount (৳)
+                </Label>
+                <Input
+                  id="advance-fixed-amount"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={advanceFixedAmount}
+                  onChange={(e) => {
+                    const val = Number(e.target.value)
+                    setAdvance({ fixedAmount: isNaN(val) ? 100 : Math.max(0, val) })
+                  }}
+                />
+                <span className="text-xs text-muted-foreground">
+                  e.g. {formatCurrency(advanceFixedAmount)} advance payment regardless of delivery destination or fee.
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         <EditorSubsection
           title="Mobile banking accounts"

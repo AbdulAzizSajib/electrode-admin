@@ -266,7 +266,7 @@ describe('VariantEditor', () => {
       />,
     )
 
-    expect(screen.getByText('No attributes defined yet')).not.toBeNull()
+    expect(screen.getByText('এখনও কোনো অ্যাট্রিবিউট নেই')).not.toBeNull()
   })
 
   /*

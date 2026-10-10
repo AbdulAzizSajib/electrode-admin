@@ -446,6 +446,8 @@ export interface BankAccount {
   routingNumber: string
 }
 
+export type AdvanceCalculationMode = 'PERCENTAGE' | 'FIXED'
+
 /**
  * Whether the store collects money before it ships, and where it goes.
  *
@@ -455,6 +457,9 @@ export interface BankAccount {
  */
 export interface AdvancePaymentConfig {
   enabled: boolean
+  calculationMode?: AdvanceCalculationMode
+  percentage?: number
+  fixedAmount?: number
   mobileAccounts: MobileBankingAccount[]
   bankAccounts: BankAccount[]
 }
@@ -1532,7 +1537,14 @@ export const DEFAULT_CHECKOUT_CONFIG: CheckoutConfig = {
    * endpoint which merges defaults, so without this constant the form could
    * not distinguish the two.
    */
-  advancePayment: { enabled: false, mobileAccounts: [], bankAccounts: [] },
+  advancePayment: {
+    enabled: false,
+    calculationMode: 'PERCENTAGE',
+    percentage: 10,
+    fixedAmount: 100,
+    mobileAccounts: [],
+    bankAccounts: [],
+  },
 }
 
 /**

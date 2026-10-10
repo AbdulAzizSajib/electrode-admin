@@ -574,7 +574,8 @@ describe('ProductFormPage', () => {
     it('explains that variants and the gallery arrive after saving', () => {
       render(<ProductFormPage />)
 
-      expect(screen.getAllByText('Available after saving')).toHaveLength(2)
+      expect(screen.getByText('Available after saving')).not.toBeNull()
+      expect(screen.getByText('সেভ করার পর চালু হবে')).not.toBeNull()
     })
 
     it('offers them once the product exists', () => {
@@ -591,7 +592,7 @@ describe('ProductFormPage', () => {
       render(<ProductFormPage />)
 
       expect(screen.getByText('12')).not.toBeNull()
-      expect(screen.getByText('across all warehouses')).not.toBeNull()
+      expect(screen.getByText(/সবগুলো ওয়্যারহাউস বা গুদাম মিলিয়ে/i)).not.toBeNull()
       expect(screen.queryByLabelText('In stock')).toBeNull()
     })
   })
