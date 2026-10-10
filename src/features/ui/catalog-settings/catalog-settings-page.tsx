@@ -1,6 +1,7 @@
 import { PageHeader } from '@/components/ui/page-header'
 import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
+import { SegmentedRadioGroup } from '@/components/ui/radio-group'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { toast } from '@/components/ui/use-toast'
@@ -16,7 +17,9 @@ import {
   useStoreSettings,
   useUpdateStoreSettings,
   DEFAULT_CATALOG_CONFIG,
+  PRODUCT_GRID_COLUMN_OPTIONS,
   type CatalogConfig,
+  type ProductGridColumns,
 } from '@/lib/api/store-settings'
 
 /**
@@ -190,6 +193,32 @@ export default function CatalogSettingsPage() {
             ? 'Once a product is in the cart, its card in the list shows a − 1 + stepper in place of the Add to cart button, so customers can change how many without opening the cart.'
             : 'Product cards always show Add to cart. Customers change quantities in the cart panel, on the cart page or at checkout.'}
         </FeatureSwitch>
+      </Card>
+
+      {/*
+        Its own card rather than a sixth switch: it is a layout choice among three, not a feature
+        turned on or off. Saved with the switches above, through the same draft and the same Save.
+      */}
+      <Card className="flex flex-col gap-3 p-4">
+        <div className="flex flex-col gap-0.5">
+          <Label id="product-grid-columns-label">Products per row on large screens</Label>
+          <span className="text-xs text-muted-foreground">
+            How many product cards sit side by side in the home page product rows and under “You may
+            also like” on a product page. Fewer per row makes each card bigger. Phones and tablets
+            always show two and three.
+          </span>
+        </div>
+        <SegmentedRadioGroup
+          aria-labelledby="product-grid-columns-label"
+          value={String(config.productGridColumns)}
+          onValueChange={(value) =>
+            setConfig({ productGridColumns: Number(value) as ProductGridColumns })
+          }
+          options={PRODUCT_GRID_COLUMN_OPTIONS.map((n) => ({
+            value: String(n),
+            label: n === DEFAULT_CATALOG_CONFIG.productGridColumns ? `${n} (default)` : String(n),
+          }))}
+        />
       </Card>
 
       <EditorActions

@@ -244,7 +244,7 @@ export const DEFAULT_INTEGRATION_CONFIG: Required<IntegrationConfig> = {
 export const CURRENCY_DECIMALS_LIMITS = { min: 0, max: 4, default: 2 } as const
 
 /** How a brand slot presents the shop. Mirrors the backend's `BrandDisplayMode`. */
-export type BrandDisplayMode = 'TEXT' | 'LOGO'
+export type BrandDisplayMode = 'TEXT' | 'LOGO' | 'BOTH'
 
 /**
  * Mirrors the backend's `MIN_LOGO_HEIGHT` / `MAX_LOGO_HEIGHT` and the column
@@ -388,7 +388,11 @@ export interface DeliveryOption {
   days: number
 }
 
+export type DeliveryFeeMode = 'AUTOMATIC' | 'MANUAL'
+
 export interface DeliverySettings {
+  /** Delivery fee mode: AUTOMATIC (derived from destination) or MANUAL (chosen by customer). */
+  feeMode?: DeliveryFeeMode
   /** Off, pickup options are not offered even when some are configured. */
   offersPickup: boolean
   options: DeliveryOption[]
@@ -503,7 +507,25 @@ export interface CatalogConfig {
    * server/openspec/changes/add-product-slider-and-card-quantity.
    */
   cardQuantityControl: boolean
+  /**
+   * How many product cards the website's full-width product grids — the homepage
+   * product rows and a product page's related products — show across on a large
+   * screen. Fewer columns means wider cards; phones and tablets are unaffected.
+   * See server/openspec/changes/add-product-grid-columns-setting.
+   */
+  productGridColumns: ProductGridColumns
 }
+
+/**
+ * The column counts the backend accepts for `productGridColumns`, in its order.
+ *
+ * Mirrors the backend's `PRODUCT_GRID_COLUMNS` and the storefront's
+ * `lib/product-grid.ts` by hand: a value the backend does not list is a refused
+ * save, and one the storefront does not list renders six across.
+ */
+export const PRODUCT_GRID_COLUMN_OPTIONS = [4, 5, 6] as const
+
+export type ProductGridColumns = (typeof PRODUCT_GRID_COLUMN_OPTIONS)[number]
 
 /**
  * Mirrors the backend's `DEFAULT_CATALOG_CONFIG`.
@@ -520,6 +542,8 @@ export const DEFAULT_CATALOG_CONFIG: CatalogConfig = {
   openCartOnAdd: true,
   // False where the rest are true — see the field's note above.
   cardQuantityControl: false,
+  // Six: the grid every store had before this was a setting.
+  productGridColumns: 6,
 }
 
 /* ------------------------------------------------------------------ *
@@ -1499,7 +1523,7 @@ export const DEFAULT_CHECKOUT_CONFIG: CheckoutConfig = {
    * fills this in, and the form refuses to SAVE an empty list — so the emptiness
    * is a visible setup step rather than a silently wrong charge.
    */
-  delivery: { offersPickup: false, options: [] },
+  delivery: { feeMode: 'AUTOMATIC', offersPickup: false, options: [] },
   /*
    * Off with no accounts — the state every store is in until a merchant sets
    * this up, and the one the backend normalises an absent value to. Seeding it

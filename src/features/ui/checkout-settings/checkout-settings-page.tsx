@@ -29,6 +29,7 @@ import {
   useUnsavedChangesGuard,
 } from '@/features/ui/components/settings-editor-utils'
 import { formatCurrency } from '@/lib/utils/format'
+import { SegmentedRadioGroup } from '@/components/ui/radio-group'
 import {
   useStoreSettings,
   useUpdateStoreSettings,
@@ -45,6 +46,7 @@ import {
   type BankAccount,
   type CheckoutConfig,
   type CheckoutFieldKey,
+  type DeliveryFeeMode,
   type DeliveryKind,
   type DeliveryOption,
   type MobileBankingAccount,
@@ -380,6 +382,7 @@ export default function CheckoutSettingsPage() {
   // The backend fills it in on read, but the form must not depend on that
   // having happened to render.
   const delivery = config.delivery ?? DEFAULT_CHECKOUT_CONFIG.delivery
+  const deliveryFeeMode: DeliveryFeeMode = delivery.feeMode ?? 'AUTOMATIC'
   const options = delivery.options
   const deliveryErrors = validateDelivery(options, delivery.offersPickup)
   const hasDeliveryErrors =
@@ -697,12 +700,34 @@ export default function CheckoutSettingsPage() {
 
       <EditorSection
         title="Delivery"
-        description="What a shopper picks from at checkout. Each option is charged exactly as priced here — nothing is worked out from the address they type."
+        description="Controls whether delivery charges are calculated automatically based on the shopper's location or picked manually from the options below."
         onAdd={addOption}
         addLabel="Add option"
         atCapacity={options.length >= MAX_DELIVERY_OPTIONS}
         capacityNote={`${MAX_DELIVERY_OPTIONS} options at most — past that the checkout is a wall of radio buttons rather than a choice.`}
       >
+        <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-4">
+          <div className="flex flex-col gap-1">
+            <Label className="text-sm font-medium">Delivery fee calculation mode</Label>
+            <span className="text-xs text-muted-foreground">
+              {deliveryFeeMode === 'AUTOMATIC'
+                ? 'Automatic mode: When a customer selects their District / City at checkout, the matching delivery fee is applied automatically.'
+                : 'Manual mode: The customer manually selects their preferred delivery option from the list below on the checkout page.'}
+            </span>
+          </div>
+          <div className="w-full sm:w-auto">
+            <SegmentedRadioGroup
+              value={deliveryFeeMode}
+              onValueChange={(val) => setDelivery({ feeMode: val as DeliveryFeeMode })}
+              aria-label="Delivery fee calculation mode"
+              options={[
+                { value: 'AUTOMATIC', label: 'Automatic (Location based)' },
+                { value: 'MANUAL', label: 'Manual (Customer choice)' },
+              ]}
+            />
+          </div>
+        </div>
+
         {options.length === 0 ? (
           <p className="rounded-md border border-destructive p-3 text-xs text-destructive">
             {deliveryErrors.emptyList} Until one is added, checkout refuses to price an order.

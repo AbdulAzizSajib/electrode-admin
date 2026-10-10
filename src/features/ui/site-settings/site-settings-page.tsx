@@ -608,7 +608,7 @@ export default function SiteSettingsPage() {
       */}
       <EditorSection
         title="Branding"
-        description="Choose what your header and footer each show — your site name as text, or a logo. They are set separately, so you can run a logo up top and the name below. Headers and footers usually sit on different backgrounds, so each takes its own artwork; a footer with no logo of its own uses the header's, and a slot set to Logo with no image falls back to showing your site name."
+        description="Choose what your header and footer each show — your site name as text, a logo, or both side by side. They are set separately, so you can run a logo up top and the name below. Headers and footers usually sit on different backgrounds, so each takes its own artwork; a footer with no logo of its own uses the header's, and a slot set to Logo or Both with no image falls back to showing your site name alone."
       >
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="flex flex-col gap-3">
@@ -625,15 +625,15 @@ export default function SiteSettingsPage() {
               onPick={(file) => handleUpload('logoUrl', file)}
               onClear={() => set({ logoUrl: '' })}
             />
-            {/* Only meaningful while the slot is actually showing a logo. */}
-            {value.headerBrandMode === 'LOGO' && (
+            {/* Only meaningful while the slot is actually showing a logo (Logo or Both). */}
+            {showsLogo(value.headerBrandMode) && (
               <LogoHeightField
                 id="header-logo-height"
                 value={value.headerLogoHeight}
                 onChange={(headerLogoHeight) => set({ headerLogoHeight })}
               />
             )}
-            {value.headerBrandMode === 'LOGO' && !value.logoUrl && (
+            {showsLogo(value.headerBrandMode) && !value.logoUrl && (
               <NoArtworkNote />
             )}
           </div>
@@ -654,7 +654,7 @@ export default function SiteSettingsPage() {
               /* Shown on the dark footer, so the preview matches where it lands. */
               dark
             />
-            {value.footerBrandMode === 'LOGO' && (
+            {showsLogo(value.footerBrandMode) && (
               <LogoHeightField
                 id="footer-logo-height"
                 value={value.footerLogoHeight}
@@ -667,7 +667,7 @@ export default function SiteSettingsPage() {
               either. Saying which of the two will happen beats leaving the
               merchant to reload the storefront and find out.
             */}
-            {value.footerBrandMode === 'LOGO' &&
+            {showsLogo(value.footerBrandMode) &&
               !value.footerLogoUrl &&
               (value.logoUrl ? (
                 <p className="text-xs text-muted-foreground">
@@ -1057,11 +1057,23 @@ export default function SiteSettingsPage() {
 }
 
 /**
- * Which of the two things one brand slot shows.
+ * Whether a slot in this mode draws a logo — on its own (Logo) or beside the
+ * name (Both). The one place that question is answered, so the logo height
+ * field and the "no logo set" notes appear for the same modes, and a fourth
+ * mode later changes one line. See server/openspec/changes/
+ * add-brand-display-both, design.md Decision 5.
+ */
+function showsLogo(mode: BrandDisplayMode): boolean {
+  return mode !== 'TEXT'
+}
+
+/**
+ * Which of the three things one brand slot shows: the site name, the logo, or
+ * both side by side.
  *
- * Two buttons with `aria-pressed` rather than a select, matching how this page
- * already expresses a chosen-one-of (see `WidthOption`). With only two options
- * both are visible at once, so the merchant reads the choice instead of opening
+ * Buttons with `aria-pressed` rather than a select, matching how this page
+ * already expresses a chosen-one-of (see `WidthOption`). With only three options
+ * all are visible at once, so the merchant reads the choice instead of opening
  * a list to discover it.
  */
 function BrandModeField({
@@ -1078,6 +1090,7 @@ function BrandModeField({
   const options: { value: BrandDisplayMode; label: string }[] = [
     { value: 'TEXT', label: 'Site name' },
     { value: 'LOGO', label: 'Logo' },
+    { value: 'BOTH', label: 'Both' },
   ]
 
   return (
